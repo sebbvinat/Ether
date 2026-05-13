@@ -78,6 +78,18 @@ export type DrawingInput =
       text: string;
     };
 
+export function layoutSlotCount(l: LayoutType): number {
+  switch (l) {
+    case "single":
+      return 1;
+    case "2h":
+    case "2v":
+      return 2;
+    case "grid4":
+      return 4;
+  }
+}
+
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -114,6 +126,14 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   volume: "#787b86",
 };
 
+export type LayoutType = "single" | "2h" | "2v" | "grid4";
+
+export interface ChartSlot {
+  id: string;
+  symbol: string;
+  timeframe: Timeframe;
+}
+
 export const DEFAULT_WATCHLIST = [
   "^GSPC",
   "^IXIC",
@@ -130,8 +150,14 @@ export const DEFAULT_WATCHLIST = [
 ];
 
 interface ChartState {
+  /** Mirrors the active slot's symbol — kept top-level for legacy access */
   symbol: string;
+  /** Mirrors the active slot's timeframe — kept top-level for legacy access */
   timeframe: Timeframe;
+  /** Multi-chart layout */
+  layout: LayoutType;
+  slots: ChartSlot[];
+  activeSlotId: string;
   /** Indicator is added to the chart (appears in pill + renders unless hidden) */
   indicators: Record<IndicatorKey, boolean>;
   /** Indicator is hidden (eye icon off) — kept in pill list, just not rendered */
@@ -154,8 +180,10 @@ interface ChartState {
   mobileRightOpen: boolean;
 
   // Actions
-  setSymbol: (s: string) => void;
-  setTimeframe: (t: Timeframe) => void;
+  setSymbol: (s: string, slotId?: string) => void;
+  setTimeframe: (t: Timeframe, slotId?: string) => void;
+  setLayout: (l: LayoutType) => void;
+  setActiveSlot: (id: string) => void;
   toggleIndicator: (key: IndicatorKey) => void;
   removeIndicator: (key: IndicatorKey) => void;
   toggleHidden: (key: IndicatorKey) => void;
@@ -179,6 +207,11 @@ export const useChartStore = create<ChartState>()(
     (set) => ({
       symbol: "BTCUSDT",
       timeframe: "15m" as Timeframe,
+      layout: "single" as LayoutType,
+      slots: [
+        { id: "slot-1", symbol: "BTCUSDT", timeframe: "15m" as Timeframe },
+      ],
+      activeSlotId: "slot-1",
       indicators: {
         ema20: true,
         ema50: true,
@@ -205,8 +238,69 @@ export const useChartStore = create<ChartState>()(
       mobileLeftOpen: false,
       mobileRightOpen: false,
 
-      setSymbol: (symbol) => set({ symbol }),
-      setTimeframe: (timeframe) => set({ timeframe }),
+      setSymbol: (symbol, slotId) =>
+        set((s) => {
+          const targetId = slotId ?? s.activeSlotId;
+          const slots = s.slots.map((sl) =>
+            sl.id === targetId ? { ...sl, symbol } : sl,
+          );
+          return {
+            slots,
+            symbol: targetId === s.activeSlotId ? symbol : s.symbol,
+          };
+        }),
+      setTimeframe: (timeframe, slotId) =>
+        set((s) => {
+          const targetId = slotId ?? s.activeSlotId;
+          const slots = s.slots.map((sl) =>
+            sl.id === targetId ? { ...sl, timeframe } : sl,
+          );
+          return {
+            slots,
+            timeframe: targetId === s.activeSlotId ? timeframe : s.timeframe,
+          };
+        }),
+      setLayout: (layout) =>
+        set((s) => {
+          const want = layoutSlotCount(layout);
+          let slots = s.slots.slice(0, want);
+          while (slots.length < want) {
+            const base = slots[0] ?? {
+              id: "slot-1",
+              symbol: "BTCUSDT",
+              timeframe: "15m" as Timeframe,
+            };
+            slots = [
+              ...slots,
+              {
+                id: `slot-${slots.length + 1}`,
+                symbol: base.symbol,
+                timeframe: base.timeframe,
+              },
+            ];
+          }
+          const activeSlotId = slots.some((sl) => sl.id === s.activeSlotId)
+            ? s.activeSlotId
+            : slots[0].id;
+          const active = slots.find((sl) => sl.id === activeSlotId)!;
+          return {
+            layout,
+            slots,
+            activeSlotId,
+            symbol: active.symbol,
+            timeframe: active.timeframe,
+          };
+        }),
+      setActiveSlot: (id) =>
+        set((s) => {
+          const slot = s.slots.find((sl) => sl.id === id);
+          if (!slot) return {};
+          return {
+            activeSlotId: id,
+            symbol: slot.symbol,
+            timeframe: slot.timeframe,
+          };
+        }),
       toggleIndicator: (key) =>
         set((s) => ({
           indicators: { ...s.indicators, [key]: !s.indicators[key] },
@@ -282,6 +376,9 @@ export const useChartStore = create<ChartState>()(
       partialize: (s) => ({
         symbol: s.symbol,
         timeframe: s.timeframe,
+        layout: s.layout,
+        slots: s.slots,
+        activeSlotId: s.activeSlotId,
         indicators: s.indicators,
         hidden: s.hidden,
         config: s.config,

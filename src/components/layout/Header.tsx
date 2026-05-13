@@ -5,6 +5,7 @@ import { Camera, Menu, List, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
+import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
 import { useChartStore } from "@/lib/store/chart-store";
 
@@ -14,9 +15,12 @@ export function Header() {
   const setMobileRightOpen = useChartStore((s) => s.setMobileRightOpen);
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
   const mobileRightOpen = useChartStore((s) => s.mobileRightOpen);
+  const activeSlotId = useChartStore((s) => s.activeSlotId);
 
   function onCapture() {
-    window.dispatchEvent(new CustomEvent("ether:capture"));
+    window.dispatchEvent(
+      new CustomEvent("ether:capture", { detail: { slotId: activeSlotId } }),
+    );
   }
 
   function onTrade() {
@@ -50,6 +54,10 @@ export function Header() {
         <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border md:block" />
         <div className="hidden md:block">
           <IndicatorMenu />
+        </div>
+        <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border md:block" />
+        <div className="hidden md:block">
+          <LayoutPicker />
         </div>
       </div>
 

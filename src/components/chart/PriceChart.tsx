@@ -51,6 +51,7 @@ function durationLabel(aTime: number, bTime: number): string {
 interface Props {
   symbol: string;
   timeframe: Timeframe;
+  slotId?: string;
 }
 
 const TV_COLORS = {
@@ -93,7 +94,7 @@ interface PaneOffset {
   height: number;
 }
 
-export function PriceChart({ symbol, timeframe }: Props) {
+export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -654,7 +655,9 @@ export function PriceChart({ symbol, timeframe }: Props) {
 
   // Capture chart as PNG — triggered by Header via custom event
   useEffect(() => {
-    const handler = () => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ slotId?: string }>;
+      if (ce.detail?.slotId && slotId && ce.detail.slotId !== slotId) return;
       const chart = chartRef.current;
       if (!chart) return;
       const canvas = chart.takeScreenshot();
@@ -677,7 +680,7 @@ export function PriceChart({ symbol, timeframe }: Props) {
     };
     window.addEventListener("ether:capture", handler);
     return () => window.removeEventListener("ether:capture", handler);
-  }, [symbol, timeframe]);
+  }, [symbol, timeframe, slotId]);
 
   function updateEMAs() {
     const c = candlesRef.current;

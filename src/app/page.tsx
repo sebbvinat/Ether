@@ -4,13 +4,11 @@ import { Header } from "@/components/layout/Header";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
-import { PriceChart } from "@/components/chart/PriceChart";
+import { ChartGrid } from "@/components/layout/ChartGrid";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
-  const symbol = useChartStore((s) => s.symbol);
-  const timeframe = useChartStore((s) => s.timeframe);
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
   const mobileRightOpen = useChartStore((s) => s.mobileRightOpen);
   const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
@@ -30,7 +28,7 @@ export default function HomePage() {
         <LeftSidebar />
         <main className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
-            <PriceChart symbol={symbol} timeframe={timeframe} />
+            <ChartGrid />
           </div>
         </main>
         <RightSidebar />

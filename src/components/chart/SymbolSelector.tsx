@@ -17,12 +17,28 @@ import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 import type { SymbolInfo } from "@/lib/binance/types";
 
-export function SymbolSelector() {
-  const symbol = useChartStore((s) => s.symbol);
+interface Props {
+  slotId?: string;
+  compact?: boolean;
+}
+
+export function SymbolSelector({ slotId, compact }: Props = {}) {
+  const slots = useChartStore((s) => s.slots);
+  const activeSlotId = useChartStore((s) => s.activeSlotId);
+  const symbolGlobal = useChartStore((s) => s.symbol);
   const setSymbol = useChartStore((s) => s.setSymbol);
   const addToWatchlist = useChartStore((s) => s.addToWatchlist);
-  const open = useChartStore((s) => s.symbolDialogOpen);
-  const setOpen = useChartStore((s) => s.setSymbolDialogOpen);
+  const openGlobal = useChartStore((s) => s.symbolDialogOpen);
+  const setOpenGlobal = useChartStore((s) => s.setSymbolDialogOpen);
+
+  const targetId = slotId ?? activeSlotId;
+  const symbol =
+    slotId !== undefined
+      ? slots.find((s) => s.id === slotId)?.symbol ?? symbolGlobal
+      : symbolGlobal;
+  const [localOpen, setLocalOpen] = useState(false);
+  const open = slotId !== undefined ? localOpen : openGlobal;
+  const setOpen = slotId !== undefined ? setLocalOpen : setOpenGlobal;
 
   const [query, setQuery] = useState("");
   const [allCrypto, setAllCrypto] = useState<SymbolInfo[]>([]);
@@ -66,10 +82,25 @@ export function SymbolSelector() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className="group flex items-center gap-2 rounded px-3 py-1.5 text-sm font-semibold hover:bg-tv-panel-hover">
-        <Search className="h-3.5 w-3.5 text-tv-text-muted group-hover:text-tv-text" />
+      <DialogTrigger
+        className={cn(
+          "group flex items-center gap-2 rounded font-semibold hover:bg-tv-panel-hover",
+          compact ? "px-1.5 py-0.5 text-[11px]" : "px-3 py-1.5 text-sm",
+        )}
+      >
+        <Search
+          className={cn(
+            "text-tv-text-muted group-hover:text-tv-text",
+            compact ? "h-3 w-3" : "h-3.5 w-3.5",
+          )}
+        />
         <span className="tabular-nums">{selectedDisplayName}</span>
-        <ChevronDown className="h-3.5 w-3.5 text-tv-text-muted" />
+        <ChevronDown
+          className={cn(
+            "text-tv-text-muted",
+            compact ? "h-3 w-3" : "h-3.5 w-3.5",
+          )}
+        />
       </DialogTrigger>
       <DialogContent className="max-w-md gap-0 bg-tv-panel p-0">
         <DialogHeader className="border-b border-tv-border px-4 py-3">
@@ -95,7 +126,7 @@ export function SymbolSelector() {
               <button
                 key={i.symbol}
                 onClick={() => {
-                  setSymbol(i.symbol);
+                  setSymbol(i.symbol, targetId);
                   addToWatchlist(i.symbol);
                   setOpen(false);
                   setQuery("");
