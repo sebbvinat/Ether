@@ -1,16 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, Menu, List, TrendingUp, Zap } from "lucide-react";
+import { Bell, Camera, Menu, List, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
 import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
+import { AlertsDialog } from "@/components/alerts/AlertsDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export function Header() {
   const [tradeToast, setTradeToast] = useState(false);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
   const setMobileRightOpen = useChartStore((s) => s.setMobileRightOpen);
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
@@ -63,6 +65,15 @@ export function Header() {
 
       <div className="flex items-center gap-1">
         <button
+          onClick={() => setAlertsOpen(true)}
+          aria-label="Alertas"
+          title="Alertas de precio"
+          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+        >
+          <Bell className="h-4 w-4" />
+        </button>
+
+        <button
           onClick={onCapture}
           aria-label="Capturar chart"
           title="Capturar chart como PNG"
@@ -95,6 +106,7 @@ export function Header() {
           Próximamente — conexión a exchange
         </div>
       )}
+      <AlertsDialog open={alertsOpen} onOpenChange={setAlertsOpen} />
     </header>
   );
 }
