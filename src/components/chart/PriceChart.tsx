@@ -536,6 +536,33 @@ export function PriceChart({ symbol, timeframe }: Props) {
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
   }, [tool]);
 
+  // Capture chart as PNG — triggered by Header via custom event
+  useEffect(() => {
+    const handler = () => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      const canvas = chart.takeScreenshot();
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        const safeSymbol = symbol.replace(/[^a-zA-Z0-9]/g, "") || "chart";
+        const stamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .slice(0, 19);
+        a.download = `${safeSymbol}-${timeframe}-${stamp}.png`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    };
+    window.addEventListener("ether:capture", handler);
+    return () => window.removeEventListener("ether:capture", handler);
+  }, [symbol, timeframe]);
+
   function updateEMAs() {
     const c = candlesRef.current;
     if (c.length === 0) return;
