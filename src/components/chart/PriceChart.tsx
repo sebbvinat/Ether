@@ -124,6 +124,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
+  const replay = useChartStore((s) => s.replay);
+  const replayActiveForThis = replay.active && replay.slotId === slotId;
 
   // Refs to avoid recreating subscribeClick on every tool change
   const toolRef = useRef(tool);
@@ -138,6 +140,17 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  const replayActiveRef = useRef(replayActiveForThis);
+  replayActiveRef.current = replayActiveForThis;
+  const replayIndexRef = useRef(replay.index);
+  replayIndexRef.current = replay.index;
+
+  function getViewCandles(): Candle[] {
+    if (replayActiveRef.current) {
+      return candlesRef.current.slice(0, replayIndexRef.current + 1);
+    }
+    return candlesRef.current;
+  }
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
@@ -441,7 +454,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       );
       v.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       volumeSeriesRef.current = v;
-      const data = candlesRef.current.map((k) => ({
+      const data = getViewCandles().map((k) => ({
         time: k.time as UTCTimestamp,
         value: k.volume,
         color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
@@ -682,8 +695,21 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => window.removeEventListener("ether:capture", handler);
   }, [symbol, timeframe, slotId]);
 
+  // Start replay when Header dispatches event for this slot
+  const startReplay = useChartStore((s) => s.startReplay);
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const ce = e as CustomEvent<{ slotId?: string }>;
+      if (ce.detail?.slotId && slotId && ce.detail.slotId !== slotId) return;
+      if (candlesRef.current.length === 0) return;
+      startReplay(slotId ?? "slot-1", candlesRef.current.length);
+    };
+    window.addEventListener("ether:start-replay", handler);
+    return () => window.removeEventListener("ether:start-replay", handler);
+  }, [slotId, startReplay]);
+
   function updateEMAs() {
-    const c = candlesRef.current;
+    const c = getViewCandles();
     if (c.length === 0) return;
     const cfg = configRef.current;
     let last20: number | undefined;
@@ -722,7 +748,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   }
 
   function updateRSI() {
-    const c = candlesRef.current;
+    const c = getViewCandles();
     if (c.length === 0 || !rsiRef.current) return;
     const cfg = configRef.current;
     const data = rsi(c, cfg.rsi).map((p) => ({
@@ -744,7 +770,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   }
 
   function updateMACD() {
-    const c = candlesRef.current;
+    const c = getViewCandles();
     if (c.length === 0 || !macdRef.current) return;
     const cfg = configRef.current;
     const m = macd(c, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
@@ -828,6 +854,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         } else {
           return;
         }
+        // During replay we keep ingesting data into the buffer but don't update the visible series
+        if (replayActiveRef.current) return;
         candleSeriesRef.current.update({
           time: k.time as UTCTimestamp,
           open: k.open,
@@ -863,6 +891,45 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => unsub();
   }, [symbol, timeframe]);
 
+  // React to replay state changes — reapply view
+  useEffect(() => {
+    if (!candleSeriesRef.current) return;
+    const view = getViewCandles();
+    if (view.length === 0) return;
+    candleSeriesRef.current.setData(
+      view.map((k) => ({
+        time: k.time as UTCTimestamp,
+        open: k.open,
+        high: k.high,
+        low: k.low,
+        close: k.close,
+      })),
+    );
+    if (volumeSeriesRef.current) {
+      volumeSeriesRef.current.setData(
+        view.map((k) => ({
+          time: k.time as UTCTimestamp,
+          value: k.volume,
+          color:
+            k.close >= k.open
+              ? `${TV_COLORS.green}66`
+              : `${TV_COLORS.red}66`,
+        })),
+      );
+    }
+    updateEMAs();
+    updateRSI();
+    updateMACD();
+    const last = view[view.length - 1];
+    const prev = view[view.length - 2] ?? last;
+    setLastPrice({
+      value: last.close,
+      pct:
+        prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [replayActiveForThis, replay.index]);
+
   const greenOrRed = (n: number) =>
     n >= 0 ? "text-tv-green" : "text-tv-red";
 
@@ -895,7 +962,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       const isUp = priceDiff >= 0;
       const start = Math.min(measure.a.time, measure.b.time);
       const end = Math.max(measure.a.time, measure.b.time);
-      const inRange = candlesRef.current.filter(
+      const inRange = getViewCandles().filter(
         (c) => c.time >= start && c.time <= end,
       );
       const bars = inRange.length;

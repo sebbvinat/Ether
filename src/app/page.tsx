@@ -5,6 +5,7 @@ import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { ChartGrid } from "@/components/layout/ChartGrid";
+import { ReplayBar } from "@/components/chart/ReplayBar";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
@@ -41,6 +42,7 @@ export default function HomePage() {
           />
         )}
       </div>
+      <ReplayBar />
       <BottomPanel />
       <IndicatorSettingsDialog />
     </div>

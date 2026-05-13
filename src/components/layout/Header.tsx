@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Camera, Menu, List, TrendingUp, Zap } from "lucide-react";
+import { Bell, Camera, Menu, List, Play, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -9,6 +9,7 @@ import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
 import { useChartStore } from "@/lib/store/chart-store";
+import { cn } from "@/lib/utils";
 
 export function Header() {
   const [tradeToast, setTradeToast] = useState(false);
@@ -18,11 +19,25 @@ export function Header() {
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
   const mobileRightOpen = useChartStore((s) => s.mobileRightOpen);
   const activeSlotId = useChartStore((s) => s.activeSlotId);
+  const replay = useChartStore((s) => s.replay);
+  const stopReplay = useChartStore((s) => s.stopReplay);
 
   function onCapture() {
     window.dispatchEvent(
       new CustomEvent("ether:capture", { detail: { slotId: activeSlotId } }),
     );
+  }
+
+  function onReplay() {
+    if (replay.active) {
+      stopReplay();
+    } else {
+      window.dispatchEvent(
+        new CustomEvent("ether:start-replay", {
+          detail: { slotId: activeSlotId },
+        }),
+      );
+    }
   }
 
   function onTrade() {
@@ -64,6 +79,20 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-1">
+        <button
+          onClick={onReplay}
+          aria-label="Reproducción"
+          title="Modo replay (barra a barra)"
+          className={cn(
+            "flex h-8 w-8 items-center justify-center rounded hover:bg-tv-panel-hover hover:text-tv-text",
+            replay.active
+              ? "bg-tv-yellow/15 text-tv-yellow"
+              : "text-tv-text-muted",
+          )}
+        >
+          <Play className="h-4 w-4" />
+        </button>
+
         <button
           onClick={() => setAlertsOpen(true)}
           aria-label="Alertas"

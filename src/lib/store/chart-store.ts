@@ -169,6 +169,20 @@ interface ChartState {
   // Persisted: drawings (trendline, fib, rect, text) — per symbol
   drawings: Drawing[];
 
+  /** Replay (bar-by-bar) state — not persisted */
+  replay: {
+    active: boolean;
+    /** which slot is being replayed (only one at a time) */
+    slotId: string | null;
+    /** index in the slot's candles[] up to which to render */
+    index: number;
+    /** total candles available for the active replay session */
+    total: number;
+    playing: boolean;
+    /** ms between auto-steps when playing */
+    intervalMs: number;
+  };
+
   // Ephemeral UI state (not persisted)
   tool: DrawingTool;
   priceLines: PriceLine[];
@@ -200,6 +214,12 @@ interface ChartState {
   setSettingsTarget: (k: IndicatorKey | null) => void;
   setMobileLeftOpen: (v: boolean) => void;
   setMobileRightOpen: (v: boolean) => void;
+  startReplay: (slotId: string, total: number) => void;
+  stopReplay: () => void;
+  setReplayIndex: (idx: number) => void;
+  setReplayPlaying: (p: boolean) => void;
+  setReplaySpeed: (intervalMs: number) => void;
+  stepReplay: () => void;
 }
 
 export const useChartStore = create<ChartState>()(
@@ -237,6 +257,14 @@ export const useChartStore = create<ChartState>()(
       settingsTarget: null,
       mobileLeftOpen: false,
       mobileRightOpen: false,
+      replay: {
+        active: false,
+        slotId: null,
+        index: 0,
+        total: 0,
+        playing: false,
+        intervalMs: 500,
+      },
 
       setSymbol: (symbol, slotId) =>
         set((s) => {
@@ -370,6 +398,40 @@ export const useChartStore = create<ChartState>()(
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
       setMobileRightOpen: (mobileRightOpen) => set({ mobileRightOpen }),
+      startReplay: (slotId, total) =>
+        set({
+          replay: {
+            active: true,
+            slotId,
+            index: Math.max(0, Math.min(total - 1, total - 100)),
+            total,
+            playing: false,
+            intervalMs: 500,
+          },
+        }),
+      stopReplay: () =>
+        set((s) => ({
+          replay: { ...s.replay, active: false, playing: false, slotId: null },
+        })),
+      setReplayIndex: (idx) =>
+        set((s) => ({
+          replay: {
+            ...s.replay,
+            index: Math.max(0, Math.min(s.replay.total - 1, idx)),
+          },
+        })),
+      setReplayPlaying: (playing) =>
+        set((s) => ({ replay: { ...s.replay, playing } })),
+      setReplaySpeed: (intervalMs) =>
+        set((s) => ({ replay: { ...s.replay, intervalMs } })),
+      stepReplay: () =>
+        set((s) => {
+          const next = s.replay.index + 1;
+          if (next >= s.replay.total) {
+            return { replay: { ...s.replay, playing: false } };
+          }
+          return { replay: { ...s.replay, index: next } };
+        }),
     }),
     {
       name: "tv-gratis-chart-state",
