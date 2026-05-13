@@ -103,11 +103,37 @@ export function DrawingsLayer({
       onPointerCancel={onSvgPointerUp}
     >
       {drawings.map((d) => {
-        if (d.type === "trendline") {
+        if (d.type === "trendline" || d.type === "arrow") {
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
           const isUp = d.b.price >= d.a.price;
+          const color = isUp ? TV_GREEN : TV_RED;
+          // Arrow head
+          let headRender: React.ReactNode = null;
+          if (d.type === "arrow") {
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const len = Math.hypot(dx, dy) || 1;
+            const ux = dx / len;
+            const uy = dy / len;
+            const size = 10;
+            // Perpendicular vector
+            const px = -uy;
+            const py = ux;
+            const baseX = b.x - ux * size;
+            const baseY = b.y - uy * size;
+            const leftX = baseX + px * (size * 0.5);
+            const leftY = baseY + py * (size * 0.5);
+            const rightX = baseX - px * (size * 0.5);
+            const rightY = baseY - py * (size * 0.5);
+            headRender = (
+              <polygon
+                points={`${b.x},${b.y} ${leftX},${leftY} ${rightX},${rightY}`}
+                fill={color}
+              />
+            );
+          }
           return (
             <g
               key={d.id}
@@ -120,9 +146,10 @@ export function DrawingsLayer({
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
-                stroke={isUp ? TV_GREEN : TV_RED}
+                stroke={color}
                 strokeWidth={1.5}
               />
+              {headRender}
               <DragHandle
                 cx={a.x}
                 cy={a.y}
@@ -137,6 +164,79 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={(a.x + b.x) / 2}
                   y={(a.y + b.y) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        if (d.type === "hrange") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const yTop = Math.min(a.y, b.y);
+          const yBottom = Math.max(a.y, b.y);
+          const priceTop = Math.max(d.a.price, d.b.price);
+          const priceBottom = Math.min(d.a.price, d.b.price);
+          const range = priceTop - priceBottom;
+          const isUp = d.b.price >= d.a.price;
+          const color = isUp ? TV_GREEN : TV_RED;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              style={{ pointerEvents: "auto" }}
+            >
+              <rect
+                x={0}
+                y={yTop}
+                width={containerWidth}
+                height={yBottom - yTop}
+                fill={color}
+                fillOpacity={0.08}
+              />
+              <line
+                x1={0}
+                y1={yTop}
+                x2={containerWidth}
+                y2={yTop}
+                stroke={color}
+                strokeWidth={1}
+              />
+              <line
+                x1={0}
+                y1={yBottom}
+                x2={containerWidth}
+                y2={yBottom}
+                stroke={color}
+                strokeWidth={1}
+              />
+              <text
+                x={8}
+                y={(yTop + yBottom) / 2}
+                fill={color}
+                fontSize={11}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+              >
+                {priceTop.toFixed(2)} → {priceBottom.toFixed(2)} (Δ{" "}
+                {range.toFixed(2)})
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={containerWidth - 20}
+                  y={yTop + 8}
                   onRemove={() => onRemove(d.id)}
                 />
               )}

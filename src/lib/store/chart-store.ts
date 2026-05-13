@@ -17,10 +17,14 @@ export type DrawingTool =
   | "cursor"
   | "hline"
   | "trendline"
+  | "arrow"
   | "fib"
   | "rect"
+  | "hrange"
   | "text"
   | "measure";
+
+export type ChartStyle = "candles" | "line" | "area";
 
 export interface PriceLine {
   id: string;
@@ -44,6 +48,13 @@ export type Drawing =
   | {
       id: string;
       symbol: string;
+      type: "arrow";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
       type: "fib";
       a: DrawingPoint;
       b: DrawingPoint;
@@ -52,6 +63,13 @@ export type Drawing =
       id: string;
       symbol: string;
       type: "rect";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "hrange";
       a: DrawingPoint;
       b: DrawingPoint;
     }
@@ -70,8 +88,10 @@ export type DrawingInput =
       a: DrawingPoint;
       b: DrawingPoint;
     }
+  | { type: "arrow"; symbol: string; a: DrawingPoint; b: DrawingPoint }
   | { type: "fib"; symbol: string; a: DrawingPoint; b: DrawingPoint }
   | { type: "rect"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | { type: "hrange"; symbol: string; a: DrawingPoint; b: DrawingPoint }
   | {
       type: "text";
       symbol: string;
@@ -165,6 +185,10 @@ interface ChartState {
   hidden: Record<IndicatorKey, boolean>;
   /** Periods and parameters for each indicator */
   config: IndicatorConfig;
+  /** Visual style of the main price series */
+  chartStyle: ChartStyle;
+  /** Use logarithmic price scale */
+  logScale: boolean;
   watchlist: string[];
 
   /** Yahoo symbols selected at runtime (stocks, FX, commodities) — keyed by symbol */
@@ -206,6 +230,8 @@ interface ChartState {
   removeIndicator: (key: IndicatorKey) => void;
   toggleHidden: (key: IndicatorKey) => void;
   setConfig: (patch: Partial<IndicatorConfig>) => void;
+  setChartStyle: (s: ChartStyle) => void;
+  setLogScale: (v: boolean) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
   addYahooSymbol: (inst: Instrument) => void;
@@ -258,6 +284,8 @@ export const useChartStore = create<ChartState>()(
         volume: false,
       },
       config: { ...DEFAULT_CONFIG },
+      chartStyle: "candles" as ChartStyle,
+      logScale: false,
       watchlist: DEFAULT_WATCHLIST,
       yahooSymbols: {},
       drawings: [],
@@ -356,6 +384,8 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({ hidden: { ...s.hidden, [key]: !s.hidden[key] } })),
       setConfig: (patch) =>
         set((s) => ({ config: { ...s.config, ...patch } })),
+      setChartStyle: (chartStyle) => set({ chartStyle }),
+      setLogScale: (logScale) => set({ logScale }),
       addToWatchlist: (s) =>
         set((state) => ({
           watchlist: state.watchlist.includes(s)
@@ -467,6 +497,8 @@ export const useChartStore = create<ChartState>()(
         hidden: s.hidden,
         config: s.config,
         watchlist: s.watchlist,
+        chartStyle: s.chartStyle,
+        logScale: s.logScale,
         yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
         priceLines: s.priceLines,

@@ -5,8 +5,10 @@ import {
   createChart,
   CandlestickSeries,
   LineSeries,
+  AreaSeries,
   HistogramSeries,
   CrosshairMode,
+  PriceScaleMode,
   type IChartApi,
   type ISeriesApi,
   type IPriceLine,
@@ -102,6 +104,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
   const rsiRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rsi30Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const rsi70Ref = useRef<ISeriesApi<"Line"> | null>(null);
@@ -127,6 +130,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
   const replay = useChartStore((s) => s.replay);
   const replayActiveForThis = replay.active && replay.slotId === slotId;
+  const chartStyle = useChartStore((s) => s.chartStyle);
+  const logScale = useChartStore((s) => s.logScale);
 
   // Refs to avoid recreating subscribeClick on every tool change
   const toolRef = useRef(tool);
@@ -166,7 +171,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   type DrawDraft =
     | null
     | {
-        type: "trendline" | "fib" | "rect";
+        type: "trendline" | "arrow" | "fib" | "rect" | "hrange";
         a: DrawingPoint;
         b: DrawingPoint;
       };
@@ -311,7 +316,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         return;
       }
 
-      if (tool === "trendline" || tool === "fib" || tool === "rect") {
+      if (
+        tool === "trendline" ||
+        tool === "arrow" ||
+        tool === "fib" ||
+        tool === "rect" ||
+        tool === "hrange"
+      ) {
         if (!param.time) return;
         const time = Number(param.time);
         const current = draftRef.current;
@@ -357,8 +368,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       if (
         draftNow &&
         (toolRef.current === "trendline" ||
+          toolRef.current === "arrow" ||
           toolRef.current === "fib" ||
-          toolRef.current === "rect") &&
+          toolRef.current === "rect" ||
+          toolRef.current === "hrange") &&
         param.point &&
         param.time &&
         candleSeriesRef.current
@@ -641,8 +654,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "hline",
         "measure",
         "trendline",
+        "arrow",
         "fib",
         "rect",
+        "hrange",
         "text",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
@@ -650,7 +665,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
-    if (tool !== "trendline" && tool !== "fib" && tool !== "rect") {
+    const draftTools = ["trendline", "arrow", "fib", "rect", "hrange"];
+    if (!draftTools.includes(tool)) {
       setDraft(null);
     }
   }, [tool]);
@@ -813,6 +829,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             })),
           );
         }
+        if (overlaySeriesRef.current) {
+          overlaySeriesRef.current.setData(
+            klines.map((k) => ({
+              time: k.time as UTCTimestamp,
+              value: k.close,
+            })),
+          );
+        }
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.setData(
             klines.map((k) => ({
@@ -864,6 +888,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           low: k.low,
           close: k.close,
         });
+        if (overlaySeriesRef.current) {
+          overlaySeriesRef.current.update({
+            time: k.time as UTCTimestamp,
+            value: k.close,
+          });
+        }
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.update({
             time: k.time as UTCTimestamp,
@@ -892,6 +922,57 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => unsub();
   }, [symbol, timeframe]);
 
+  // Log scale toggle
+  useEffect(() => {
+    if (!chartRef.current) return;
+    try {
+      chartRef.current.priceScale("right").applyOptions({
+        mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+      });
+    } catch (e) {
+      console.warn("logScale apply failed:", e);
+    }
+  }, [logScale]);
+
+  // Chart style — toggle candles vs line/area overlay
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = chartRef.current;
+    if (overlaySeriesRef.current) {
+      try {
+        chart.removeSeries(overlaySeriesRef.current);
+      } catch {}
+      overlaySeriesRef.current = null;
+    }
+    if (chartStyle === "candles") {
+      candleSeriesRef.current?.applyOptions({ visible: true });
+      return;
+    }
+    candleSeriesRef.current?.applyOptions({ visible: false });
+    const ser =
+      chartStyle === "line"
+        ? chart.addSeries(LineSeries, {
+            color: TV_COLORS.blue,
+            lineWidth: 2,
+            priceLineColor: TV_COLORS.textMuted,
+            priceLineStyle: 2,
+          })
+        : chart.addSeries(AreaSeries, {
+            lineColor: TV_COLORS.blue,
+            topColor: "rgba(41,98,255,0.35)",
+            bottomColor: "rgba(41,98,255,0)",
+            lineWidth: 2,
+            priceLineColor: TV_COLORS.textMuted,
+            priceLineStyle: 2,
+          });
+    overlaySeriesRef.current = ser;
+    const view = getViewCandles();
+    ser.setData(
+      view.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chartStyle]);
+
   // React to replay state changes — reapply view
   useEffect(() => {
     if (!candleSeriesRef.current) return;
@@ -906,6 +987,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         close: k.close,
       })),
     );
+    if (overlaySeriesRef.current) {
+      overlaySeriesRef.current.setData(
+        view.map((k) => ({
+          time: k.time as UTCTimestamp,
+          value: k.close,
+        })),
+      );
+    }
     if (volumeSeriesRef.current) {
       volumeSeriesRef.current.setData(
         view.map((k) => ({
@@ -989,24 +1078,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   }
   // Coord converter for the drawings layer (only valid for the main pane)
   const symbolDrawings = drawings.filter((d) => d.symbol === symbol);
-  const draftAsDrawing: Drawing | null =
-    draft && draft.type !== "rect"
-      ? {
-          id: "__draft__",
-          symbol,
-          type: draft.type,
-          a: draft.a,
-          b: draft.b,
-        }
-      : draft && draft.type === "rect"
-      ? {
-          id: "__draft__",
-          symbol,
-          type: "rect",
-          a: draft.a,
-          b: draft.b,
-        }
-      : null;
+  const draftAsDrawing: Drawing | null = draft
+    ? {
+        id: "__draft__",
+        symbol,
+        type: draft.type,
+        a: draft.a,
+        b: draft.b,
+      }
+    : null;
   void renderTick;
 
   const toCoord = (time: number, price: number) => {

@@ -5,6 +5,7 @@ import { Bell, Camera, Menu, List, Play, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
+import { ChartStyleSelector } from "@/components/chart/ChartStyleSelector";
 import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
@@ -68,6 +69,10 @@ export function Header() {
         <SymbolSelector />
         <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <TimeframeSelector />
+        <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border md:block" />
+        <div className="hidden md:block">
+          <ChartStyleSelector />
+        </div>
         <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border md:block" />
         <div className="hidden md:block">
           <IndicatorMenu />
