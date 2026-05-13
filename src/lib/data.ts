@@ -8,6 +8,15 @@ import { fetchYahooKlines } from "./yahoo/rest";
 import { pollYahooKline, pollYahooQuotes } from "./yahoo/poll";
 import { getInstrument, INDICES, type Instrument } from "./instruments";
 import type { Candle, Timeframe } from "./binance/types";
+import { useChartStore } from "./store/chart-store";
+
+function currentBinanceMarket() {
+  try {
+    return useChartStore.getState().binanceMarket;
+  } catch {
+    return "spot" as const;
+  }
+}
 
 export async function fetchCandles(
   symbol: string,
@@ -17,7 +26,7 @@ export async function fetchCandles(
   if (inst.provider === "yahoo") {
     return fetchYahooKlines(inst.yahooSymbol!, tf);
   }
-  return fetchKlines(symbol, tf, 1000);
+  return fetchKlines(symbol, tf, 1000, currentBinanceMarket());
 }
 
 export interface MarketSubscription {
@@ -44,11 +53,12 @@ export function subscribeMarket(
 
   let cancelled = false;
   let unsub: (() => void) | null = null;
-  fetchKlines(symbol, tf, 1000)
+  const market = currentBinanceMarket();
+  fetchKlines(symbol, tf, 1000, market)
     .then((candles) => {
       if (cancelled) return;
       sub.onInit(candles);
-      const ws = getBinanceWS();
+      const ws = getBinanceWS(market);
       unsub = ws.subscribeKline({
         symbol,
         interval: tf,
@@ -83,7 +93,8 @@ export function subscribeQuotes(
   const unsubs: Array<() => void> = [];
 
   if (cryptos.length > 0) {
-    fetchTickers24h(cryptos)
+    const market = currentBinanceMarket();
+    fetchTickers24h(cryptos, market)
       .then((tickers) => {
         tickers.forEach((t) =>
           onTick({
@@ -96,7 +107,7 @@ export function subscribeQuotes(
       })
       .catch(console.error);
 
-    const ws = getBinanceWS();
+    const ws = getBinanceWS(market);
     unsubs.push(ws.subscribeMiniTickers(cryptos, onTick));
   }
 

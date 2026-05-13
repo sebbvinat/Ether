@@ -32,6 +32,36 @@ export interface WatchlistDef {
   symbols: string[];
 }
 
+export interface WorkspaceSnapshot {
+  id: string;
+  name: string;
+  savedAt: number;
+  /** Subset of state that defines a workspace */
+  symbol: string;
+  timeframe: Timeframe;
+  layout: LayoutType;
+  slots: ChartSlot[];
+  indicators: Record<IndicatorKey, boolean>;
+  hidden: Record<IndicatorKey, boolean>;
+  config: IndicatorConfig;
+  chartStyle: ChartStyle;
+  logScale: boolean;
+}
+
+export type TradeSide = "long" | "short";
+
+export interface JournalEntry {
+  id: string;
+  symbol: string;
+  side: TradeSide;
+  entryPrice: number;
+  exitPrice?: number;
+  size?: number;
+  openedAt: number;
+  closedAt?: number;
+  notes?: string;
+}
+
 export interface PriceLine {
   id: string;
   symbol: string;
@@ -201,6 +231,12 @@ interface ChartState {
   compares: Record<string, string[]>;
   /** Focus mode hides all chrome (header, sidebars, panels) — only the chart */
   focusMode: boolean;
+  /** Binance market: spot or futures (perpetual) */
+  binanceMarket: "spot" | "perp";
+  /** Saved workspaces — named snapshots of the current setup */
+  workspaces: WorkspaceSnapshot[];
+  /** Manual trading journal entries */
+  journal: JournalEntry[];
   /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
   watchlists: WatchlistDef[];
   activeWatchlistId: string;
@@ -249,6 +285,13 @@ interface ChartState {
   setLogScale: (v: boolean) => void;
   setSyncCharts: (v: boolean) => void;
   setFocusMode: (v: boolean) => void;
+  setBinanceMarket: (m: "spot" | "perp") => void;
+  saveWorkspace: (name: string) => void;
+  loadWorkspace: (id: string) => void;
+  deleteWorkspace: (id: string) => void;
+  addJournalEntry: (e: Omit<JournalEntry, "id">) => void;
+  updateJournalEntry: (id: string, patch: Partial<JournalEntry>) => void;
+  removeJournalEntry: (id: string) => void;
   addCompare: (slotId: string, symbol: string) => void;
   removeCompare: (slotId: string, symbol: string) => void;
   addToWatchlist: (s: string) => void;
@@ -312,6 +355,9 @@ export const useChartStore = create<ChartState>()(
       syncCharts: false,
       compares: {},
       focusMode: false,
+      binanceMarket: "spot" as "spot" | "perp",
+      workspaces: [],
+      journal: [],
       watchlists: [
         { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
       ],
@@ -418,6 +464,59 @@ export const useChartStore = create<ChartState>()(
       setLogScale: (logScale) => set({ logScale }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setFocusMode: (focusMode) => set({ focusMode }),
+      setBinanceMarket: (binanceMarket) => set({ binanceMarket }),
+      saveWorkspace: (name) =>
+        set((s) => ({
+          workspaces: [
+            ...s.workspaces,
+            {
+              id: newId(),
+              name,
+              savedAt: Date.now(),
+              symbol: s.symbol,
+              timeframe: s.timeframe,
+              layout: s.layout,
+              slots: s.slots,
+              indicators: s.indicators,
+              hidden: s.hidden,
+              config: s.config,
+              chartStyle: s.chartStyle,
+              logScale: s.logScale,
+            },
+          ],
+        })),
+      loadWorkspace: (id) =>
+        set((s) => {
+          const w = s.workspaces.find((w) => w.id === id);
+          if (!w) return {};
+          return {
+            symbol: w.symbol,
+            timeframe: w.timeframe,
+            layout: w.layout,
+            slots: w.slots,
+            indicators: w.indicators,
+            hidden: w.hidden,
+            config: w.config,
+            chartStyle: w.chartStyle,
+            logScale: w.logScale,
+          };
+        }),
+      deleteWorkspace: (id) =>
+        set((s) => ({
+          workspaces: s.workspaces.filter((w) => w.id !== id),
+        })),
+      addJournalEntry: (e) =>
+        set((s) => ({
+          journal: [...s.journal, { ...e, id: newId() }],
+        })),
+      updateJournalEntry: (id, patch) =>
+        set((s) => ({
+          journal: s.journal.map((j) => (j.id === id ? { ...j, ...patch } : j)),
+        })),
+      removeJournalEntry: (id) =>
+        set((s) => ({
+          journal: s.journal.filter((j) => j.id !== id),
+        })),
       addCompare: (slotId, symbol) =>
         set((state) => {
           const existing = state.compares[slotId] ?? [];
@@ -604,6 +703,9 @@ export const useChartStore = create<ChartState>()(
         logScale: s.logScale,
         syncCharts: s.syncCharts,
         compares: s.compares,
+        workspaces: s.workspaces,
+        journal: s.journal,
+        binanceMarket: s.binanceMarket,
         yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
         priceLines: s.priceLines,

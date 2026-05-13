@@ -1,6 +1,8 @@
 import type { Candle, Timeframe } from "./types";
+import type { BinanceMarket } from "./rest";
 
-const WS_BASE = "wss://stream.binance.com:9443/stream";
+const WS_BASE_SPOT = "wss://stream.binance.com:9443/stream";
+const WS_BASE_PERP = "wss://fstream.binance.com/stream";
 
 interface KlineMsg {
   stream: string;
@@ -56,6 +58,7 @@ export interface TickerSubscription {
  * Subscriptions can be added/removed at runtime via SUBSCRIBE/UNSUBSCRIBE.
  */
 export class BinanceWS {
+  private market: BinanceMarket;
   private ws: WebSocket | null = null;
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,9 +68,14 @@ export class BinanceWS {
   private connected = false;
   private closing = false;
 
+  constructor(market: BinanceMarket = "spot") {
+    this.market = market;
+  }
+
   connect() {
     if (this.ws || this.closing) return;
-    this.ws = new WebSocket(WS_BASE);
+    const url = this.market === "perp" ? WS_BASE_PERP : WS_BASE_SPOT;
+    this.ws = new WebSocket(url);
 
     this.ws.onopen = () => {
       this.connected = true;
@@ -177,16 +185,16 @@ export class BinanceWS {
   }
 }
 
-// Singleton — only one WS connection per browser tab
-let singleton: BinanceWS | null = null;
-export function getBinanceWS(): BinanceWS {
+// Singletons — one per market
+const singletons: Partial<Record<BinanceMarket, BinanceWS>> = {};
+export function getBinanceWS(market: BinanceMarket = "spot"): BinanceWS {
   if (typeof window === "undefined") {
-    // SSR safety: dummy
-    return new BinanceWS();
+    return new BinanceWS(market);
   }
-  if (!singleton) {
-    singleton = new BinanceWS();
-    singleton.connect();
+  if (!singletons[market]) {
+    const w = new BinanceWS(market);
+    singletons[market] = w;
+    w.connect();
   }
-  return singleton;
+  return singletons[market]!;
 }

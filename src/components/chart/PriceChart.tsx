@@ -139,6 +139,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   syncChartsRef.current = syncCharts;
   const comparesAll = useChartStore((s) => s.compares);
   const compares = slotId ? comparesAll[slotId] ?? [] : [];
+  const binanceMarket = useChartStore((s) => s.binanceMarket);
 
   // Refs to avoid recreating subscribeClick on every tool change
   const toolRef = useRef(tool);
@@ -1273,7 +1274,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             <span className="uppercase text-tv-text-muted">{timeframe}</span>
             <span className="hidden text-tv-text-muted md:inline">·</span>
             <span className="hidden text-tv-text-muted md:inline">
-              {getInstrument(symbol).exchange}
+              {getInstrument(symbol).provider === "binance"
+                ? binanceMarket === "perp"
+                  ? "Binance Perp"
+                  : "Binance Spot"
+                : getInstrument(symbol).exchange}
             </span>
           </div>
           {hover && (

@@ -1,20 +1,35 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Download, Upload, Settings2 } from "lucide-react";
+import {
+  Download,
+  Upload,
+  Settings2,
+  FolderOpen,
+  Book,
+  Layers,
+} from "lucide-react";
 import { useChartStore } from "@/lib/store/chart-store";
+import { WorkspacesDialog } from "@/components/layout/WorkspacesDialog";
+import { JournalDialog } from "@/components/journal/JournalDialog";
+import { ObjectTreeDialog } from "@/components/layout/ObjectTreeDialog";
 import { cn } from "@/lib/utils";
 
 export function PresetsMenu() {
   const [open, setOpen] = useState(false);
+  const [wsOpen, setWsOpen] = useState(false);
+  const [journalOpen, setJournalOpen] = useState(false);
+  const [layersOpen, setLayersOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const syncCharts = useChartStore((s) => s.syncCharts);
   const setSyncCharts = useChartStore((s) => s.setSyncCharts);
+  const binanceMarket = useChartStore((s) => s.binanceMarket);
+  const setBinanceMarket = useChartStore((s) => s.setBinanceMarket);
 
   function exportPreset() {
     const state = useChartStore.getState();
     const payload = {
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       data: {
         symbol: state.symbol,
@@ -34,6 +49,10 @@ export function PresetsMenu() {
         drawings: state.drawings,
         priceLines: state.priceLines,
         syncCharts: state.syncCharts,
+        compares: state.compares,
+        workspaces: state.workspaces,
+        journal: state.journal,
+        binanceMarket: state.binanceMarket,
       },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -63,7 +82,7 @@ export function PresetsMenu() {
         }
         if (
           !window.confirm(
-            "Esto reemplaza tu configuración actual (símbolos, layouts, drawings, etc). ¿Continuar?",
+            "Esto reemplaza tu configuración actual. ¿Continuar?",
           )
         ) {
           return;
@@ -84,7 +103,7 @@ export function PresetsMenu() {
       <button
         onClick={() => setOpen((v) => !v)}
         aria-label="Configuración"
-        title="Importar / Exportar preset"
+        title="Workspaces / Journal / Capas / Configuración"
         className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
       >
         <Settings2 className="h-4 w-4" />
@@ -104,7 +123,69 @@ export function PresetsMenu() {
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10"
           />
-          <div className="absolute right-0 top-full z-20 mt-1 w-52 rounded border border-tv-border bg-tv-panel p-1 shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 w-60 rounded border border-tv-border bg-tv-panel p-1 shadow-lg">
+            <Item
+              icon={<FolderOpen className="h-3.5 w-3.5" />}
+              label="Workspaces / Plantillas"
+              onClick={() => {
+                setOpen(false);
+                setWsOpen(true);
+              }}
+            />
+            <Item
+              icon={<Layers className="h-3.5 w-3.5" />}
+              label="Capas (objetos del chart)"
+              onClick={() => {
+                setOpen(false);
+                setLayersOpen(true);
+              }}
+            />
+            <Item
+              icon={<Book className="h-3.5 w-3.5" />}
+              label="Trading Journal"
+              onClick={() => {
+                setOpen(false);
+                setJournalOpen(true);
+              }}
+            />
+            <div className="my-1 border-t border-tv-border" />
+            <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-tv-text-muted">
+              Binance market
+            </div>
+            <div className="flex gap-1 px-1 pb-1">
+              <button
+                onClick={() => {
+                  setBinanceMarket("spot");
+                  setOpen(false);
+                  // refresh charts to use new endpoint
+                  window.location.reload();
+                }}
+                className={cn(
+                  "flex-1 rounded py-1 text-[11px]",
+                  binanceMarket === "spot"
+                    ? "bg-tv-blue/15 text-tv-blue"
+                    : "text-tv-text-muted hover:bg-tv-panel-hover",
+                )}
+              >
+                Spot
+              </button>
+              <button
+                onClick={() => {
+                  setBinanceMarket("perp");
+                  setOpen(false);
+                  window.location.reload();
+                }}
+                className={cn(
+                  "flex-1 rounded py-1 text-[11px]",
+                  binanceMarket === "perp"
+                    ? "bg-tv-blue/15 text-tv-blue"
+                    : "text-tv-text-muted hover:bg-tv-panel-hover",
+                )}
+              >
+                Perpetual
+              </button>
+            </div>
+            <div className="my-1 border-t border-tv-border" />
             <Item
               icon={<Download className="h-3.5 w-3.5" />}
               label="Exportar preset (.json)"
@@ -133,6 +214,9 @@ export function PresetsMenu() {
           </div>
         </>
       )}
+      <WorkspacesDialog open={wsOpen} onOpenChange={setWsOpen} />
+      <JournalDialog open={journalOpen} onOpenChange={setJournalOpen} />
+      <ObjectTreeDialog open={layersOpen} onOpenChange={setLayersOpen} />
     </div>
   );
 }
