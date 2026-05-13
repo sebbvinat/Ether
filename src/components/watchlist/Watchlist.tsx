@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
-import { fetchTickers24h } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
+import { subscribeQuotes } from "@/lib/data";
+import { getInstrument } from "@/lib/instruments";
 import { useChartStore } from "@/lib/store/chart-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct } from "@/lib/format";
@@ -26,40 +26,20 @@ export function Watchlist() {
 
   useEffect(() => {
     if (watchlist.length === 0) return;
-    let cancelled = false;
-
-    fetchTickers24h(watchlist)
-      .then((tickers) => {
-        if (cancelled) return;
-        const map: Record<string, Row> = {};
-        tickers.forEach((t) => {
-          map[t.symbol] = {
-            symbol: t.symbol,
-            price: t.lastPrice,
-            pct: t.priceChangePercent,
-          };
-        });
-        setRows(map);
-      })
-      .catch(console.error);
-
-    const ws = getBinanceWS();
-    const unsub = ws.subscribeMiniTickers(watchlist, (tick) => {
+    const unsub = subscribeQuotes(watchlist, (tick) => {
       setRows((prev) => {
         const prevRow = prev[tick.symbol];
         if (prevRow) {
           if (tick.close > prevRow.price) {
             setFlash((f) => ({ ...f, [tick.symbol]: "up" }));
             setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
+              () => setFlash((f) => ({ ...f, [tick.symbol]: null })),
               300,
             );
           } else if (tick.close < prevRow.price) {
             setFlash((f) => ({ ...f, [tick.symbol]: "down" }));
             setTimeout(
-              () =>
-                setFlash((f) => ({ ...f, [tick.symbol]: null })),
+              () => setFlash((f) => ({ ...f, [tick.symbol]: null })),
               300,
             );
           }
@@ -75,10 +55,7 @@ export function Watchlist() {
       });
     });
 
-    return () => {
-      cancelled = true;
-      unsub();
-    };
+    return () => unsub();
   }, [watchlist]);
 
   return (
@@ -99,7 +76,7 @@ export function Watchlist() {
       <div className="grid grid-cols-[1fr_auto_auto] gap-2 border-b border-tv-border px-3 py-1.5 text-[10px] uppercase tracking-wider text-tv-text-dim">
         <span>Símbolo</span>
         <span className="text-right">Precio</span>
-        <span className="text-right">24h</span>
+        <span className="text-right">%</span>
       </div>
       <ScrollArea className="flex-1">
         <div className="flex flex-col">
@@ -107,6 +84,13 @@ export function Watchlist() {
             const row = rows[s];
             const isActive = s === symbol;
             const f = flash[s];
+            const inst = getInstrument(s);
+            const label =
+              inst.type === "index"
+                ? inst.displayName
+                : s.replace("USDT", "");
+            const tag =
+              inst.type === "index" ? "IDX" : "USDT";
             return (
               <div
                 key={s}
@@ -118,10 +102,8 @@ export function Watchlist() {
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-tv-text">
-                    {s.replace("USDT", "")}
-                  </span>
-                  <span className="text-[10px] text-tv-text-dim">USDT</span>
+                  <span className="font-medium text-tv-text">{label}</span>
+                  <span className="text-[10px] text-tv-text-dim">{tag}</span>
                 </div>
                 <span
                   className={cn(

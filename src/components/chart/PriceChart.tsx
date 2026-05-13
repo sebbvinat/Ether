@@ -12,8 +12,8 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { fetchKlines } from "@/lib/binance/rest";
-import { getBinanceWS } from "@/lib/binance/ws";
+import { subscribeMarket } from "@/lib/data";
+import { getInstrument } from "@/lib/instruments";
 import { ema, rsi, macd } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
@@ -626,13 +626,8 @@ export function PriceChart({ symbol, timeframe }: Props) {
 
   // Load historical data + subscribe live
   useEffect(() => {
-    let unsub: (() => void) | null = null;
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const klines = await fetchKlines(symbol, timeframe, 1000);
-        if (cancelled) return;
+    const unsub = subscribeMarket(symbol, timeframe, {
+      onInit: (klines) => {
         candlesRef.current = klines;
         if (candleSeriesRef.current) {
           candleSeriesRef.current.setData(
@@ -650,7 +645,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
             klines.map((k) => ({
               time: k.time as UTCTimestamp,
               value: k.volume,
-              color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
+              color:
+                k.close >= k.open
+                  ? `${TV_COLORS.green}66`
+                  : `${TV_COLORS.red}66`,
             })),
           );
         }
@@ -665,61 +663,58 @@ export function PriceChart({ symbol, timeframe }: Props) {
           const prev = klines[klines.length - 2] ?? last;
           setLastPrice({
             value: last.close,
-            pct: prev.close === 0 ? 0 : ((last.close - prev.close) / prev.close) * 100,
+            pct:
+              prev.close === 0
+                ? 0
+                : ((last.close - prev.close) / prev.close) * 100,
           });
         }
-
-        const ws = getBinanceWS();
-        unsub = ws.subscribeKline({
-          symbol,
-          interval: timeframe,
-          onCandle: (k) => {
-            if (!candleSeriesRef.current) return;
-            const arr = candlesRef.current;
-            const lastCandle = arr[arr.length - 1];
-            if (lastCandle && lastCandle.time === k.time) {
-              arr[arr.length - 1] = k;
-            } else if (!lastCandle || k.time > lastCandle.time) {
-              arr.push(k);
-              if (arr.length > 2000) arr.shift();
-            } else {
-              return;
-            }
-            candleSeriesRef.current.update({
-              time: k.time as UTCTimestamp,
-              open: k.open,
-              high: k.high,
-              low: k.low,
-              close: k.close,
-            });
-            if (volumeSeriesRef.current) {
-              volumeSeriesRef.current.update({
-                time: k.time as UTCTimestamp,
-                value: k.volume,
-                color: k.close >= k.open ? `${TV_COLORS.green}66` : `${TV_COLORS.red}66`,
-              });
-            }
-            updateEMAs();
-            updateRSI();
-            updateMACD();
-            const prev = arr[arr.length - 2] ?? lastCandle;
-            setLastPrice({
-              value: k.close,
-              pct: prev && prev.close !== 0 ? ((k.close - prev.close) / prev.close) * 100 : 0,
-            });
-          },
+      },
+      onCandle: (k) => {
+        if (!candleSeriesRef.current) return;
+        const arr = candlesRef.current;
+        const lastCandle = arr[arr.length - 1];
+        if (lastCandle && lastCandle.time === k.time) {
+          arr[arr.length - 1] = k;
+        } else if (!lastCandle || k.time > lastCandle.time) {
+          arr.push(k);
+          if (arr.length > 2000) arr.shift();
+        } else {
+          return;
+        }
+        candleSeriesRef.current.update({
+          time: k.time as UTCTimestamp,
+          open: k.open,
+          high: k.high,
+          low: k.low,
+          close: k.close,
         });
-      } catch (e) {
-        console.error("Failed to load chart data:", e);
-      }
-    }
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.update({
+            time: k.time as UTCTimestamp,
+            value: k.volume,
+            color:
+              k.close >= k.open
+                ? `${TV_COLORS.green}66`
+                : `${TV_COLORS.red}66`,
+          });
+        }
+        updateEMAs();
+        updateRSI();
+        updateMACD();
+        const prev = arr[arr.length - 2] ?? lastCandle;
+        setLastPrice({
+          value: k.close,
+          pct:
+            prev && prev.close !== 0
+              ? ((k.close - prev.close) / prev.close) * 100
+              : 0,
+        });
+      },
+      onError: (e) => console.error("Failed to load chart data:", e),
+    });
 
-    load();
-
-    return () => {
-      cancelled = true;
-      if (unsub) unsub();
-    };
+    return () => unsub();
   }, [symbol, timeframe]);
 
   const greenOrRed = (n: number) =>
@@ -793,11 +788,11 @@ export function PriceChart({ symbol, timeframe }: Props) {
         {/* Row 1: symbol info + OHLC stats inline on hover (fixed height, never wraps) */}
         <div className="flex h-5 flex-nowrap items-center gap-x-3 overflow-hidden whitespace-nowrap">
           <div className="flex shrink-0 items-center gap-2 text-[13px] font-semibold">
-            <span className="text-tv-text">{symbol}</span>
+            <span className="text-tv-text">{getInstrument(symbol).displayName}</span>
             <span className="text-tv-text-muted">·</span>
             <span className="uppercase text-tv-text-muted">{timeframe}</span>
             <span className="text-tv-text-muted">·</span>
-            <span className="text-tv-text-muted">Binance</span>
+            <span className="text-tv-text-muted">{getInstrument(symbol).exchange}</span>
           </div>
           {hover && (
             <div className="flex items-center gap-x-3 text-[11px]">

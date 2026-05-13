@@ -50,6 +50,9 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
 };
 
 export const DEFAULT_WATCHLIST = [
+  "^GSPC",
+  "^IXIC",
+  "^DJI",
   "BTCUSDT",
   "ETHUSDT",
   "SOLUSDT",
@@ -59,7 +62,6 @@ export const DEFAULT_WATCHLIST = [
   "ADAUSDT",
   "AVAXUSDT",
   "LINKUSDT",
-  "MATICUSDT",
 ];
 
 interface ChartState {
