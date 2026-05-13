@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Drawing } from "@/lib/store/chart-store";
+import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
 const TV_GREEN = "#26a69a";
 const TV_RED = "#ef5350";
@@ -24,9 +24,13 @@ interface Coord {
   y: number;
 }
 
+type HandleKey = "a" | "b" | "at";
+
 interface Props {
   drawings: Drawing[];
   toCoord: (time: number, price: number) => Coord | null;
+  fromCoord: (x: number, y: number) => DrawingPoint | null;
+  onUpdate: (id: string, patch: Partial<{ a: DrawingPoint; b: DrawingPoint; at: DrawingPoint }>) => void;
   onRemove: (id: string) => void;
   containerWidth: number;
 }
@@ -34,15 +38,69 @@ interface Props {
 export function DrawingsLayer({
   drawings,
   toCoord,
+  fromCoord,
+  onUpdate,
   onRemove,
   containerWidth,
 }: Props) {
   const [hover, setHover] = useState<string | null>(null);
+  const [drag, setDrag] = useState<{ id: string; handle: HandleKey } | null>(
+    null,
+  );
+
+  function svgRect(target: SVGElement): DOMRect {
+    const root = target.ownerSVGElement ?? (target as SVGSVGElement);
+    return root.getBoundingClientRect();
+  }
+
+  function onHandleDown(
+    e: React.PointerEvent<SVGCircleElement>,
+    id: string,
+    handle: HandleKey,
+  ) {
+    e.stopPropagation();
+    e.preventDefault();
+    const svg = e.currentTarget.ownerSVGElement;
+    if (svg) {
+      try {
+        svg.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+    setDrag({ id, handle });
+  }
+
+  function onSvgPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+    if (!drag) return;
+    const rect = svgRect(e.currentTarget);
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const pt = fromCoord(x, y);
+    if (!pt) return;
+    onUpdate(drag.id, { [drag.handle]: pt });
+  }
+
+  function onSvgPointerUp(e: React.PointerEvent<SVGSVGElement>) {
+    if (!drag) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
+    setDrag(null);
+  }
 
   return (
     <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      style={{ overflow: "visible" }}
+      className="absolute inset-0 h-full w-full"
+      style={{
+        overflow: "visible",
+        pointerEvents: drag ? "auto" : "none",
+      }}
+      onPointerMove={onSvgPointerMove}
+      onPointerUp={onSvgPointerUp}
+      onPointerCancel={onSvgPointerUp}
     >
       {drawings.map((d) => {
         if (d.type === "trendline") {
@@ -65,12 +123,20 @@ export function DrawingsLayer({
                 stroke={isUp ? TV_GREEN : TV_RED}
                 strokeWidth={1.5}
               />
-              <circle cx={a.x} cy={a.y} r={3} fill={TV_BLUE} />
-              <circle cx={b.x} cy={b.y} r={3} fill={TV_BLUE} />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
               {hover === d.id && (
                 <RemoveHandle
                   x={(a.x + b.x) / 2}
-                  y={(a.y + b.y) / 2}
+                  y={(a.y + b.y) / 2 - 14}
                   onRemove={() => onRemove(d.id)}
                 />
               )}
@@ -122,8 +188,16 @@ export function DrawingsLayer({
                   </g>
                 );
               })}
-              <circle cx={a.x} cy={a.y} r={3} fill={TV_BLUE} />
-              <circle cx={b.x} cy={b.y} r={3} fill={TV_BLUE} />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
               {hover === d.id && (
                 <RemoveHandle
                   x={a.x}
@@ -162,10 +236,20 @@ export function DrawingsLayer({
                 stroke={color}
                 strokeWidth={1}
               />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
               {hover === d.id && (
                 <RemoveHandle
                   x={x + w}
-                  y={y}
+                  y={y - 4}
                   onRemove={() => onRemove(d.id)}
                 />
               )}
@@ -189,9 +273,16 @@ export function DrawingsLayer({
                 fill={TV_YELLOW}
                 fontSize={12}
                 fontFamily="var(--font-sans), Inter, sans-serif"
+                style={{ userSelect: "none" }}
               >
                 {d.text}
               </text>
+              <DragHandle
+                cx={p.x - 4}
+                cy={p.y - 4}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                small
+              />
               {hover === d.id && (
                 <RemoveHandle
                   x={p.x + Math.max(20, d.text.length * 7)}
@@ -209,6 +300,31 @@ export function DrawingsLayer({
   );
 }
 
+function DragHandle({
+  cx,
+  cy,
+  onDown,
+  small,
+}: {
+  cx: number;
+  cy: number;
+  onDown: (e: React.PointerEvent<SVGCircleElement>) => void;
+  small?: boolean;
+}) {
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={small ? 3 : 4.5}
+      fill={TV_BLUE}
+      stroke="#fff"
+      strokeWidth={1}
+      style={{ cursor: "grab", pointerEvents: "auto" }}
+      onPointerDown={onDown}
+    />
+  );
+}
+
 function RemoveHandle({
   x,
   y,
@@ -219,7 +335,7 @@ function RemoveHandle({
   onRemove: () => void;
 }) {
   return (
-    <g style={{ cursor: "pointer" }} onClick={onRemove}>
+    <g style={{ cursor: "pointer", pointerEvents: "auto" }} onClick={onRemove}>
       <circle cx={x} cy={y} r={8} fill="#1e222d" stroke={TV_TEXT} strokeWidth={1} />
       <line
         x1={x - 4}

@@ -121,6 +121,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const drawings = useChartStore((s) => s.drawings);
   const addDrawing = useChartStore((s) => s.addDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
+  const updateDrawing = useChartStore((s) => s.updateDrawing);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -1018,6 +1019,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return { x, y };
   };
 
+  const fromCoord = (x: number, y: number) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return null;
+    const time = chart.timeScale().coordinateToTime(x);
+    const price = series.coordinateToPrice(y);
+    if (time === null || price === null || !isFinite(price)) return null;
+    return { time: Number(time), price };
+  };
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
@@ -1027,6 +1038,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           draftAsDrawing ? [...symbolDrawings, draftAsDrawing] : symbolDrawings
         }
         toCoord={toCoord}
+        fromCoord={fromCoord}
+        onUpdate={updateDrawing}
         onRemove={removeDrawing}
         containerWidth={containerSize.width}
       />

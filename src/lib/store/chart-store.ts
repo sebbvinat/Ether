@@ -3,6 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Timeframe } from "@/lib/binance/types";
+import { setYahooSymbolsCache, type Instrument } from "@/lib/instruments";
 
 export type IndicatorKey =
   | "ema20"
@@ -166,6 +167,9 @@ interface ChartState {
   config: IndicatorConfig;
   watchlist: string[];
 
+  /** Yahoo symbols selected at runtime (stocks, FX, commodities) — keyed by symbol */
+  yahooSymbols: Record<string, Instrument>;
+
   // Persisted: drawings (trendline, fib, rect, text) — per symbol
   drawings: Drawing[];
 
@@ -204,11 +208,16 @@ interface ChartState {
   setConfig: (patch: Partial<IndicatorConfig>) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
+  addYahooSymbol: (inst: Instrument) => void;
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
   clearPriceLines: (symbol?: string) => void;
   addDrawing: (d: DrawingInput) => void;
   removeDrawing: (id: string) => void;
+  updateDrawing: (
+    id: string,
+    patch: Partial<{ a: DrawingPoint; b: DrawingPoint; at: DrawingPoint; text: string }>,
+  ) => void;
   clearDrawings: (symbol?: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
@@ -250,6 +259,7 @@ export const useChartStore = create<ChartState>()(
       },
       config: { ...DEFAULT_CONFIG },
       watchlist: DEFAULT_WATCHLIST,
+      yahooSymbols: {},
       drawings: [],
       tool: "cursor",
       priceLines: [],
@@ -356,6 +366,12 @@ export const useChartStore = create<ChartState>()(
         set((state) => ({
           watchlist: state.watchlist.filter((x) => x !== s),
         })),
+      addYahooSymbol: (inst) =>
+        set((state) => {
+          const next = { ...state.yahooSymbols, [inst.symbol]: inst };
+          setYahooSymbolsCache(next);
+          return { yahooSymbols: next };
+        }),
       setTool: (tool) => set({ tool }),
       addPriceLine: (price, symbol) =>
         set((state) => ({
@@ -384,6 +400,12 @@ export const useChartStore = create<ChartState>()(
       removeDrawing: (id) =>
         set((state) => ({
           drawings: state.drawings.filter((d) => d.id !== id),
+        })),
+      updateDrawing: (id, patch) =>
+        set((state) => ({
+          drawings: state.drawings.map((d) =>
+            d.id === id ? ({ ...d, ...patch } as Drawing) : d,
+          ),
         })),
       clearDrawings: (symbol) =>
         set((state) => ({
@@ -445,9 +467,13 @@ export const useChartStore = create<ChartState>()(
         hidden: s.hidden,
         config: s.config,
         watchlist: s.watchlist,
+        yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
         priceLines: s.priceLines,
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
+      },
     },
   ),
 );
