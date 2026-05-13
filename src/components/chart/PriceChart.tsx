@@ -14,7 +14,7 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { subscribeMarket } from "@/lib/data";
+import { fetchCandles, subscribeMarket } from "@/lib/data";
 import { getInstrument } from "@/lib/instruments";
 import { ema, rsi, macd } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
@@ -105,6 +105,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
+  const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const rsiRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rsi30Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const rsi70Ref = useRef<ISeriesApi<"Line"> | null>(null);
@@ -132,6 +133,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const replayActiveForThis = replay.active && replay.slotId === slotId;
   const chartStyle = useChartStore((s) => s.chartStyle);
   const logScale = useChartStore((s) => s.logScale);
+  const syncCharts = useChartStore((s) => s.syncCharts);
+  const syncChartsRef = useRef(syncCharts);
+  syncChartsRef.current = syncCharts;
+  const comparesAll = useChartStore((s) => s.compares);
+  const compares = slotId ? comparesAll[slotId] ?? [] : [];
 
   // Refs to avoid recreating subscribeClick on every tool change
   const toolRef = useRef(tool);
@@ -725,6 +731,50 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => window.removeEventListener("ether:start-replay", handler);
   }, [slotId, startReplay]);
 
+  // Sync zoom across slots
+  useEffect(() => {
+    if (!chartRef.current) return;
+    let suppress = false;
+    const onRange = (range: { from: unknown; to: unknown } | null) => {
+      if (!range || !syncChartsRef.current || suppress) return;
+      window.dispatchEvent(
+        new CustomEvent("ether:tf-range", {
+          detail: { from: range.from, to: range.to, sourceSlot: slotId },
+        }),
+      );
+    };
+    chartRef.current.timeScale().subscribeVisibleTimeRangeChange(onRange);
+
+    const onIncoming = (e: Event) => {
+      const ce = e as CustomEvent<{
+        from: unknown;
+        to: unknown;
+        sourceSlot?: string;
+      }>;
+      if (!syncChartsRef.current) return;
+      if (ce.detail.sourceSlot === slotId) return;
+      const chart = chartRef.current;
+      if (!chart) return;
+      suppress = true;
+      try {
+        chart
+          .timeScale()
+          .setVisibleRange({
+            from: ce.detail.from as never,
+            to: ce.detail.to as never,
+          });
+      } catch {}
+      setTimeout(() => {
+        suppress = false;
+      }, 50);
+    };
+    window.addEventListener("ether:tf-range", onIncoming);
+    return () => {
+      chartRef.current?.timeScale().unsubscribeVisibleTimeRangeChange(onRange);
+      window.removeEventListener("ether:tf-range", onIncoming);
+    };
+  }, [slotId]);
+
   function updateEMAs() {
     const c = getViewCandles();
     if (c.length === 0) return;
@@ -921,6 +971,63 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
     return () => unsub();
   }, [symbol, timeframe]);
+
+  // Compare overlays — sync map of series with `compares`
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = chartRef.current;
+    const map = compareSeriesRef.current;
+    const desired = new Set(compares);
+
+    const COMPARE_COLORS = [
+      "#ffb74d",
+      "#ab47bc",
+      "#26a69a",
+      "#ef5350",
+      "#42a5f5",
+    ];
+
+    // Remove stale
+    for (const [sym, ser] of Array.from(map.entries())) {
+      if (!desired.has(sym)) {
+        try {
+          chart.removeSeries(ser);
+        } catch {}
+        map.delete(sym);
+      }
+    }
+
+    // Add new — fetch and create series
+    let cancelled = false;
+    compares.forEach((sym, idx) => {
+      if (map.has(sym)) return;
+      const color = COMPARE_COLORS[idx % COMPARE_COLORS.length];
+      const ser = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        priceScaleId: `cmp-${sym}`,
+        priceLineVisible: false,
+        lastValueVisible: true,
+        title: sym,
+      });
+      map.set(sym, ser);
+      fetchCandles(sym, timeframe)
+        .then((klines) => {
+          if (cancelled || !map.has(sym)) return;
+          ser.setData(
+            klines.map((k) => ({
+              time: k.time as UTCTimestamp,
+              value: k.close,
+            })),
+          );
+        })
+        .catch((e) => console.error("compare fetch", sym, e));
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compares.join(","), timeframe]);
 
   // Log scale toggle
   useEffect(() => {

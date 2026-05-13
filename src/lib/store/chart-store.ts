@@ -195,6 +195,10 @@ interface ChartState {
   chartStyle: ChartStyle;
   /** Use logarithmic price scale */
   logScale: boolean;
+  /** When true, panning/zoom in one slot syncs the visible time range to others */
+  syncCharts: boolean;
+  /** Per-slot compare overlays — extra symbols to plot as line on the same chart */
+  compares: Record<string, string[]>;
   /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
   watchlists: WatchlistDef[];
   activeWatchlistId: string;
@@ -241,6 +245,9 @@ interface ChartState {
   setConfig: (patch: Partial<IndicatorConfig>) => void;
   setChartStyle: (s: ChartStyle) => void;
   setLogScale: (v: boolean) => void;
+  setSyncCharts: (v: boolean) => void;
+  addCompare: (slotId: string, symbol: string) => void;
+  removeCompare: (slotId: string, symbol: string) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
   createWatchlist: (id: string, name: string) => void;
@@ -299,6 +306,8 @@ export const useChartStore = create<ChartState>()(
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,
       logScale: false,
+      syncCharts: false,
+      compares: {},
       watchlists: [
         { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
       ],
@@ -403,6 +412,25 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({ config: { ...s.config, ...patch } })),
       setChartStyle: (chartStyle) => set({ chartStyle }),
       setLogScale: (logScale) => set({ logScale }),
+      setSyncCharts: (syncCharts) => set({ syncCharts }),
+      addCompare: (slotId, symbol) =>
+        set((state) => {
+          const existing = state.compares[slotId] ?? [];
+          if (existing.includes(symbol)) return {};
+          return {
+            compares: { ...state.compares, [slotId]: [...existing, symbol] },
+          };
+        }),
+      removeCompare: (slotId, symbol) =>
+        set((state) => {
+          const existing = state.compares[slotId] ?? [];
+          return {
+            compares: {
+              ...state.compares,
+              [slotId]: existing.filter((s) => s !== symbol),
+            },
+          };
+        }),
       addToWatchlist: (s) =>
         set((state) => {
           const next = state.watchlists.map((w) =>
@@ -569,6 +597,8 @@ export const useChartStore = create<ChartState>()(
         activeWatchlistId: s.activeWatchlistId,
         chartStyle: s.chartStyle,
         logScale: s.logScale,
+        syncCharts: s.syncCharts,
+        compares: s.compares,
         yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
         priceLines: s.priceLines,

@@ -19,6 +19,7 @@ import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
 import { ScannerDialog } from "@/components/scanner/ScannerDialog";
+import { PresetsMenu } from "@/components/layout/PresetsMenu";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
@@ -95,6 +96,10 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-1">
+        <div className="hidden md:block">
+          <PresetsMenu />
+        </div>
+
         <button
           onClick={() => setScannerOpen(true)}
           aria-label="Scanner"
