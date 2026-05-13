@@ -26,6 +26,12 @@ export type DrawingTool =
 
 export type ChartStyle = "candles" | "line" | "area";
 
+export interface WatchlistDef {
+  id: string;
+  name: string;
+  symbols: string[];
+}
+
 export interface PriceLine {
   id: string;
   symbol: string;
@@ -189,6 +195,9 @@ interface ChartState {
   chartStyle: ChartStyle;
   /** Use logarithmic price scale */
   logScale: boolean;
+  /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
+  watchlists: WatchlistDef[];
+  activeWatchlistId: string;
   watchlist: string[];
 
   /** Yahoo symbols selected at runtime (stocks, FX, commodities) — keyed by symbol */
@@ -234,6 +243,10 @@ interface ChartState {
   setLogScale: (v: boolean) => void;
   addToWatchlist: (s: string) => void;
   removeFromWatchlist: (s: string) => void;
+  createWatchlist: (id: string, name: string) => void;
+  deleteWatchlist: (id: string) => void;
+  setActiveWatchlist: (id: string) => void;
+  renameWatchlist: (id: string, name: string) => void;
   addYahooSymbol: (inst: Instrument) => void;
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
@@ -286,6 +299,10 @@ export const useChartStore = create<ChartState>()(
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,
       logScale: false,
+      watchlists: [
+        { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
+      ],
+      activeWatchlistId: "main",
       watchlist: DEFAULT_WATCHLIST,
       yahooSymbols: {},
       drawings: [],
@@ -387,14 +404,65 @@ export const useChartStore = create<ChartState>()(
       setChartStyle: (chartStyle) => set({ chartStyle }),
       setLogScale: (logScale) => set({ logScale }),
       addToWatchlist: (s) =>
-        set((state) => ({
-          watchlist: state.watchlist.includes(s)
-            ? state.watchlist
-            : [...state.watchlist, s],
-        })),
+        set((state) => {
+          const next = state.watchlists.map((w) =>
+            w.id === state.activeWatchlistId && !w.symbols.includes(s)
+              ? { ...w, symbols: [...w.symbols, s] }
+              : w,
+          );
+          const active = next.find((w) => w.id === state.activeWatchlistId);
+          return {
+            watchlists: next,
+            watchlist: active?.symbols ?? state.watchlist,
+          };
+        }),
       removeFromWatchlist: (s) =>
+        set((state) => {
+          const next = state.watchlists.map((w) =>
+            w.id === state.activeWatchlistId
+              ? { ...w, symbols: w.symbols.filter((x) => x !== s) }
+              : w,
+          );
+          const active = next.find((w) => w.id === state.activeWatchlistId);
+          return {
+            watchlists: next,
+            watchlist: active?.symbols ?? state.watchlist,
+          };
+        }),
+      createWatchlist: (id, name) =>
+        set((state) => {
+          if (state.watchlists.some((w) => w.id === id)) return {};
+          return {
+            watchlists: [...state.watchlists, { id, name, symbols: [] }],
+            activeWatchlistId: id,
+            watchlist: [],
+          };
+        }),
+      deleteWatchlist: (id) =>
+        set((state) => {
+          if (state.watchlists.length <= 1) return {};
+          const next = state.watchlists.filter((w) => w.id !== id);
+          const active =
+            state.activeWatchlistId === id
+              ? next[0]
+              : next.find((w) => w.id === state.activeWatchlistId) ?? next[0];
+          return {
+            watchlists: next,
+            activeWatchlistId: active.id,
+            watchlist: active.symbols,
+          };
+        }),
+      setActiveWatchlist: (id) =>
+        set((state) => {
+          const w = state.watchlists.find((w) => w.id === id);
+          if (!w) return {};
+          return { activeWatchlistId: id, watchlist: w.symbols };
+        }),
+      renameWatchlist: (id, name) =>
         set((state) => ({
-          watchlist: state.watchlist.filter((x) => x !== s),
+          watchlists: state.watchlists.map((w) =>
+            w.id === id ? { ...w, name } : w,
+          ),
         })),
       addYahooSymbol: (inst) =>
         set((state) => {
@@ -497,6 +565,8 @@ export const useChartStore = create<ChartState>()(
         hidden: s.hidden,
         config: s.config,
         watchlist: s.watchlist,
+        watchlists: s.watchlists,
+        activeWatchlistId: s.activeWatchlistId,
         chartStyle: s.chartStyle,
         logScale: s.logScale,
         yahooSymbols: s.yahooSymbols,

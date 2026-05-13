@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Camera, Menu, List, Play, TrendingUp, Zap } from "lucide-react";
+import {
+  Bell,
+  Camera,
+  Menu,
+  List,
+  Play,
+  Radar,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -9,12 +18,14 @@ import { ChartStyleSelector } from "@/components/chart/ChartStyleSelector";
 import { LayoutPicker } from "@/components/layout/LayoutPicker";
 import { Separator } from "@/components/ui/separator";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
+import { ScannerDialog } from "@/components/scanner/ScannerDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
 export function Header() {
   const [tradeToast, setTradeToast] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
   const setMobileRightOpen = useChartStore((s) => s.setMobileRightOpen);
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
@@ -85,6 +96,15 @@ export function Header() {
 
       <div className="flex items-center gap-1">
         <button
+          onClick={() => setScannerOpen(true)}
+          aria-label="Scanner"
+          title="Scanner / Heatmap"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <Radar className="h-4 w-4" />
+        </button>
+
+        <button
           onClick={onReplay}
           aria-label="Reproducción"
           title="Modo replay (barra a barra)"
@@ -141,6 +161,7 @@ export function Header() {
         </div>
       )}
       <AlertsDialog open={alertsOpen} onOpenChange={setAlertsOpen} />
+      <ScannerDialog open={scannerOpen} onOpenChange={setScannerOpen} />
     </header>
   );
 }
