@@ -3,6 +3,7 @@ import {
   deleteAlert,
   hasUpstash,
   listAlerts,
+  listTriggered,
   saveAlert,
 } from "@/lib/alerts/store";
 import { hasTelegram } from "@/lib/alerts/telegram";
@@ -12,15 +13,19 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const alerts = await listAlerts();
+    const [alerts, triggered] = await Promise.all([
+      listAlerts(),
+      listTriggered(),
+    ]);
     return NextResponse.json({
       alerts,
+      triggered,
       upstashConfigured: hasUpstash(),
       telegramConfigured: hasTelegram(),
     });
   } catch (e) {
     return NextResponse.json(
-      { error: (e as Error).message, alerts: [] },
+      { error: (e as Error).message, alerts: [], triggered: [] },
       { status: 500 },
     );
   }
@@ -32,8 +37,8 @@ export async function POST(req: NextRequest) {
     if (
       !body.symbol ||
       !body.resolvedSymbol ||
-      !body.direction ||
-      typeof body.price !== "number"
+      !body.condition ||
+      !body.condition.type
     ) {
       return NextResponse.json({ error: "invalid input" }, { status: 400 });
     }
@@ -42,8 +47,8 @@ export async function POST(req: NextRequest) {
       symbol: body.symbol,
       resolvedSymbol: body.resolvedSymbol,
       provider: body.provider,
-      direction: body.direction,
-      price: body.price,
+      timeframe: body.timeframe,
+      condition: body.condition,
       note: body.note,
       createdAt: Date.now(),
     };

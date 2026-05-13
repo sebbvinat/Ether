@@ -94,6 +94,26 @@ export async function listAlerts(): Promise<Alert[]> {
     .filter((a): a is Alert => a !== null);
 }
 
+export async function listTriggered(): Promise<Alert[]> {
+  const flat = await redis(["HGETALL", TRIGGERED_KEY]);
+  const map = flatToMap(flat);
+  return Object.values(map)
+    .map((s) => {
+      try {
+        return JSON.parse(s) as Alert;
+      } catch {
+        return null;
+      }
+    })
+    .filter((a): a is Alert => a !== null)
+    .sort((a, b) => (b.triggeredAt ?? 0) - (a.triggeredAt ?? 0))
+    .slice(0, 50);
+}
+
+export async function deleteTriggered(id: string): Promise<void> {
+  await redis(["HDEL", TRIGGERED_KEY, id]);
+}
+
 export async function saveAlert(alert: Alert): Promise<void> {
   await redis(["HSET", ALERTS_KEY, alert.id, JSON.stringify(alert)]);
 }
