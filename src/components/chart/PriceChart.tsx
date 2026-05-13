@@ -528,8 +528,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       rsi30Ref.current = r30;
       rsi70Ref.current = r70;
       try {
+        const isMobile =
+          typeof window !== "undefined" && window.innerWidth < 768;
         chartRef.current.panes()[1]?.setStretchFactor(1);
-        chartRef.current.panes()[0]?.setStretchFactor(3);
+        chartRef.current.panes()[0]?.setStretchFactor(isMobile ? 5 : 3);
       } catch {}
       updateRSI();
     } else if (!indicators.rsi && rsiRef.current && chartRef.current) {
@@ -578,8 +580,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       macdSignalRef.current = s;
       macdHistRef.current = h;
       try {
+        const isMobile =
+          typeof window !== "undefined" && window.innerWidth < 768;
         chartRef.current.panes()[paneIndex]?.setStretchFactor(1);
-        chartRef.current.panes()[0]?.setStretchFactor(3);
+        chartRef.current.panes()[0]?.setStretchFactor(isMobile ? 5 : 3);
       } catch {}
       updateMACD();
     } else if (!indicators.macd && macdRef.current && chartRef.current) {
@@ -1234,20 +1238,22 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div
-        style={{ top: (paneOffsets[0]?.top ?? 0) + 12, left: 12 }}
-        className="pointer-events-none absolute z-10 flex flex-col gap-1 text-xs tabular-nums"
+        style={{ top: (paneOffsets[0]?.top ?? 0) + 6, left: 8 }}
+        className="pointer-events-none absolute z-10 flex flex-col gap-0.5 text-xs tabular-nums md:gap-1"
       >
         {/* Row 1: symbol info + OHLC stats inline on hover (fixed height, never wraps) */}
-        <div className="flex h-5 flex-nowrap items-center gap-x-3 overflow-hidden whitespace-nowrap">
-          <div className="flex shrink-0 items-center gap-2 text-[13px] font-semibold">
+        <div className="flex h-4 flex-nowrap items-center gap-x-1.5 overflow-hidden whitespace-nowrap md:h-5 md:gap-x-3">
+          <div className="flex shrink-0 items-center gap-1 text-[11px] font-semibold md:gap-2 md:text-[13px]">
             <span className="text-tv-text">{getInstrument(symbol).displayName}</span>
             <span className="text-tv-text-muted">·</span>
             <span className="uppercase text-tv-text-muted">{timeframe}</span>
-            <span className="text-tv-text-muted">·</span>
-            <span className="text-tv-text-muted">{getInstrument(symbol).exchange}</span>
+            <span className="hidden text-tv-text-muted md:inline">·</span>
+            <span className="hidden text-tv-text-muted md:inline">
+              {getInstrument(symbol).exchange}
+            </span>
           </div>
           {hover && (
-            <div className="flex items-center gap-x-3 text-[11px]">
+            <div className="hidden items-center gap-x-3 text-[11px] md:flex">
               <span className="text-tv-text-muted">
                 O <span className={greenOrRed(hover.c - hover.o)}>{formatPrice(hover.o)}</span>
               </span>
@@ -1272,13 +1278,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         </div>
 
         {/* Row 2: big live price (always present — reserves space even while loading) */}
-        <div className="flex h-7 items-center gap-2">
+        <div className="flex h-5 items-center gap-1.5 md:h-7 md:gap-2">
           {lastPrice ? (
             <>
-              <span className={`text-lg font-semibold tabular-nums ${greenOrRed(lastPrice.pct)}`}>
+              <span className={`text-sm font-semibold tabular-nums md:text-lg ${greenOrRed(lastPrice.pct)}`}>
                 {formatPrice(lastPrice.value)}
               </span>
-              <span className={`text-xs ${greenOrRed(lastPrice.pct)}`}>
+              <span className={`text-[10px] md:text-xs ${greenOrRed(lastPrice.pct)}`}>
                 {lastPrice.pct >= 0 ? "+" : ""}
                 {lastPrice.pct.toFixed(2)}%
               </span>
@@ -1289,7 +1295,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         </div>
 
         {/* Indicator pills for the main pane (fixed position below price) */}
-        <div className="mt-1 flex flex-col items-start gap-1">
+        <div className="mt-0.5 flex flex-col items-start gap-0.5 md:mt-1 md:gap-1">
           {indicators.ema20 && (
             <IndicatorPill
               name={`EMA ${config.ema20}`}
@@ -1324,6 +1330,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             />
           )}
           {indicators.volume && (
+            <div className="hidden md:block">
             <IndicatorPill
               name="Vol"
               value={lastValues.volume !== undefined ? formatVolume(lastValues.volume) : undefined}
@@ -1333,6 +1340,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onSettings={() => setSettingsTarget("volume")}
               onRemove={() => removeIndicator("volume")}
             />
+            </div>
           )}
         </div>
       </div>

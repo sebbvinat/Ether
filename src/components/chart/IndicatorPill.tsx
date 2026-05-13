@@ -25,7 +25,7 @@ export function IndicatorPill({
   return (
     <div
       className={cn(
-        "group/pill pointer-events-auto flex items-center gap-1.5 rounded bg-tv-panel/95 px-1.5 py-0.5 text-[11px] shadow-sm ring-1 ring-tv-border backdrop-blur",
+        "group/pill pointer-events-auto flex items-center gap-1 rounded bg-tv-panel/95 px-1.5 py-0.5 text-[10px] shadow-sm ring-1 ring-tv-border backdrop-blur md:gap-1.5 md:text-[11px]",
         hidden && "opacity-50",
       )}
     >
@@ -37,7 +37,7 @@ export function IndicatorPill({
       {value !== undefined && (
         <span className="tabular-nums text-tv-text-muted">{value}</span>
       )}
-      <div className="ml-1 flex items-center gap-0.5">
+      <div className="ml-1 hidden items-center gap-0.5 md:flex md:opacity-0 md:transition-opacity md:group-hover/pill:opacity-100">
         <button
           onClick={onToggleHide}
           title={hidden ? "Mostrar" : "Ocultar"}
