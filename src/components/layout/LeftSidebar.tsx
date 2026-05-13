@@ -1,7 +1,15 @@
 "use client";
 
-import { MousePointer2, Minus, Ruler, Trash2, Lock } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  MousePointer2,
+  Minus,
+  TrendingUp,
+  GitBranch,
+  Square,
+  Type,
+  Ruler,
+  Trash2,
+} from "lucide-react";
 import { useChartStore, type DrawingTool } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
@@ -13,97 +21,66 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { key: "cursor", icon: MousePointer2, label: "Cursor", hint: "Modo navegación" },
-  {
-    key: "hline",
-    icon: Minus,
-    label: "Línea horizontal",
-    hint: "Click en el chart para marcar un precio",
-  },
-  {
-    key: "measure",
-    icon: Ruler,
-    label: "Regla / Medir",
-    hint: "Click en dos puntos para medir Δ precio, %, barras y volumen",
-  },
-];
-
-const LOCKED = [
-  { label: "Línea de tendencia" },
-  { label: "Fibonacci" },
-  { label: "Texto" },
+  { key: "cursor", icon: MousePointer2, label: "Cursor" },
+  { key: "hline", icon: Minus, label: "Línea horizontal" },
+  { key: "trendline", icon: TrendingUp, label: "Línea de tendencia" },
+  { key: "fib", icon: GitBranch, label: "Fibonacci" },
+  { key: "rect", icon: Square, label: "Rectángulo" },
+  { key: "text", icon: Type, label: "Texto" },
+  { key: "measure", icon: Ruler, label: "Regla / Medir" },
 ];
 
 export function LeftSidebar() {
   const tool = useChartStore((s) => s.tool);
   const setTool = useChartStore((s) => s.setTool);
-  const clearPriceLines = useChartStore((s) => s.clearPriceLines);
+  const clearDrawings = useChartStore((s) => s.clearDrawings);
   const symbol = useChartStore((s) => s.symbol);
+  const mobileOpen = useChartStore((s) => s.mobileLeftOpen);
+  const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
 
   return (
-    <aside className="flex w-11 flex-col items-center gap-0.5 border-r border-tv-border bg-tv-panel py-1.5">
+    <aside
+      className={cn(
+        "z-30 flex w-11 flex-col items-center gap-0.5 border-r border-tv-border bg-tv-panel py-1.5",
+        "md:relative md:translate-x-0",
+        "fixed inset-y-0 left-0 transition-transform",
+        mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+      )}
+    >
       {TOOLS.map((t) => {
         const Icon = t.icon;
         const active = tool === t.key;
         return (
-          <Tooltip key={t.key}>
-            <TooltipTrigger
-              onClick={() => setTool(t.key)}
-              aria-label={t.label}
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover",
-                active
-                  ? "bg-tv-blue/15 text-tv-blue"
-                  : "text-tv-text-muted hover:text-tv-text",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-            </TooltipTrigger>
-            <TooltipContent side="right" className="text-xs">
-              <div className="font-medium">{t.label}</div>
-              {t.hint && (
-                <div className="mt-0.5 text-[10px] text-tv-text-muted">{t.hint}</div>
-              )}
-            </TooltipContent>
-          </Tooltip>
+          <button
+            key={t.key}
+            onClick={() => {
+              setTool(t.key);
+              setMobileLeftOpen(false);
+            }}
+            aria-label={t.label}
+            title={t.label}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded transition-colors hover:bg-tv-panel-hover",
+              active
+                ? "bg-tv-blue/15 text-tv-blue"
+                : "text-tv-text-muted hover:text-tv-text",
+            )}
+          >
+            <Icon className="h-4 w-4" />
+          </button>
         );
       })}
 
-      <Tooltip>
-        <TooltipTrigger
-          onClick={() => clearPriceLines(symbol)}
-          aria-label="Borrar dibujos"
-          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
-        >
-          <Trash2 className="h-4 w-4" />
-        </TooltipTrigger>
-        <TooltipContent side="right" className="text-xs">
-          <div className="font-medium">Borrar dibujos</div>
-          <div className="mt-0.5 text-[10px] text-tv-text-muted">
-            Limpia las líneas de este símbolo
-          </div>
-        </TooltipContent>
-      </Tooltip>
-
       <div className="my-1 h-px w-6 bg-tv-border" />
 
-      {LOCKED.map((t) => (
-        <Tooltip key={t.label}>
-          <TooltipTrigger
-            disabled
-            aria-label={t.label}
-            className="flex h-8 w-8 cursor-not-allowed items-center justify-center rounded text-tv-text-dim opacity-40"
-          >
-            <Lock className="h-3.5 w-3.5" />
-          </TooltipTrigger>
-          <TooltipContent side="right" className="text-xs">
-            <div className="font-medium">{t.label}</div>
-            <div className="mt-0.5 text-[10px] text-tv-yellow">
-              Próximamente · video 3
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      ))}
+      <button
+        onClick={() => clearDrawings(symbol)}
+        aria-label="Borrar todos los dibujos"
+        title="Borrar todos los dibujos de este símbolo"
+        className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"
+      >
+        <Trash2 className="h-4 w-4" />
+      </button>
     </aside>
   );
 }

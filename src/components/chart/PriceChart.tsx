@@ -24,6 +24,8 @@ import {
 import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
+import { DrawingsLayer } from "./DrawingsLayer";
+import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
 interface MeasurePoint {
   time: number;
@@ -112,8 +114,12 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const hidden = useChartStore((s) => s.hidden);
   const config = useChartStore((s) => s.config);
   const tool = useChartStore((s) => s.tool);
+  const setTool = useChartStore((s) => s.setTool);
   const priceLines = useChartStore((s) => s.priceLines);
   const addPriceLine = useChartStore((s) => s.addPriceLine);
+  const drawings = useChartStore((s) => s.drawings);
+  const addDrawing = useChartStore((s) => s.addDrawing);
+  const removeDrawing = useChartStore((s) => s.removeDrawing);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -123,6 +129,10 @@ export function PriceChart({ symbol, timeframe }: Props) {
   toolRef.current = tool;
   const addPriceLineRef = useRef(addPriceLine);
   addPriceLineRef.current = addPriceLine;
+  const addDrawingRef = useRef(addDrawing);
+  addDrawingRef.current = addDrawing;
+  const setToolRef = useRef(setTool);
+  setToolRef.current = setTool;
   const symbolRef = useRef(symbol);
   symbolRef.current = symbol;
   const configRef = useRef(config);
@@ -134,8 +144,20 @@ export function PriceChart({ symbol, timeframe }: Props) {
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
   const [renderTick, setRenderTick] = useState(0);
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const measureRef = useRef(measure);
   measureRef.current = measure;
+
+  type DrawDraft =
+    | null
+    | {
+        type: "trendline" | "fib" | "rect";
+        a: DrawingPoint;
+        b: DrawingPoint;
+      };
+  const [draft, setDraft] = useState<DrawDraft>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -219,18 +241,20 @@ export function PriceChart({ symbol, timeframe }: Props) {
 
     chartRef.current = chart;
 
-    // Click handler — add horizontal price line when hline tool is active
+    // Click handler — dispatch to active tool
     chart.subscribeClick((param) => {
       if (!param.point || !candleSeriesRef.current) return;
       const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
       if (price === null || !isFinite(price)) return;
+      const tool = toolRef.current;
+      const sym = symbolRef.current;
 
-      if (toolRef.current === "hline") {
-        addPriceLineRef.current(price, symbolRef.current);
+      if (tool === "hline") {
+        addPriceLineRef.current(price, sym);
         return;
       }
 
-      if (toolRef.current === "measure") {
+      if (tool === "measure") {
         if (!param.time) return;
         const time = Number(param.time);
         const current = measureRef.current;
@@ -253,6 +277,46 @@ export function PriceChart({ symbol, timeframe }: Props) {
             b: { time, price },
           });
         }
+        return;
+      }
+
+      if (tool === "text") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        const text = window.prompt("Texto:");
+        if (text && text.trim()) {
+          addDrawingRef.current({
+            type: "text",
+            symbol: sym,
+            at: { time, price },
+            text: text.trim(),
+          });
+        }
+        setToolRef.current("cursor");
+        return;
+      }
+
+      if (tool === "trendline" || tool === "fib" || tool === "rect") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        const current = draftRef.current;
+        if (!current || current.type !== tool) {
+          setDraft({
+            type: tool,
+            a: { time, price },
+            b: { time, price },
+          });
+        } else {
+          addDrawingRef.current({
+            type: tool,
+            symbol: sym,
+            a: current.a,
+            b: { time, price },
+          });
+          setDraft(null);
+          setToolRef.current("cursor");
+        }
+        return;
       }
     });
 
@@ -271,6 +335,23 @@ export function PriceChart({ symbol, timeframe }: Props) {
           setMeasure((prev) =>
             prev.phase === "placing" ? { ...prev, b: { time, price } } : prev,
           );
+        }
+      }
+
+      const draftNow = draftRef.current;
+      if (
+        draftNow &&
+        (toolRef.current === "trendline" ||
+          toolRef.current === "fib" ||
+          toolRef.current === "rect") &&
+        param.point &&
+        param.time &&
+        candleSeriesRef.current
+      ) {
+        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (price !== null && isFinite(price)) {
+          const time = Number(param.time);
+          setDraft((prev) => (prev ? { ...prev, b: { time, price } } : prev));
         }
       }
 
@@ -304,11 +385,22 @@ export function PriceChart({ symbol, timeframe }: Props) {
     chart.timeScale().subscribeVisibleLogicalRangeChange(logicalRangeHandler);
 
     // ResizeObserver — recompute pane offsets when chart container resizes
-    const ro = new ResizeObserver(() => {
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setContainerSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
       requestAnimationFrame(() => recomputePaneOffsets());
     });
     ro.observe(containerRef.current);
     recomputePaneOffsets();
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setContainerSize({ width: rect.width, height: rect.height });
+    }
 
     return () => {
       chart.timeScale().unsubscribeVisibleTimeRangeChange(tsRangeHandler);
@@ -527,14 +619,38 @@ export function PriceChart({ symbol, timeframe }: Props) {
     }
   }, [priceLines, symbol]);
 
-  // Cursor style when drawing tools are active + reset measure on tool change
+  // Cursor style when drawing tools are active + reset state on tool change
   useEffect(() => {
     if (containerRef.current) {
-      containerRef.current.style.cursor =
-        tool === "hline" || tool === "measure" ? "crosshair" : "";
+      const drawTools: string[] = [
+        "hline",
+        "measure",
+        "trendline",
+        "fib",
+        "rect",
+        "text",
+      ];
+      containerRef.current.style.cursor = drawTools.includes(tool)
+        ? "crosshair"
+        : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
+    if (tool !== "trendline" && tool !== "fib" && tool !== "rect") {
+      setDraft(null);
+    }
   }, [tool]);
+
+  // Esc cancels current draft / measure
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setDraft(null);
+        setMeasure(INITIAL_MEASURE);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Capture chart as PNG — triggered by Header via custom event
   useEffect(() => {
@@ -800,12 +916,51 @@ export function PriceChart({ symbol, timeframe }: Props) {
       );
     }
   }
+  // Coord converter for the drawings layer (only valid for the main pane)
+  const symbolDrawings = drawings.filter((d) => d.symbol === symbol);
+  const draftAsDrawing: Drawing | null =
+    draft && draft.type !== "rect"
+      ? {
+          id: "__draft__",
+          symbol,
+          type: draft.type,
+          a: draft.a,
+          b: draft.b,
+        }
+      : draft && draft.type === "rect"
+      ? {
+          id: "__draft__",
+          symbol,
+          type: "rect",
+          a: draft.a,
+          b: draft.b,
+        }
+      : null;
   void renderTick;
+
+  const toCoord = (time: number, price: number) => {
+    const chart = chartRef.current;
+    const series = candleSeriesRef.current;
+    if (!chart || !series) return null;
+    const x = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    const y = series.priceToCoordinate(price);
+    if (x === null || y === null) return null;
+    return { x, y };
+  };
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {measureRender}
+      <DrawingsLayer
+        drawings={
+          draftAsDrawing ? [...symbolDrawings, draftAsDrawing] : symbolDrawings
+        }
+        toCoord={toCoord}
+        onRemove={removeDrawing}
+        containerWidth={containerSize.width}
+      />
+
 
       {/* Top-left of main pane: symbol info + OHLC + Volume pill + EMA pills */}
       <div

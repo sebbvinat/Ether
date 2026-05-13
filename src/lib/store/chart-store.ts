@@ -12,12 +12,77 @@ export type IndicatorKey =
   | "macd"
   | "volume";
 
-export type DrawingTool = "cursor" | "hline" | "measure" | "eraser";
+export type DrawingTool =
+  | "cursor"
+  | "hline"
+  | "trendline"
+  | "fib"
+  | "rect"
+  | "text"
+  | "measure";
 
 export interface PriceLine {
   id: string;
   symbol: string;
   price: number;
+}
+
+export interface DrawingPoint {
+  time: number;
+  price: number;
+}
+
+export type Drawing =
+  | {
+      id: string;
+      symbol: string;
+      type: "trendline";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "fib";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "rect";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "text";
+      at: DrawingPoint;
+      text: string;
+    };
+
+export type DrawingInput =
+  | {
+      type: "trendline";
+      symbol: string;
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | { type: "fib"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | { type: "rect"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | {
+      type: "text";
+      symbol: string;
+      at: DrawingPoint;
+      text: string;
+    };
+
+function newId(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random()}`;
 }
 
 export interface IndicatorConfig {
@@ -75,12 +140,18 @@ interface ChartState {
   config: IndicatorConfig;
   watchlist: string[];
 
+  // Persisted: drawings (trendline, fib, rect, text) — per symbol
+  drawings: Drawing[];
+
   // Ephemeral UI state (not persisted)
   tool: DrawingTool;
   priceLines: PriceLine[];
   symbolDialogOpen: boolean;
   /** Which indicator's settings dialog is open (null = closed) */
   settingsTarget: IndicatorKey | null;
+  /** Mobile: side panels open as drawer */
+  mobileLeftOpen: boolean;
+  mobileRightOpen: boolean;
 
   // Actions
   setSymbol: (s: string) => void;
@@ -94,8 +165,13 @@ interface ChartState {
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
   clearPriceLines: (symbol?: string) => void;
+  addDrawing: (d: DrawingInput) => void;
+  removeDrawing: (id: string) => void;
+  clearDrawings: (symbol?: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
+  setMobileLeftOpen: (v: boolean) => void;
+  setMobileRightOpen: (v: boolean) => void;
 }
 
 export const useChartStore = create<ChartState>()(
@@ -121,10 +197,13 @@ export const useChartStore = create<ChartState>()(
       },
       config: { ...DEFAULT_CONFIG },
       watchlist: DEFAULT_WATCHLIST,
+      drawings: [],
       tool: "cursor",
       priceLines: [],
       symbolDialogOpen: false,
       settingsTarget: null,
+      mobileLeftOpen: false,
+      mobileRightOpen: false,
 
       setSymbol: (symbol) => set({ symbol }),
       setTimeframe: (timeframe) => set({ timeframe }),
@@ -176,8 +255,27 @@ export const useChartStore = create<ChartState>()(
             ? state.priceLines.filter((p) => p.symbol !== symbol)
             : [],
         })),
+      addDrawing: (d) =>
+        set((state) => ({
+          drawings: [...state.drawings, { ...d, id: newId() } satisfies Drawing],
+        })),
+      removeDrawing: (id) =>
+        set((state) => ({
+          drawings: state.drawings.filter((d) => d.id !== id),
+        })),
+      clearDrawings: (symbol) =>
+        set((state) => ({
+          drawings: symbol
+            ? state.drawings.filter((d) => d.symbol !== symbol)
+            : [],
+          priceLines: symbol
+            ? state.priceLines.filter((p) => p.symbol !== symbol)
+            : [],
+        })),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
+      setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
+      setMobileRightOpen: (mobileRightOpen) => set({ mobileRightOpen }),
     }),
     {
       name: "tv-gratis-chart-state",
@@ -188,6 +286,8 @@ export const useChartStore = create<ChartState>()(
         hidden: s.hidden,
         config: s.config,
         watchlist: s.watchlist,
+        drawings: s.drawings,
+        priceLines: s.priceLines,
       }),
     },
   ),

@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, TrendingUp, Zap } from "lucide-react";
+import { Camera, Menu, List, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
 import { Separator } from "@/components/ui/separator";
+import { useChartStore } from "@/lib/store/chart-store";
 
 export function Header() {
   const [tradeToast, setTradeToast] = useState(false);
+  const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
+  const setMobileRightOpen = useChartStore((s) => s.setMobileRightOpen);
+  const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
+  const mobileRightOpen = useChartStore((s) => s.mobileRightOpen);
 
   function onCapture() {
     window.dispatchEvent(new CustomEvent("ether:capture"));
@@ -20,20 +25,32 @@ export function Header() {
   }
 
   return (
-    <header className="relative flex h-12 items-center justify-between border-b border-tv-border bg-tv-panel px-3">
-      <div className="flex items-center gap-1">
-        <div className="flex items-center gap-2 pr-2">
+    <header className="relative flex h-12 items-center justify-between border-b border-tv-border bg-tv-panel px-2 sm:px-3">
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          onClick={() => setMobileLeftOpen(!mobileLeftOpen)}
+          aria-label="Tools"
+          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:hidden"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <div className="hidden items-center gap-2 pr-2 sm:flex">
           <div className="flex h-7 w-7 items-center justify-center rounded bg-tv-blue/20">
             <Zap className="h-4 w-4 text-tv-blue" />
           </div>
           <span className="text-sm font-semibold text-tv-text">Ether</span>
         </div>
-        <Separator orientation="vertical" className="h-6 bg-tv-border" />
+        <Separator
+          orientation="vertical"
+          className="hidden h-6 bg-tv-border sm:block"
+        />
         <SymbolSelector />
         <Separator orientation="vertical" className="h-6 bg-tv-border" />
         <TimeframeSelector />
-        <Separator orientation="vertical" className="mx-1 h-6 bg-tv-border" />
-        <IndicatorMenu />
+        <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border md:block" />
+        <div className="hidden md:block">
+          <IndicatorMenu />
+        </div>
       </div>
 
       <div className="flex items-center gap-1">
@@ -46,14 +63,22 @@ export function Header() {
           <Camera className="h-4 w-4" />
         </button>
 
-        <Separator orientation="vertical" className="mx-1 h-6 bg-tv-border" />
+        <button
+          onClick={() => setMobileRightOpen(!mobileRightOpen)}
+          aria-label="Watchlist"
+          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:hidden"
+        >
+          <List className="h-4 w-4" />
+        </button>
+
+        <Separator orientation="vertical" className="mx-1 hidden h-6 bg-tv-border sm:block" />
 
         <button
           onClick={onTrade}
-          className="flex items-center gap-1.5 rounded bg-tv-blue px-3 py-1.5 text-xs font-semibold text-white hover:bg-tv-blue/90"
+          className="flex items-center gap-1.5 rounded bg-tv-blue px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-tv-blue/90 sm:px-3"
         >
           <TrendingUp className="h-3.5 w-3.5" />
-          Operar
+          <span className="hidden sm:inline">Operar</span>
         </button>
       </div>
 
