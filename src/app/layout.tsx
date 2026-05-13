@@ -1,6 +1,7 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { PWARegister } from "@/components/layout/PWARegister";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,9 +17,24 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TradingView Gratis — Crypto charts open source",
+  title: "Ether — Live charts",
   description:
-    "Plataforma de charts crypto en vivo. Alternativa gratis a TradingView. Powered by Binance + lightweight-charts.",
+    "Charts en vivo de crypto e índices. Alternativa open-source a TradingView.",
+  applicationName: "Ether",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Ether",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#131722",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -33,6 +49,7 @@ export default function RootLayout({
     >
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
+        <PWARegister />
       </body>
     </html>
   );
