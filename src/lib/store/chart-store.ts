@@ -24,7 +24,7 @@ export type DrawingTool =
   | "text"
   | "measure";
 
-export type ChartStyle = "candles" | "line" | "area";
+export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
 export interface WatchlistDef {
   id: string;
@@ -199,6 +199,8 @@ interface ChartState {
   syncCharts: boolean;
   /** Per-slot compare overlays — extra symbols to plot as line on the same chart */
   compares: Record<string, string[]>;
+  /** Focus mode hides all chrome (header, sidebars, panels) — only the chart */
+  focusMode: boolean;
   /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
   watchlists: WatchlistDef[];
   activeWatchlistId: string;
@@ -246,6 +248,7 @@ interface ChartState {
   setChartStyle: (s: ChartStyle) => void;
   setLogScale: (v: boolean) => void;
   setSyncCharts: (v: boolean) => void;
+  setFocusMode: (v: boolean) => void;
   addCompare: (slotId: string, symbol: string) => void;
   removeCompare: (slotId: string, symbol: string) => void;
   addToWatchlist: (s: string) => void;
@@ -308,6 +311,7 @@ export const useChartStore = create<ChartState>()(
       logScale: false,
       syncCharts: false,
       compares: {},
+      focusMode: false,
       watchlists: [
         { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
       ],
@@ -413,6 +417,7 @@ export const useChartStore = create<ChartState>()(
       setChartStyle: (chartStyle) => set({ chartStyle }),
       setLogScale: (logScale) => set({ logScale }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
+      setFocusMode: (focusMode) => set({ focusMode }),
       addCompare: (slotId, symbol) =>
         set((state) => {
           const existing = state.compares[slotId] ?? [];

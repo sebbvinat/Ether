@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   Bell,
   Camera,
+  Maximize2,
   Menu,
   List,
   Play,
@@ -34,6 +35,7 @@ export function Header() {
   const activeSlotId = useChartStore((s) => s.activeSlotId);
   const replay = useChartStore((s) => s.replay);
   const stopReplay = useChartStore((s) => s.stopReplay);
+  const setFocusMode = useChartStore((s) => s.setFocusMode);
 
   function onCapture() {
     window.dispatchEvent(
@@ -99,6 +101,15 @@ export function Header() {
         <div className="hidden md:block">
           <PresetsMenu />
         </div>
+
+        <button
+          onClick={() => setFocusMode(true)}
+          aria-label="Modo enfoque"
+          title="Modo enfoque (oculta menús)"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <Maximize2 className="h-4 w-4" />
+        </button>
 
         <button
           onClick={() => setScannerOpen(true)}

@@ -16,7 +16,7 @@ import {
 } from "lightweight-charts";
 import { fetchCandles, subscribeMarket } from "@/lib/data";
 import { getInstrument } from "@/lib/instruments";
-import { ema, rsi, macd } from "@/lib/indicators";
+import { ema, rsi, macd, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -27,6 +27,7 @@ import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
+import { Countdown } from "./Countdown";
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
 interface MeasurePoint {
@@ -156,12 +157,20 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   replayActiveRef.current = replayActiveForThis;
   const replayIndexRef = useRef(replay.index);
   replayIndexRef.current = replay.index;
+  const chartStyleRef = useRef(chartStyle);
+  chartStyleRef.current = chartStyle;
 
   function getViewCandles(): Candle[] {
     if (replayActiveRef.current) {
       return candlesRef.current.slice(0, replayIndexRef.current + 1);
     }
     return candlesRef.current;
+  }
+
+  function getDisplayCandles(): Candle[] {
+    const view = getViewCandles();
+    if (chartStyleRef.current === "heikin") return heikinAshi(view);
+    return view;
   }
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -1045,7 +1054,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     }
   }, [logScale]);
 
-  // Chart style — toggle candles vs line/area overlay
+  // Chart style — toggle candles/heikin vs line/area overlay
   useEffect(() => {
     if (!chartRef.current) return;
     const chart = chartRef.current;
@@ -1055,8 +1064,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       } catch {}
       overlaySeriesRef.current = null;
     }
-    if (chartStyle === "candles") {
+    if (chartStyle === "candles" || chartStyle === "heikin") {
       candleSeriesRef.current?.applyOptions({ visible: true });
+      // Reapply data using transformed candles (HA or regular)
+      const display = getDisplayCandles();
+      candleSeriesRef.current?.setData(
+        display.map((k) => ({
+          time: k.time as UTCTimestamp,
+          open: k.open,
+          high: k.high,
+          low: k.low,
+          close: k.close,
+        })),
+      );
       return;
     }
     candleSeriesRef.current?.applyOptions({ visible: false });
@@ -1223,6 +1243,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      {/* Countdown — top-right corner, like TV */}
+      <div className="pointer-events-none absolute right-14 top-2 z-10 md:right-16">
+        <Countdown timeframe={timeframe} />
+      </div>
       {measureRender}
       <DrawingsLayer
         drawings={

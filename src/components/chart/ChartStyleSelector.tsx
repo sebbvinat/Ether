@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { CandlestickChart, LineChart, AreaChart, ChevronDown, ArrowDown01 } from "lucide-react";
+import {
+  CandlestickChart,
+  LineChart,
+  AreaChart,
+  Flame,
+  ChevronDown,
+  ArrowDown01,
+} from "lucide-react";
 import { useChartStore, type ChartStyle } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
 const STYLES: { key: ChartStyle; label: string; icon: typeof CandlestickChart }[] = [
   { key: "candles", label: "Velas", icon: CandlestickChart },
+  { key: "heikin", label: "Heikin Ashi", icon: Flame },
   { key: "line", label: "Línea", icon: LineChart },
   { key: "area", label: "Área", icon: AreaChart },
 ];

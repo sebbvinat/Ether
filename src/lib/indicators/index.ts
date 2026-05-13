@@ -115,3 +115,38 @@ export function macd(
   void slowStartTime;
   return out;
 }
+
+/**
+ * Heikin Ashi candles — smoothed transformation of regular candles.
+ * Formula:
+ *  haClose = (O + H + L + C) / 4
+ *  haOpen  = (prevHaOpen + prevHaClose) / 2  (first bar: (O + C) / 2)
+ *  haHigh  = max(H, haOpen, haClose)
+ *  haLow   = min(L, haOpen, haClose)
+ */
+export function heikinAshi(candles: Candle[]): Candle[] {
+  const out: Candle[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const haClose = (c.open + c.high + c.low + c.close) / 4;
+    let haOpen: number;
+    if (i === 0) {
+      haOpen = (c.open + c.close) / 2;
+    } else {
+      const prev = out[i - 1];
+      haOpen = (prev.open + prev.close) / 2;
+    }
+    const haHigh = Math.max(c.high, haOpen, haClose);
+    const haLow = Math.min(c.low, haOpen, haClose);
+    out.push({
+      time: c.time,
+      open: haOpen,
+      high: haHigh,
+      low: haLow,
+      close: haClose,
+      volume: c.volume,
+      isFinal: c.isFinal,
+    });
+  }
+  return out;
+}
