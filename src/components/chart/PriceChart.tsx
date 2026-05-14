@@ -1376,13 +1376,38 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return { time: Number(time), price };
   };
 
+  // Compute Y of the current price for placing the countdown right under the price label
+  let countdownY: number | null = null;
+  if (lastPrice && candleSeriesRef.current) {
+    const yCoord = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
+    if (yCoord !== null && isFinite(yCoord)) countdownY = yCoord;
+  }
+  const countdownIsUp = lastPrice ? lastPrice.pct >= 0 : true;
+
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
-      {/* Countdown — top-right corner, like TV */}
-      <div className="pointer-events-none absolute right-14 top-2 z-10 md:right-16">
-        <Countdown timeframe={timeframe} />
-      </div>
+      {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
+      {countdownY !== null && (
+        <div
+          className="pointer-events-none absolute z-10 tabular-nums"
+          style={{
+            right: 2,
+            top: countdownY + 13,
+            background: countdownIsUp ? TV_COLORS.green : TV_COLORS.red,
+            color: "#fff",
+            fontSize: 10,
+            padding: "1px 4px",
+            borderRadius: 2,
+            fontWeight: 500,
+            lineHeight: 1.3,
+            minWidth: 38,
+            textAlign: "center",
+          }}
+        >
+          <Countdown timeframe={timeframe} bare />
+        </div>
+      )}
       {measureRender}
       <DrawingsLayer
         drawings={

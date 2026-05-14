@@ -32,10 +32,34 @@ export type DrawingTool =
 
 export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
-export interface WatchlistDef {
+export interface WatchlistSection {
   id: string;
   name: string;
   symbols: string[];
+}
+
+export interface WatchlistDef {
+  id: string;
+  name: string;
+  /** Legacy flat list — kept in sync with sections[0] for backwards compat */
+  symbols: string[];
+  /** Optional grouped sections. If absent, treat symbols[] as a single unnamed section. */
+  sections?: WatchlistSection[];
+}
+
+export interface TabState {
+  id: string;
+  name: string;
+  symbol: string;
+  timeframe: Timeframe;
+  layout: LayoutType;
+  slots: ChartSlot[];
+  activeSlotId: string;
+  indicators: Record<IndicatorKey, boolean>;
+  hidden: Record<IndicatorKey, boolean>;
+  config: IndicatorConfig;
+  drawings: Drawing[];
+  priceLines: PriceLine[];
 }
 
 export interface WorkspaceSnapshot {
@@ -200,6 +224,11 @@ export function layoutSlotCount(l: LayoutType): number {
   }
 }
 
+function getTabName(s: { activeTabId: string; tabs: TabState[]; symbol: string }): string {
+  const t = s.tabs.find((t) => t.id === s.activeTabId);
+  return t?.name ?? s.symbol;
+}
+
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -293,6 +322,9 @@ interface ChartState {
   indicatorTemplates: IndicatorTemplate[];
   /** Manual trading journal entries */
   journal: JournalEntry[];
+  /** Open tabs — each tab has its own state slice (symbol, timeframe, layout, slots, drawings, priceLines, indicators, hidden, config) */
+  tabs: TabState[];
+  activeTabId: string;
   /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
   watchlists: WatchlistDef[];
   activeWatchlistId: string;
@@ -348,6 +380,10 @@ interface ChartState {
   saveIndicatorTemplate: (name: string) => void;
   loadIndicatorTemplate: (id: string) => void;
   deleteIndicatorTemplate: (id: string) => void;
+  createTab: (name?: string) => void;
+  closeTab: (id: string) => void;
+  switchTab: (id: string) => void;
+  renameTab: (id: string, name: string) => void;
   addJournalEntry: (e: Omit<JournalEntry, "id">) => void;
   updateJournalEntry: (id: string, patch: Partial<JournalEntry>) => void;
   removeJournalEntry: (id: string) => void;
@@ -359,6 +395,10 @@ interface ChartState {
   deleteWatchlist: (id: string) => void;
   setActiveWatchlist: (id: string) => void;
   renameWatchlist: (id: string, name: string) => void;
+  addWatchlistSection: (name: string) => void;
+  renameWatchlistSection: (sectionId: string, name: string) => void;
+  removeWatchlistSection: (sectionId: string) => void;
+  addSymbolToSection: (sectionId: string, symbol: string) => void;
   addYahooSymbol: (inst: Instrument) => void;
   setTool: (t: DrawingTool) => void;
   addPriceLine: (price: number, symbol: string) => void;
@@ -426,6 +466,8 @@ export const useChartStore = create<ChartState>()(
       workspaces: [],
       indicatorTemplates: [],
       journal: [],
+      tabs: [],
+      activeTabId: "",
       watchlists: [
         { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
       ],
@@ -595,6 +637,121 @@ export const useChartStore = create<ChartState>()(
         set((s) => ({
           indicatorTemplates: s.indicatorTemplates.filter((t) => t.id !== id),
         })),
+      createTab: (name) =>
+        set((s) => {
+          const id = newId();
+          // Snapshot current state into a tab before opening the new one
+          const currentSnapshot: TabState = {
+            id: s.activeTabId || newId(),
+            name: getTabName(s) || "Tab 1",
+            symbol: s.symbol,
+            timeframe: s.timeframe,
+            layout: s.layout,
+            slots: s.slots,
+            activeSlotId: s.activeSlotId,
+            indicators: s.indicators,
+            hidden: s.hidden,
+            config: s.config,
+            drawings: s.drawings,
+            priceLines: s.priceLines,
+          };
+          const tabs = s.tabs.length > 0 ? s.tabs : [currentSnapshot];
+          const newTab: TabState = {
+            id,
+            name: name ?? `Tab ${tabs.length + 1}`,
+            symbol: "BTCUSDT",
+            timeframe: "15m" as Timeframe,
+            layout: "single",
+            slots: [
+              { id: "slot-1", symbol: "BTCUSDT", timeframe: "15m" as Timeframe },
+            ],
+            activeSlotId: "slot-1",
+            indicators: s.indicators,
+            hidden: s.hidden,
+            config: s.config,
+            drawings: [],
+            priceLines: [],
+          };
+          return {
+            tabs: [
+              ...tabs.map((t) =>
+                t.id === currentSnapshot.id ? currentSnapshot : t,
+              ),
+              newTab,
+            ],
+            activeTabId: id,
+            // Activate the new tab's state
+            symbol: newTab.symbol,
+            timeframe: newTab.timeframe,
+            layout: newTab.layout,
+            slots: newTab.slots,
+            activeSlotId: newTab.activeSlotId,
+            drawings: newTab.drawings,
+            priceLines: newTab.priceLines,
+          };
+        }),
+      closeTab: (id) =>
+        set((s) => {
+          if (s.tabs.length <= 1) return {}; // keep at least one
+          const idx = s.tabs.findIndex((t) => t.id === id);
+          if (idx < 0) return {};
+          const tabs = s.tabs.filter((t) => t.id !== id);
+          // If we closed the active tab, switch to a neighbor
+          if (s.activeTabId === id) {
+            const next = tabs[Math.max(0, idx - 1)];
+            return {
+              tabs,
+              activeTabId: next.id,
+              symbol: next.symbol,
+              timeframe: next.timeframe,
+              layout: next.layout,
+              slots: next.slots,
+              activeSlotId: next.activeSlotId,
+              drawings: next.drawings,
+              priceLines: next.priceLines,
+            };
+          }
+          return { tabs };
+        }),
+      switchTab: (id) =>
+        set((s) => {
+          if (s.activeTabId === id) return {};
+          const target = s.tabs.find((t) => t.id === id);
+          if (!target) return {};
+          // Save current state into the current active tab
+          const tabs = s.tabs.map((t) =>
+            t.id === s.activeTabId
+              ? {
+                  ...t,
+                  symbol: s.symbol,
+                  timeframe: s.timeframe,
+                  layout: s.layout,
+                  slots: s.slots,
+                  activeSlotId: s.activeSlotId,
+                  indicators: s.indicators,
+                  hidden: s.hidden,
+                  config: s.config,
+                  drawings: s.drawings,
+                  priceLines: s.priceLines,
+                }
+              : t,
+          );
+          return {
+            tabs,
+            activeTabId: id,
+            symbol: target.symbol,
+            timeframe: target.timeframe,
+            layout: target.layout,
+            slots: target.slots,
+            activeSlotId: target.activeSlotId,
+            drawings: target.drawings,
+            priceLines: target.priceLines,
+          };
+        }),
+      renameTab: (id, name) =>
+        set((s) => ({
+          tabs: s.tabs.map((t) => (t.id === id ? { ...t, name } : t)),
+        })),
       addJournalEntry: (e) =>
         set((s) => ({
           journal: [...s.journal, { ...e, id: newId() }],
@@ -686,6 +843,56 @@ export const useChartStore = create<ChartState>()(
             w.id === id ? { ...w, name } : w,
           ),
         })),
+      addWatchlistSection: (name) =>
+        set((state) => {
+          const wls = state.watchlists.map((w) => {
+            if (w.id !== state.activeWatchlistId) return w;
+            const sections = w.sections ?? [];
+            return {
+              ...w,
+              sections: [
+                ...sections,
+                { id: newId(), name, symbols: [] },
+              ],
+            };
+          });
+          return { watchlists: wls };
+        }),
+      renameWatchlistSection: (sectionId, name) =>
+        set((state) => {
+          const wls = state.watchlists.map((w) => {
+            if (w.id !== state.activeWatchlistId) return w;
+            const sections = (w.sections ?? []).map((sec) =>
+              sec.id === sectionId ? { ...sec, name } : sec,
+            );
+            return { ...w, sections };
+          });
+          return { watchlists: wls };
+        }),
+      removeWatchlistSection: (sectionId) =>
+        set((state) => {
+          const wls = state.watchlists.map((w) => {
+            if (w.id !== state.activeWatchlistId) return w;
+            const sections = (w.sections ?? []).filter(
+              (sec) => sec.id !== sectionId,
+            );
+            return { ...w, sections };
+          });
+          return { watchlists: wls };
+        }),
+      addSymbolToSection: (sectionId, symbol) =>
+        set((state) => {
+          const wls = state.watchlists.map((w) => {
+            if (w.id !== state.activeWatchlistId) return w;
+            const sections = (w.sections ?? []).map((sec) =>
+              sec.id === sectionId && !sec.symbols.includes(symbol)
+                ? { ...sec, symbols: [...sec.symbols, symbol] }
+                : sec,
+            );
+            return { ...w, sections };
+          });
+          return { watchlists: wls };
+        }),
       addYahooSymbol: (inst) =>
         set((state) => {
           const next = { ...state.yahooSymbols, [inst.symbol]: inst };
@@ -796,6 +1003,8 @@ export const useChartStore = create<ChartState>()(
         workspaces: s.workspaces,
         indicatorTemplates: s.indicatorTemplates,
         journal: s.journal,
+        tabs: s.tabs,
+        activeTabId: s.activeTabId,
         binanceMarket: s.binanceMarket,
         yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
@@ -833,6 +1042,8 @@ export const useChartStore = create<ChartState>()(
           priceLines: p.priceLines ?? currentState.priceLines,
           binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
           chartStyle: p.chartStyle ?? currentState.chartStyle,
+          tabs: p.tabs ?? currentState.tabs,
+          activeTabId: p.activeTabId ?? currentState.activeTabId,
         };
       },
     },

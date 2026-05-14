@@ -5,6 +5,7 @@ import type { Timeframe } from "@/lib/binance/types";
 
 interface Props {
   timeframe: Timeframe;
+  bare?: boolean;
 }
 
 const TF_SECONDS: Record<Timeframe, number> = {
@@ -41,7 +42,7 @@ function fmt(secs: number): string {
  * Tiny pill showing time until the next candle close for the active timeframe.
  * Updates every second.
  */
-export function Countdown({ timeframe }: Props) {
+export function Countdown({ timeframe, bare }: Props) {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
   useEffect(() => {
@@ -50,8 +51,13 @@ export function Countdown({ timeframe }: Props) {
   }, []);
 
   const period = TF_SECONDS[timeframe];
-  // For "1M" the period is approximate; for everything else this is exact UTC alignment.
   const remaining = period - (now % period);
+
+  if (bare) {
+    return (
+      <span className="tabular-nums">{fmt(remaining)}</span>
+    );
+  }
 
   return (
     <div className="pointer-events-none rounded bg-tv-panel/95 px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-tv-text-muted ring-1 ring-tv-border backdrop-blur">

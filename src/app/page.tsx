@@ -7,6 +7,7 @@ import { LeftSidebar } from "@/components/layout/LeftSidebar";
 import { RightSidebar } from "@/components/layout/RightSidebar";
 import { BottomPanel } from "@/components/layout/BottomPanel";
 import { BottomTabs } from "@/components/layout/BottomTabs";
+import { TabsBar } from "@/components/layout/TabsBar";
 import { ChartGrid } from "@/components/layout/ChartGrid";
 import { ReplayBar } from "@/components/chart/ReplayBar";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
@@ -39,6 +40,7 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-tv-bg">
+      {!focusMode && <TabsBar />}
       {!focusMode && <Header />}
       <div className="relative flex min-h-0 flex-1">
         {!focusMode && <LeftSidebar />}
