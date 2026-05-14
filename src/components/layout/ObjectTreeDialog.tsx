@@ -31,10 +31,15 @@ interface Props {
 
 const DRAWING_ICONS = {
   trendline: TrendingUp,
+  ray: TrendingUp,
+  vline: Minus,
+  hlineExt: Minus,
   arrow: ArrowUpRight,
   fib: GitBranch,
   rect: Square,
   hrange: AlignHorizontalJustifyStart,
+  long: Square,
+  short: Square,
   text: Type,
   hline: Minus,
 } as const;
@@ -43,6 +48,7 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   ema20: "EMA 20",
   ema50: "EMA 50",
   ema200: "EMA 200",
+  vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
   volume: "Volume",

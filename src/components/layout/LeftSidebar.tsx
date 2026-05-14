@@ -3,11 +3,16 @@
 import {
   MousePointer2,
   Minus,
+  MoveHorizontal,
+  MoveVertical,
   TrendingUp,
+  ArrowRightFromLine,
   ArrowUpRight,
   GitBranch,
   Square,
   AlignHorizontalJustifyStart,
+  Target,
+  Crosshair,
   Type,
   Ruler,
   Trash2,
@@ -24,8 +29,11 @@ interface ToolDef {
 
 const TOOLS: ToolDef[] = [
   { key: "cursor", icon: MousePointer2, label: "Cursor" },
-  { key: "hline", icon: Minus, label: "Línea horizontal" },
   { key: "trendline", icon: TrendingUp, label: "Línea de tendencia" },
+  { key: "ray", icon: ArrowRightFromLine, label: "Rayo" },
+  { key: "hline", icon: Minus, label: "Línea horizontal" },
+  { key: "hlineExt", icon: MoveHorizontal, label: "Horizontal extendida" },
+  { key: "vline", icon: MoveVertical, label: "Línea vertical" },
   { key: "arrow", icon: ArrowUpRight, label: "Flecha" },
   { key: "fib", icon: GitBranch, label: "Fibonacci" },
   { key: "rect", icon: Square, label: "Rectángulo" },
@@ -34,6 +42,8 @@ const TOOLS: ToolDef[] = [
     icon: AlignHorizontalJustifyStart,
     label: "Rango de precio",
   },
+  { key: "long", icon: Target, label: "Long position (R:R)" },
+  { key: "short", icon: Crosshair, label: "Short position (R:R)" },
   { key: "text", icon: Type, label: "Texto" },
   { key: "measure", icon: Ruler, label: "Regla / Medir" },
 ];

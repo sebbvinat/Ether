@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, Check } from "lucide-react";
+import { Activity, Check, Save, Trash2, FolderOpen } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -30,6 +30,7 @@ const ENTRIES: Entry[] = [
   { key: "ema20", group: "Medias móviles", label: (c) => `EMA ${c.ema20}` },
   { key: "ema50", group: "Medias móviles", label: (c) => `EMA ${c.ema50}` },
   { key: "ema200", group: "Medias móviles", label: (c) => `EMA ${c.ema200}` },
+  { key: "vwap", group: "Volumen", label: () => "VWAP" },
   { key: "volume", group: "Volumen", label: () => "Volumen" },
   { key: "rsi", group: "Osciladores", label: (c) => `RSI (${c.rsi})` },
   {
@@ -43,6 +44,16 @@ export function IndicatorMenu() {
   const indicators = useChartStore((s) => s.indicators);
   const config = useChartStore((s) => s.config);
   const toggle = useChartStore((s) => s.toggleIndicator);
+  const templates = useChartStore((s) => s.indicatorTemplates);
+  const saveTemplate = useChartStore((s) => s.saveIndicatorTemplate);
+  const loadTemplate = useChartStore((s) => s.loadIndicatorTemplate);
+  const deleteTemplate = useChartStore((s) => s.deleteIndicatorTemplate);
+
+  function onSaveTemplate() {
+    const name = window.prompt("Nombre de la plantilla:");
+    if (!name || !name.trim()) return;
+    saveTemplate(name.trim());
+  }
 
   const groups = ENTRIES.reduce<Record<string, Entry[]>>((acc, i) => {
     (acc[i.group] ||= []).push(i);
@@ -81,6 +92,48 @@ export function IndicatorMenu() {
               </DropdownMenuItem>
             ))}
           </DropdownMenuGroup>
+        ))}
+
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-tv-text-muted">
+          Plantillas
+        </DropdownMenuLabel>
+        <DropdownMenuItem
+          closeOnClick={false}
+          onClick={onSaveTemplate}
+          className="flex items-center gap-2 text-xs"
+        >
+          <Save className="h-3.5 w-3.5" />
+          Guardar combinación actual
+        </DropdownMenuItem>
+        {templates.length === 0 && (
+          <DropdownMenuItem disabled className="text-[11px] text-tv-text-muted">
+            Sin plantillas guardadas
+          </DropdownMenuItem>
+        )}
+        {templates.map((t) => (
+          <DropdownMenuItem
+            key={t.id}
+            closeOnClick={false}
+            className="group flex items-center justify-between text-xs"
+            onClick={() => loadTemplate(t.id)}
+          >
+            <span className="flex items-center gap-2">
+              <FolderOpen className="h-3.5 w-3.5 text-tv-text-muted" />
+              {t.name}
+            </span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (window.confirm(`Borrar plantilla "${t.name}"?`))
+                  deleteTemplate(t.id);
+              }}
+              className="rounded p-0.5 opacity-0 hover:text-tv-red group-hover:opacity-100"
+              aria-label="Borrar plantilla"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
     </DropdownMenu>

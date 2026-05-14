@@ -9,6 +9,7 @@ export type IndicatorKey =
   | "ema20"
   | "ema50"
   | "ema200"
+  | "vwap"
   | "rsi"
   | "macd"
   | "volume";
@@ -16,11 +17,16 @@ export type IndicatorKey =
 export type DrawingTool =
   | "cursor"
   | "hline"
+  | "vline"
+  | "hlineExt"
+  | "ray"
   | "trendline"
   | "arrow"
   | "fib"
   | "rect"
   | "hrange"
+  | "long"
+  | "short"
   | "text"
   | "measure";
 
@@ -46,6 +52,13 @@ export interface WorkspaceSnapshot {
   config: IndicatorConfig;
   chartStyle: ChartStyle;
   logScale: boolean;
+}
+
+export interface IndicatorTemplate {
+  id: string;
+  name: string;
+  indicators: Record<IndicatorKey, boolean>;
+  config: IndicatorConfig;
 }
 
 export type TradeSide = "long" | "short";
@@ -112,6 +125,36 @@ export type Drawing =
   | {
       id: string;
       symbol: string;
+      type: "ray";
+      a: DrawingPoint;
+      b: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "vline";
+      at: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "hlineExt";
+      at: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
+      type: "long" | "short";
+      /** entry point (time + price) */
+      a: DrawingPoint;
+      /** stop loss price (time same as a) */
+      b: DrawingPoint;
+      /** take profit price */
+      c: DrawingPoint;
+    }
+  | {
+      id: string;
+      symbol: string;
       type: "text";
       at: DrawingPoint;
       text: string;
@@ -128,6 +171,16 @@ export type DrawingInput =
   | { type: "fib"; symbol: string; a: DrawingPoint; b: DrawingPoint }
   | { type: "rect"; symbol: string; a: DrawingPoint; b: DrawingPoint }
   | { type: "hrange"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | { type: "ray"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | { type: "vline"; symbol: string; at: DrawingPoint }
+  | { type: "hlineExt"; symbol: string; at: DrawingPoint }
+  | {
+      type: "long" | "short";
+      symbol: string;
+      a: DrawingPoint;
+      b: DrawingPoint;
+      c: DrawingPoint;
+    }
   | {
       type: "text";
       symbol: string;
@@ -178,6 +231,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   ema20: "#ffb74d",
   ema50: "#2962ff",
   ema200: "#ab47bc",
+  vwap: "#26a69a",
   rsi: "#ab47bc",
   macd: "#2962ff",
   volume: "#787b86",
@@ -235,6 +289,8 @@ interface ChartState {
   binanceMarket: "spot" | "perp";
   /** Saved workspaces — named snapshots of the current setup */
   workspaces: WorkspaceSnapshot[];
+  /** Saved indicator templates — combos of indicators + config */
+  indicatorTemplates: IndicatorTemplate[];
   /** Manual trading journal entries */
   journal: JournalEntry[];
   /** Multiple named watchlists. `watchlist` mirrors the active one for legacy access. */
@@ -289,6 +345,9 @@ interface ChartState {
   saveWorkspace: (name: string) => void;
   loadWorkspace: (id: string) => void;
   deleteWorkspace: (id: string) => void;
+  saveIndicatorTemplate: (name: string) => void;
+  loadIndicatorTemplate: (id: string) => void;
+  deleteIndicatorTemplate: (id: string) => void;
   addJournalEntry: (e: Omit<JournalEntry, "id">) => void;
   updateJournalEntry: (id: string, patch: Partial<JournalEntry>) => void;
   removeJournalEntry: (id: string) => void;
@@ -308,7 +367,13 @@ interface ChartState {
   removeDrawing: (id: string) => void;
   updateDrawing: (
     id: string,
-    patch: Partial<{ a: DrawingPoint; b: DrawingPoint; at: DrawingPoint; text: string }>,
+    patch: Partial<{
+      a: DrawingPoint;
+      b: DrawingPoint;
+      c: DrawingPoint;
+      at: DrawingPoint;
+      text: string;
+    }>,
   ) => void;
   clearDrawings: (symbol?: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
@@ -337,6 +402,7 @@ export const useChartStore = create<ChartState>()(
         ema20: true,
         ema50: true,
         ema200: false,
+        vwap: false,
         rsi: true,
         macd: false,
         volume: true,
@@ -345,6 +411,7 @@ export const useChartStore = create<ChartState>()(
         ema20: false,
         ema50: false,
         ema200: false,
+        vwap: false,
         rsi: false,
         macd: false,
         volume: false,
@@ -357,6 +424,7 @@ export const useChartStore = create<ChartState>()(
       focusMode: false,
       binanceMarket: "spot" as "spot" | "perp",
       workspaces: [],
+      indicatorTemplates: [],
       journal: [],
       watchlists: [
         { id: "main", name: "Principal", symbols: DEFAULT_WATCHLIST },
@@ -504,6 +572,28 @@ export const useChartStore = create<ChartState>()(
       deleteWorkspace: (id) =>
         set((s) => ({
           workspaces: s.workspaces.filter((w) => w.id !== id),
+        })),
+      saveIndicatorTemplate: (name) =>
+        set((s) => ({
+          indicatorTemplates: [
+            ...s.indicatorTemplates,
+            {
+              id: newId(),
+              name,
+              indicators: s.indicators,
+              config: s.config,
+            },
+          ],
+        })),
+      loadIndicatorTemplate: (id) =>
+        set((s) => {
+          const t = s.indicatorTemplates.find((t) => t.id === id);
+          if (!t) return {};
+          return { indicators: t.indicators, config: t.config };
+        }),
+      deleteIndicatorTemplate: (id) =>
+        set((s) => ({
+          indicatorTemplates: s.indicatorTemplates.filter((t) => t.id !== id),
         })),
       addJournalEntry: (e) =>
         set((s) => ({
@@ -704,6 +794,7 @@ export const useChartStore = create<ChartState>()(
         syncCharts: s.syncCharts,
         compares: s.compares,
         workspaces: s.workspaces,
+        indicatorTemplates: s.indicatorTemplates,
         journal: s.journal,
         binanceMarket: s.binanceMarket,
         yahooSymbols: s.yahooSymbols,

@@ -21,6 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
 import { ScannerDialog } from "@/components/scanner/ScannerDialog";
 import { PresetsMenu } from "@/components/layout/PresetsMenu";
+import { FullscreenButton } from "@/components/layout/FullscreenButton";
 import { useChartStore } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
@@ -110,6 +111,7 @@ export function Header() {
         >
           <Maximize2 className="h-4 w-4" />
         </button>
+        <FullscreenButton />
 
         <button
           onClick={() => setScannerOpen(true)}

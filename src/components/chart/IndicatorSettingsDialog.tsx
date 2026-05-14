@@ -19,6 +19,7 @@ const TITLES: Record<IndicatorKey, string> = {
   ema20: "EMA — Slot 1",
   ema50: "EMA — Slot 2",
   ema200: "EMA — Slot 3",
+  vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
   volume: "Volumen",

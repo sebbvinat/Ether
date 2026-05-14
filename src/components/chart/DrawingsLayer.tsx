@@ -24,15 +24,24 @@ interface Coord {
   y: number;
 }
 
-type HandleKey = "a" | "b" | "at";
+type HandleKey = "a" | "b" | "c" | "at";
 
 interface Props {
   drawings: Drawing[];
   toCoord: (time: number, price: number) => Coord | null;
   fromCoord: (x: number, y: number) => DrawingPoint | null;
-  onUpdate: (id: string, patch: Partial<{ a: DrawingPoint; b: DrawingPoint; at: DrawingPoint }>) => void;
+  onUpdate: (
+    id: string,
+    patch: Partial<{
+      a: DrawingPoint;
+      b: DrawingPoint;
+      c: DrawingPoint;
+      at: DrawingPoint;
+    }>,
+  ) => void;
   onRemove: (id: string) => void;
   containerWidth: number;
+  containerHeight: number;
 }
 
 export function DrawingsLayer({
@@ -42,6 +51,7 @@ export function DrawingsLayer({
   onUpdate,
   onRemove,
   containerWidth,
+  containerHeight,
 }: Props) {
   const [hover, setHover] = useState<string | null>(null);
   const [drag, setDrag] = useState<{ id: string; handle: HandleKey } | null>(
@@ -350,6 +360,254 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={x + w}
                   y={y - 4}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        if (d.type === "ray") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const isUp = d.b.price >= d.a.price;
+          const color = isUp ? TV_GREEN : TV_RED;
+          // Extend beyond b in the same direction up to the right edge
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          let endX = b.x;
+          let endY = b.y;
+          if (Math.abs(dx) > 0.001) {
+            const t = (containerWidth - a.x) / dx;
+            if (t > 1) {
+              endX = a.x + dx * t;
+              endY = a.y + dy * t;
+            }
+          }
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              style={{ pointerEvents: "auto" }}
+            >
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={endX}
+                y2={endY}
+                stroke={color}
+                strokeWidth={1.5}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={(a.x + b.x) / 2}
+                  y={(a.y + b.y) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        if (d.type === "vline") {
+          const p = toCoord(d.at.time, d.at.price);
+          if (!p) return null;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              style={{ pointerEvents: "auto" }}
+            >
+              <line
+                x1={p.x}
+                y1={0}
+                x2={p.x}
+                y2={containerHeight}
+                stroke={TV_BLUE}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              <DragHandle
+                cx={p.x}
+                cy={Math.max(20, Math.min(containerHeight - 20, p.y))}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={p.x + 10}
+                  y={20}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        if (d.type === "hlineExt") {
+          const p = toCoord(d.at.time, d.at.price);
+          if (!p) return null;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              style={{ pointerEvents: "auto" }}
+            >
+              <line
+                x1={0}
+                y1={p.y}
+                x2={containerWidth}
+                y2={p.y}
+                stroke={TV_BLUE}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              <text
+                x={8}
+                y={p.y - 3}
+                fill={TV_BLUE}
+                fontSize={11}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+              >
+                {d.at.price.toFixed(2)}
+              </text>
+              <DragHandle
+                cx={Math.min(p.x, containerWidth - 10)}
+                cy={p.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={containerWidth - 16}
+                  y={p.y - 12}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        if (d.type === "long" || d.type === "short") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          const c = toCoord(d.c.time, d.c.price);
+          if (!a || !b || !c) return null;
+          const isLong = d.type === "long";
+          const entry = d.a.price;
+          const stop = d.b.price;
+          const target = d.c.price;
+          const risk = Math.abs(entry - stop);
+          const reward = Math.abs(target - entry);
+          const rr = risk > 0 ? reward / risk : 0;
+          // Validate direction
+          const stopOk = isLong ? stop < entry : stop > entry;
+          const targetOk = isLong ? target > entry : target < entry;
+          const xLeft = a.x;
+          const xRight = Math.max(a.x + 60, Math.max(b.x, c.x));
+          // Stop zone (red) and Target zone (green)
+          const stopY1 = Math.min(a.y, b.y);
+          const stopY2 = Math.max(a.y, b.y);
+          const targetY1 = Math.min(a.y, c.y);
+          const targetY2 = Math.max(a.y, c.y);
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              style={{ pointerEvents: "auto" }}
+            >
+              {/* Stop zone (red translucent) */}
+              <rect
+                x={xLeft}
+                y={stopY1}
+                width={xRight - xLeft}
+                height={stopY2 - stopY1}
+                fill={TV_RED}
+                fillOpacity={stopOk ? 0.15 : 0.05}
+                stroke={TV_RED}
+                strokeWidth={1}
+              />
+              {/* Target zone (green translucent) */}
+              <rect
+                x={xLeft}
+                y={targetY1}
+                width={xRight - xLeft}
+                height={targetY2 - targetY1}
+                fill={TV_GREEN}
+                fillOpacity={targetOk ? 0.15 : 0.05}
+                stroke={TV_GREEN}
+                strokeWidth={1}
+              />
+              {/* Entry line */}
+              <line
+                x1={xLeft}
+                y1={a.y}
+                x2={xRight}
+                y2={a.y}
+                stroke={TV_BLUE}
+                strokeWidth={1.5}
+              />
+              {/* Labels */}
+              <text
+                x={xLeft + 4}
+                y={a.y - 3}
+                fill={TV_BLUE}
+                fontSize={10}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+              >
+                Entry {entry.toFixed(2)} · {isLong ? "LONG" : "SHORT"} · R:R{" "}
+                {rr.toFixed(2)}
+              </text>
+              <text
+                x={xLeft + 4}
+                y={(stopY1 + stopY2) / 2 + 4}
+                fill={TV_RED}
+                fontSize={10}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+              >
+                SL {stop.toFixed(2)} ({risk.toFixed(2)})
+              </text>
+              <text
+                x={xLeft + 4}
+                y={(targetY1 + targetY2) / 2 + 4}
+                fill={TV_GREEN}
+                fontSize={10}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+              >
+                TP {target.toFixed(2)} ({reward.toFixed(2)})
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={c.y}
+                onDown={(e) => onHandleDown(e, d.id, "c")}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={xRight - 16}
+                  y={a.y - 14}
                   onRemove={() => onRemove(d.id)}
                 />
               )}

@@ -16,7 +16,7 @@ import {
 } from "lightweight-charts";
 import { fetchCandles, subscribeMarket } from "@/lib/data";
 import { getInstrument } from "@/lib/instruments";
-import { ema, rsi, macd, heikinAshi } from "@/lib/indicators";
+import { ema, rsi, macd, vwap, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -85,6 +85,7 @@ interface LastValues {
   ema20?: number;
   ema50?: number;
   ema200?: number;
+  vwap?: number;
   rsi?: number;
   macd?: number;
   macdSignal?: number;
@@ -105,6 +106,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const rsiRef = useRef<ISeriesApi<"Line"> | null>(null);
@@ -187,13 +189,22 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   type DrawDraft =
     | null
     | {
-        type: "trendline" | "arrow" | "fib" | "rect" | "hrange";
+        type: "trendline" | "arrow" | "ray" | "fib" | "rect" | "hrange";
         a: DrawingPoint;
         b: DrawingPoint;
+      }
+    | {
+        type: "long" | "short";
+        a: DrawingPoint;
+        b: DrawingPoint;
+        c: DrawingPoint;
+        /** 1 means waiting for stop, 2 waiting for target */
+        phase: 1 | 2;
       };
   const [draft, setDraft] = useState<DrawDraft>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const [pillsCollapsed, setPillsCollapsed] = useState(false);
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -261,18 +272,29 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
     ema50Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema50,
       lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
     ema200Ref.current = chart.addSeries(LineSeries, {
       color: INDICATOR_COLORS.ema200,
       lineWidth: 2,
       priceLineVisible: false,
       lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    vwapRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.vwap,
+      lineWidth: 2,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
     });
 
     chartRef.current = chart;
@@ -287,6 +309,18 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
       if (tool === "hline") {
         addPriceLineRef.current(price, sym);
+        return;
+      }
+
+      if (tool === "vline" || tool === "hlineExt") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        addDrawingRef.current({
+          type: tool,
+          symbol: sym,
+          at: { time, price },
+        });
+        setToolRef.current("cursor");
         return;
       }
 
@@ -335,6 +369,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       if (
         tool === "trendline" ||
         tool === "arrow" ||
+        tool === "ray" ||
         tool === "fib" ||
         tool === "rect" ||
         tool === "hrange"
@@ -354,6 +389,43 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             symbol: sym,
             a: current.a,
             b: { time, price },
+          });
+          setDraft(null);
+          setToolRef.current("cursor");
+        }
+        return;
+      }
+
+      if (tool === "long" || tool === "short") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        const current = draftRef.current;
+        if (!current || (current.type !== "long" && current.type !== "short")) {
+          // Click 1: entry — start draft with defaults for stop/target
+          setDraft({
+            type: tool,
+            a: { time, price },
+            b: { time, price },
+            c: { time, price },
+            phase: 1,
+          });
+        } else if (current.phase === 1) {
+          // Click 2: stop loss
+          setDraft({
+            type: tool,
+            a: current.a,
+            b: { time, price },
+            c: { time, price },
+            phase: 2,
+          });
+        } else {
+          // Click 3: take profit — commit
+          addDrawingRef.current({
+            type: tool,
+            symbol: sym,
+            a: current.a,
+            b: current.b,
+            c: { time, price },
           });
           setDraft(null);
           setToolRef.current("cursor");
@@ -385,6 +457,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         draftNow &&
         (toolRef.current === "trendline" ||
           toolRef.current === "arrow" ||
+          toolRef.current === "ray" ||
           toolRef.current === "fib" ||
           toolRef.current === "rect" ||
           toolRef.current === "hrange") &&
@@ -395,7 +468,32 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
         if (price !== null && isFinite(price)) {
           const time = Number(param.time);
-          setDraft((prev) => (prev ? { ...prev, b: { time, price } } : prev));
+          setDraft((prev) =>
+            prev && prev.type !== "long" && prev.type !== "short"
+              ? { ...prev, b: { time, price } }
+              : prev,
+          );
+        }
+      }
+
+      if (
+        draftNow &&
+        (toolRef.current === "long" || toolRef.current === "short") &&
+        param.point &&
+        param.time &&
+        candleSeriesRef.current
+      ) {
+        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (price !== null && isFinite(price)) {
+          const time = Number(param.time);
+          setDraft((prev) => {
+            if (!prev || (prev.type !== "long" && prev.type !== "short"))
+              return prev;
+            if (prev.phase === 1) {
+              return { ...prev, b: { time, price } };
+            }
+            return { ...prev, c: { time, price } };
+          });
         }
       }
 
@@ -458,6 +556,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       ema20Ref.current = null;
       ema50Ref.current = null;
       ema200Ref.current = null;
+      vwapRef.current = null;
       rsiRef.current = null;
       rsi30Ref.current = null;
       rsi70Ref.current = null;
@@ -614,6 +713,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     ema20Ref.current?.applyOptions({ visible: v("ema20") });
     ema50Ref.current?.applyOptions({ visible: v("ema50") });
     ema200Ref.current?.applyOptions({ visible: v("ema200") });
+    vwapRef.current?.applyOptions({ visible: v("vwap") });
     if (rsiRef.current) rsiRef.current.applyOptions({ visible: v("rsi") });
     if (rsi30Ref.current) rsi30Ref.current.applyOptions({ visible: v("rsi") });
     if (rsi70Ref.current) rsi70Ref.current.applyOptions({ visible: v("rsi") });
@@ -672,12 +772,17 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (containerRef.current) {
       const drawTools: string[] = [
         "hline",
+        "vline",
+        "hlineExt",
         "measure",
         "trendline",
+        "ray",
         "arrow",
         "fib",
         "rect",
         "hrange",
+        "long",
+        "short",
         "text",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
@@ -685,7 +790,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         : "";
     }
     if (tool !== "measure") setMeasure(INITIAL_MEASURE);
-    const draftTools = ["trendline", "arrow", "fib", "rect", "hrange"];
+    const draftTools = [
+      "trendline",
+      "arrow",
+      "ray",
+      "fib",
+      "rect",
+      "hrange",
+      "long",
+      "short",
+    ];
     if (!draftTools.includes(tool)) {
       setDraft(null);
     }
@@ -796,6 +910,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     let last20: number | undefined;
     let last50: number | undefined;
     let last200: number | undefined;
+    let lastVwap: number | undefined;
+
+    if (vwapRef.current) {
+      const data = vwap(c);
+      vwapRef.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      );
+      lastVwap = data.at(-1)?.value;
+    }
 
     if (ema20Ref.current) {
       const data = ema(c, cfg.ema20);
@@ -824,6 +947,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       ema20: last20,
       ema50: last50,
       ema200: last200,
+      vwap: lastVwap,
       volume: lastVol,
     }));
   }
@@ -1022,6 +1146,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         priceScaleId: `cmp-${sym}`,
         priceLineVisible: false,
         lastValueVisible: true,
+        crosshairMarkerVisible: false,
         title: sym,
       });
       map.set(sym, ser);
@@ -1211,13 +1336,22 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   // Coord converter for the drawings layer (only valid for the main pane)
   const symbolDrawings = drawings.filter((d) => d.symbol === symbol);
   const draftAsDrawing: Drawing | null = draft
-    ? {
-        id: "__draft__",
-        symbol,
-        type: draft.type,
-        a: draft.a,
-        b: draft.b,
-      }
+    ? draft.type === "long" || draft.type === "short"
+      ? {
+          id: "__draft__",
+          symbol,
+          type: draft.type,
+          a: draft.a,
+          b: draft.b,
+          c: draft.c,
+        }
+      : {
+          id: "__draft__",
+          symbol,
+          type: draft.type,
+          a: draft.a,
+          b: draft.b,
+        }
     : null;
   void renderTick;
 
@@ -1258,6 +1392,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         onUpdate={updateDrawing}
         onRemove={removeDrawing}
         containerWidth={containerSize.width}
+        containerHeight={containerSize.height}
       />
 
 
@@ -1323,8 +1458,28 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           )}
         </div>
 
+        {/* Collapse / expand indicator pills */}
+        <button
+          onClick={() => setPillsCollapsed((v) => !v)}
+          title={pillsCollapsed ? "Mostrar indicadores" : "Ocultar lista de indicadores"}
+          className="pointer-events-auto mt-0.5 flex h-4 w-4 items-center justify-center rounded text-tv-text-muted opacity-0 transition-opacity hover:bg-tv-panel-hover hover:text-tv-text group-hover:opacity-100 md:opacity-60 md:hover:opacity-100"
+          style={{ opacity: pillsCollapsed ? 1 : undefined }}
+        >
+          <svg viewBox="0 0 12 12" className="h-3 w-3">
+            <path
+              d={pillsCollapsed ? "M4 3 L8 6 L4 9" : "M3 4 L6 8 L9 4"}
+              stroke="currentColor"
+              strokeWidth="1.5"
+              fill="none"
+            />
+          </svg>
+        </button>
+
         {/* Indicator pills for the main pane (fixed position below price) */}
-        <div className="mt-0.5 flex flex-col items-start gap-0.5 md:mt-1 md:gap-1">
+        <div
+          className="mt-0.5 flex flex-col items-start gap-0.5 md:mt-1 md:gap-1"
+          style={{ display: pillsCollapsed ? "none" : undefined }}
+        >
           {indicators.ema20 && (
             <IndicatorPill
               name={`EMA ${config.ema20}`}
@@ -1358,6 +1513,21 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onRemove={() => removeIndicator("ema200")}
             />
           )}
+          {indicators.vwap && (
+            <IndicatorPill
+              name="VWAP"
+              value={
+                lastValues.vwap !== undefined
+                  ? formatPrice(lastValues.vwap)
+                  : undefined
+              }
+              color={INDICATOR_COLORS.vwap}
+              hidden={hidden.vwap}
+              onToggleHide={() => toggleHidden("vwap")}
+              onSettings={() => setSettingsTarget("vwap")}
+              onRemove={() => removeIndicator("vwap")}
+            />
+          )}
           {indicators.volume && (
             <div className="hidden md:block">
             <IndicatorPill
@@ -1375,7 +1545,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       </div>
 
       {/* RSI pane label */}
-      {indicators.rsi && paneOffsets[rsiPaneIdx] && (
+      {indicators.rsi && paneOffsets[rsiPaneIdx] && !pillsCollapsed && (
         <div
           style={{ top: paneOffsets[rsiPaneIdx].top + 6, left: 12 }}
           className="pointer-events-none absolute z-10"
@@ -1393,7 +1563,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       )}
 
       {/* MACD pane label */}
-      {indicators.macd && paneOffsets[macdPaneIdx] && (
+      {indicators.macd && paneOffsets[macdPaneIdx] && !pillsCollapsed && (
         <div
           style={{ top: paneOffsets[macdPaneIdx].top + 6, left: 12 }}
           className="pointer-events-none absolute z-10"

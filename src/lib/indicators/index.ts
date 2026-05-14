@@ -117,6 +117,31 @@ export function macd(
 }
 
 /**
+ * VWAP — Volume-Weighted Average Price.
+ * Cumulative from the first candle, reset daily.
+ * Each candle: typicalPrice = (high + low + close) / 3
+ */
+export function vwap(candles: Candle[]): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  let cumPV = 0;
+  let cumV = 0;
+  let prevDay = -1;
+  for (const c of candles) {
+    const day = Math.floor(c.time / 86400);
+    if (day !== prevDay) {
+      cumPV = 0;
+      cumV = 0;
+      prevDay = day;
+    }
+    const tp = (c.high + c.low + c.close) / 3;
+    cumPV += tp * c.volume;
+    cumV += c.volume;
+    out.push({ time: c.time, value: cumV > 0 ? cumPV / cumV : c.close });
+  }
+  return out;
+}
+
+/**
  * Heikin Ashi candles — smoothed transformation of regular candles.
  * Formula:
  *  haClose = (O + H + L + C) / 4
