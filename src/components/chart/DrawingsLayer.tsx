@@ -28,6 +28,7 @@ type HandleKey = "a" | "b" | "c" | "at";
 
 interface Props {
   drawings: Drawing[];
+  selectedId: string | null;
   toCoord: (time: number, price: number) => Coord | null;
   fromCoord: (x: number, y: number) => DrawingPoint | null;
   onUpdate: (
@@ -40,16 +41,22 @@ interface Props {
     }>,
   ) => void;
   onRemove: (id: string) => void;
+  onSelect: (id: string | null) => void;
+  /** If true, clicking a drawing removes it (eraser tool active) */
+  eraserActive?: boolean;
   containerWidth: number;
   containerHeight: number;
 }
 
 export function DrawingsLayer({
   drawings,
+  selectedId,
   toCoord,
   fromCoord,
   onUpdate,
   onRemove,
+  onSelect,
+  eraserActive,
   containerWidth,
   containerHeight,
 }: Props) {
@@ -57,6 +64,14 @@ export function DrawingsLayer({
   const [drag, setDrag] = useState<{ id: string; handle: HandleKey } | null>(
     null,
   );
+
+  function handleClick(id: string) {
+    if (eraserActive) {
+      onRemove(id);
+    } else {
+      onSelect(id === selectedId ? null : id);
+    }
+  }
 
   function svgRect(target: SVGElement): DOMRect {
     const root = target.ownerSVGElement ?? (target as SVGSVGElement);
@@ -105,7 +120,7 @@ export function DrawingsLayer({
     <svg
       className="absolute inset-0 h-full w-full"
       style={{
-        overflow: "visible",
+        overflow: "hidden",
         pointerEvents: drag ? "auto" : "none",
         zIndex: 5,
       }}
@@ -114,6 +129,12 @@ export function DrawingsLayer({
       onPointerCancel={onSvgPointerUp}
     >
       {drawings.map((d) => {
+        const isSelected = selectedId === d.id;
+        const selectedWidth = isSelected ? 1 : 0;
+        const grStyle: React.CSSProperties = {
+          pointerEvents: "auto",
+          cursor: eraserActive ? "crosshair" : "pointer",
+        };
         if (d.type === "trendline" || d.type === "arrow") {
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
@@ -150,15 +171,25 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
+              {/* invisible hit area for easier click */}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke="transparent"
+                strokeWidth={12}
+              />
               <line
                 x1={a.x}
                 y1={a.y}
                 x2={b.x}
                 y2={b.y}
                 stroke={color}
-                strokeWidth={1.5}
+                strokeWidth={1.5 + selectedWidth}
               />
               {headRender}
               <DragHandle
@@ -198,7 +229,8 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <rect
                 x={0}
@@ -270,7 +302,8 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               {FIB_LEVELS.map(({ level, color }) => {
                 const y = yHigh + (yLow - yHigh) * level;
@@ -335,7 +368,8 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <rect
                 x={x}
@@ -391,15 +425,24 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <line
                 x1={a.x}
                 y1={a.y}
                 x2={endX}
                 y2={endY}
+                stroke="transparent"
+                strokeWidth={12}
+              />
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={endX}
+                y2={endY}
                 stroke={color}
-                strokeWidth={1.5}
+                strokeWidth={1.5 + selectedWidth}
               />
               <DragHandle
                 cx={a.x}
@@ -430,15 +473,24 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <line
                 x1={p.x}
                 y1={0}
                 x2={p.x}
                 y2={containerHeight}
+                stroke="transparent"
+                strokeWidth={12}
+              />
+              <line
+                x1={p.x}
+                y1={0}
+                x2={p.x}
+                y2={containerHeight}
                 stroke={TV_BLUE}
-                strokeWidth={1}
+                strokeWidth={1 + selectedWidth}
                 strokeDasharray="4 3"
               />
               <DragHandle
@@ -465,15 +517,24 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <line
                 x1={0}
                 y1={p.y}
                 x2={containerWidth}
                 y2={p.y}
+                stroke="transparent"
+                strokeWidth={12}
+              />
+              <line
+                x1={0}
+                y1={p.y}
+                x2={containerWidth}
+                y2={p.y}
                 stroke={TV_BLUE}
-                strokeWidth={1}
+                strokeWidth={1 + selectedWidth}
                 strokeDasharray="4 3"
               />
               <text
@@ -528,7 +589,8 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               {/* Stop zone (red translucent) */}
               <rect
@@ -624,7 +686,8 @@ export function DrawingsLayer({
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
-              style={{ pointerEvents: "auto" }}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
             >
               <text
                 x={p.x}

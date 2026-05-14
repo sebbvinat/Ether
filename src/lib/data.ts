@@ -29,6 +29,30 @@ export async function fetchCandles(
   return fetchKlines(symbol, tf, 1000, currentBinanceMarket());
 }
 
+/**
+ * Fetch a chunk of historical candles older than `beforeTimeSec`.
+ * Only supported for Binance (Yahoo's range param already pulls deep history).
+ * Returns [] for Yahoo (no-op).
+ */
+export async function fetchOlderCandles(
+  symbol: string,
+  tf: Timeframe,
+  beforeTimeSec: number,
+): Promise<Candle[]> {
+  const inst = getInstrument(symbol);
+  if (inst.provider === "yahoo") return [];
+  // Binance endTime is exclusive — pass the first known candle's time
+  const candles = await fetchKlines(
+    symbol,
+    tf,
+    1000,
+    currentBinanceMarket(),
+    beforeTimeSec * 1000,
+  );
+  // Exclude the boundary candle if it matches (avoid duplicate)
+  return candles.filter((c) => c.time < beforeTimeSec);
+}
+
 export interface MarketSubscription {
   onInit: (candles: Candle[]) => void;
   onCandle: (c: Candle) => void;

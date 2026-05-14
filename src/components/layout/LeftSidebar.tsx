@@ -15,6 +15,7 @@ import {
   AlignHorizontalJustifyStart,
   Type,
   Ruler,
+  Eraser,
   Trash2,
 } from "lucide-react";
 import { useChartStore, type DrawingTool } from "@/lib/store/chart-store";
@@ -80,6 +81,12 @@ const GROUPS: Group[] = [
   {
     label: "Medir",
     tools: [{ key: "measure", icon: Ruler, label: "Regla / Medir" }],
+  },
+  {
+    label: "Borrar",
+    tools: [
+      { key: "eraser", icon: Eraser, label: "Goma (click para borrar)" },
+    ],
   },
 ];
 

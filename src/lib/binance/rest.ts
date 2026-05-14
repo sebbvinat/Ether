@@ -13,8 +13,15 @@ export async function fetchKlines(
   interval: Timeframe,
   limit = 1000,
   market: BinanceMarket = "spot",
+  endTimeMs?: number,
 ): Promise<Candle[]> {
-  const url = `${base(market)}/klines?symbol=${symbol.toUpperCase()}&interval=${interval}&limit=${limit}`;
+  const params = new URLSearchParams({
+    symbol: symbol.toUpperCase(),
+    interval,
+    limit: String(limit),
+  });
+  if (endTimeMs) params.set("endTime", String(endTimeMs));
+  const url = `${base(market)}/klines?${params.toString()}`;
   const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`klines ${res.status}`);
   const data = (await res.json()) as unknown[][];

@@ -14,7 +14,7 @@ import {
   type IPriceLine,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { fetchCandles, subscribeMarket } from "@/lib/data";
+import { fetchCandles, fetchOlderCandles, subscribeMarket } from "@/lib/data";
 import { getInstrument } from "@/lib/instruments";
 import { ema, rsi, macd, vwap, heikinAshi } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
@@ -129,6 +129,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const addDrawing = useChartStore((s) => s.addDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
   const updateDrawing = useChartStore((s) => s.updateDrawing);
+  const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
+  const selectDrawing = useChartStore((s) => s.selectDrawing);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -308,6 +310,26 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       const tool = toolRef.current;
       const sym = symbolRef.current;
 
+      // If replay is active for this slot, clicking a candle moves the replay index
+      if (replayActiveRef.current && param.time) {
+        const tApi = Number(param.time);
+        const arr = candlesRef.current;
+        // Find index of candle whose time is closest to clicked time
+        let bestIdx = -1;
+        let bestDiff = Infinity;
+        for (let i = 0; i < arr.length; i++) {
+          const diff = Math.abs(arr[i].time - tApi);
+          if (diff < bestDiff) {
+            bestDiff = diff;
+            bestIdx = i;
+          }
+        }
+        if (bestIdx >= 0) {
+          useChartStore.getState().setReplayIndex(bestIdx);
+        }
+        return;
+      }
+
       if (tool === "hline") {
         addPriceLineRef.current(price, sym);
         return;
@@ -400,37 +422,22 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       if (tool === "long" || tool === "short") {
         if (!param.time) return;
         const time = Number(param.time);
-        const current = draftRef.current;
-        if (!current || (current.type !== "long" && current.type !== "short")) {
-          // Click 1: entry — start draft with defaults for stop/target
-          setDraft({
-            type: tool,
-            a: { time, price },
-            b: { time, price },
-            c: { time, price },
-            phase: 1,
-          });
-        } else if (current.phase === 1) {
-          // Click 2: stop loss
-          setDraft({
-            type: tool,
-            a: current.a,
-            b: { time, price },
-            c: { time, price },
-            phase: 2,
-          });
-        } else {
-          // Click 3: take profit — commit
-          addDrawingRef.current({
-            type: tool,
-            symbol: sym,
-            a: current.a,
-            b: current.b,
-            c: { time, price },
-          });
-          setDraft(null);
-          setToolRef.current("cursor");
-        }
+        // 1 click and done — entry at click, stop/target at sensible defaults (R:R 1:2)
+        const riskPct = 0.01; // 1% default
+        const stopPrice =
+          tool === "long" ? price * (1 - riskPct) : price * (1 + riskPct);
+        const targetPrice =
+          tool === "long"
+            ? price * (1 + riskPct * 2)
+            : price * (1 - riskPct * 2);
+        addDrawingRef.current({
+          type: tool,
+          symbol: sym,
+          a: { time, price },
+          b: { time, price: stopPrice },
+          c: { time, price: targetPrice },
+        });
+        setToolRef.current("cursor");
         return;
       }
     });
@@ -477,26 +484,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }
       }
 
-      if (
-        draftNow &&
-        (toolRef.current === "long" || toolRef.current === "short") &&
-        param.point &&
-        param.time &&
-        candleSeriesRef.current
-      ) {
-        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-        if (price !== null && isFinite(price)) {
-          const time = Number(param.time);
-          setDraft((prev) => {
-            if (!prev || (prev.type !== "long" && prev.type !== "short"))
-              return prev;
-            if (prev.phase === 1) {
-              return { ...prev, b: { time, price } };
-            }
-            return { ...prev, c: { time, price } };
-          });
-        }
-      }
+      // Long/short are 1-click now — no draft phase tracking needed.
 
       if (!param.time || !candleSeriesRef.current) {
         setHover(null);
@@ -807,17 +795,27 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     }
   }, [tool]);
 
-  // Esc cancels current draft / measure
+  // Esc cancels current draft / measure; Delete/Backspace removes selected drawing
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
+        return;
+      }
       if (e.key === "Escape") {
         setDraft(null);
         setMeasure(INITIAL_MEASURE);
+        selectDrawing(null);
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedDrawingId) {
+        e.preventDefault();
+        removeDrawing(selectedDrawingId);
+        selectDrawing(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [selectedDrawingId, removeDrawing, selectDrawing]);
 
   // Capture chart as PNG — triggered by Header via custom event
   useEffect(() => {
@@ -860,6 +858,72 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     window.addEventListener("ether:start-replay", handler);
     return () => window.removeEventListener("ether:start-replay", handler);
   }, [slotId, startReplay]);
+
+  // Lazy-load older candles when panning to the left edge
+  useEffect(() => {
+    if (!chartRef.current) return;
+    let loading = false;
+    let exhausted = false;
+    const handler = (range: { from: unknown; to: unknown } | null) => {
+      if (!range || loading || exhausted) return;
+      const arr = candlesRef.current;
+      if (arr.length < 10) return;
+      const firstTime = arr[0].time;
+      const fromVal = Number(range.from);
+      // If the visible range reaches the first 5% of our data, fetch older
+      if (fromVal <= firstTime + 5) {
+        loading = true;
+        fetchOlderCandles(symbol, timeframe, firstTime)
+          .then((older) => {
+            if (older.length === 0) {
+              exhausted = true;
+              return;
+            }
+            const merged = [...older, ...candlesRef.current];
+            candlesRef.current = merged;
+            if (candleSeriesRef.current) {
+              candleSeriesRef.current.setData(
+                merged.map((k) => ({
+                  time: k.time as UTCTimestamp,
+                  open: k.open,
+                  high: k.high,
+                  low: k.low,
+                  close: k.close,
+                })),
+              );
+            }
+            if (volumeSeriesRef.current) {
+              volumeSeriesRef.current.setData(
+                merged.map((k) => ({
+                  time: k.time as UTCTimestamp,
+                  value: k.volume,
+                  color:
+                    k.close >= k.open
+                      ? `${TV_COLORS.green}66`
+                      : `${TV_COLORS.red}66`,
+                })),
+              );
+            }
+            updateEMAs();
+            updateRSI();
+            updateMACD();
+          })
+          .catch((e) => console.error("loadOlder", e))
+          .finally(() => {
+            loading = false;
+          });
+      }
+    };
+    chartRef.current
+      .timeScale()
+      .subscribeVisibleLogicalRangeChange(() => {
+        const r = chartRef.current?.timeScale().getVisibleRange();
+        handler(r as { from: unknown; to: unknown } | null);
+      });
+    return () => {
+      // Unsubscribe handled by chart.remove() in unmount cleanup
+    };
+  }, [symbol, timeframe]);
 
   // Sync zoom across slots
   useEffect(() => {
@@ -1429,10 +1493,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         drawings={
           draftAsDrawing ? [...symbolDrawings, draftAsDrawing] : symbolDrawings
         }
+        selectedId={selectedDrawingId}
         toCoord={toCoord}
         fromCoord={fromCoord}
         onUpdate={updateDrawing}
-        onRemove={removeDrawing}
+        onRemove={(id) => {
+          removeDrawing(id);
+          if (selectedDrawingId === id) selectDrawing(null);
+        }}
+        onSelect={selectDrawing}
+        eraserActive={tool === "eraser"}
         containerWidth={containerSize.width}
         containerHeight={containerSize.height}
       />

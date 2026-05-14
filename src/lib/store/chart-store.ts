@@ -28,7 +28,8 @@ export type DrawingTool =
   | "long"
   | "short"
   | "text"
-  | "measure";
+  | "measure"
+  | "eraser";
 
 export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
@@ -359,6 +360,8 @@ interface ChartState {
   /** Mobile: side panels open as drawer */
   mobileLeftOpen: boolean;
   mobileRightOpen: boolean;
+  /** Currently selected drawing — Delete/Supr removes it */
+  selectedDrawingId: string | null;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -420,6 +423,7 @@ interface ChartState {
   setSettingsTarget: (k: IndicatorKey | null) => void;
   setMobileLeftOpen: (v: boolean) => void;
   setMobileRightOpen: (v: boolean) => void;
+  selectDrawing: (id: string | null) => void;
   startReplay: (slotId: string, total: number) => void;
   stopReplay: () => void;
   setReplayIndex: (idx: number) => void;
@@ -481,6 +485,7 @@ export const useChartStore = create<ChartState>()(
       settingsTarget: null,
       mobileLeftOpen: false,
       mobileRightOpen: false,
+      selectedDrawingId: null,
       replay: {
         active: false,
         slotId: null,
@@ -947,6 +952,7 @@ export const useChartStore = create<ChartState>()(
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
       setMobileRightOpen: (mobileRightOpen) => set({ mobileRightOpen }),
+      selectDrawing: (selectedDrawingId) => set({ selectedDrawingId }),
       startReplay: (slotId, total) =>
         set({
           replay: {
