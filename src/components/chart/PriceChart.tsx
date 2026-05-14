@@ -1292,6 +1292,31 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     }
   }, [panesCollapsed, indicators.rsi, indicators.macd]);
 
+  // Track price->Y coordinate at ~30fps so the countdown follows zoom/pan/auto-scale
+  useEffect(() => {
+    if (!lastPrice || !candleSeriesRef.current) return;
+    let raf: number | null = null;
+    let lastY: number | null = null;
+    function tick() {
+      const series = candleSeriesRef.current;
+      const lp = lastPrice;
+      if (series && lp) {
+        const y = series.priceToCoordinate(lp.value);
+        if (y !== null && isFinite(y)) {
+          if (lastY === null || Math.abs(y - lastY) > 0.5) {
+            lastY = y;
+            setRenderTick((t) => t + 1);
+          }
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return () => {
+      if (raf !== null) cancelAnimationFrame(raf);
+    };
+  }, [lastPrice]);
+
   // Double-click toggle for collapsed panes
   useEffect(() => {
     const el = containerRef.current;

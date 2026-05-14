@@ -37,7 +37,7 @@ export function IndicatorPill({
       {value !== undefined && (
         <span className="tabular-nums text-tv-text-muted">{value}</span>
       )}
-      <div className="ml-1 hidden items-center gap-0.5 md:flex md:opacity-0 md:transition-opacity md:group-hover/pill:opacity-100">
+      <div className="ml-1 flex items-center gap-0.5 md:opacity-0 md:transition-opacity md:group-hover/pill:opacity-100">
         <button
           onClick={onToggleHide}
           title={hidden ? "Mostrar" : "Ocultar"}
