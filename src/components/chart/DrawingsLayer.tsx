@@ -593,8 +593,14 @@ export function DrawingsLayer({
           const stopOk = isLong ? stop < entry : stop > entry;
           const targetOk = isLong ? target > entry : target < entry;
           const xLeft = a.x;
-          // Always extend zones to the right edge for clearer SL/TP visualization (TV-style)
-          const xRight = containerWidth;
+          // Use a finite right edge (entry + 60px or further-out handle), preview extends a bit more
+          const xRight = isPreview
+            ? a.x + 80
+            : Math.max(a.x + 60, Math.max(b.x, c.x));
+          // Show a thin full-width dashed guide line ONLY while the user is dragging the SL or TP handle
+          const dragForThis = drag && drag.id === d.id ? drag : null;
+          const showSLGuide = !isPreview && dragForThis?.handle === "b";
+          const showTPGuide = !isPreview && dragForThis?.handle === "c";
           // Stop zone (red) and Target zone (green)
           const stopY1 = Math.min(a.y, b.y);
           const stopY2 = Math.max(a.y, b.y);
@@ -639,26 +645,32 @@ export function DrawingsLayer({
                 stroke={TV_BLUE}
                 strokeWidth={1.5}
               />
-              {/* SL line — dashed red, helps see the level */}
-              <line
-                x1={xLeft}
-                y1={b.y}
-                x2={xRight}
-                y2={b.y}
-                stroke={TV_RED}
-                strokeWidth={1}
-                strokeDasharray="4 3"
-              />
-              {/* TP line — dashed green */}
-              <line
-                x1={xLeft}
-                y1={c.y}
-                x2={xRight}
-                y2={c.y}
-                stroke={TV_GREEN}
-                strokeWidth={1}
-                strokeDasharray="4 3"
-              />
+              {/* While dragging SL handle: full-width dashed guide */}
+              {showSLGuide && (
+                <line
+                  x1={0}
+                  y1={b.y}
+                  x2={containerWidth}
+                  y2={b.y}
+                  stroke={TV_RED}
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  opacity={0.7}
+                />
+              )}
+              {/* While dragging TP handle: full-width dashed guide */}
+              {showTPGuide && (
+                <line
+                  x1={0}
+                  y1={c.y}
+                  x2={containerWidth}
+                  y2={c.y}
+                  stroke={TV_GREEN}
+                  strokeWidth={1}
+                  strokeDasharray="4 3"
+                  opacity={0.7}
+                />
+              )}
               {/* Labels */}
               <text
                 x={xLeft + 4}
