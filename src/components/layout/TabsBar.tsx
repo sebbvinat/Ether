@@ -38,7 +38,7 @@ export function TabsBar() {
         }));
 
   return (
-    <div className="flex h-8 shrink-0 items-center gap-px overflow-x-auto border-b border-tv-border bg-tv-bg px-1">
+    <div className="hidden h-8 shrink-0 items-center gap-px overflow-x-auto border-b border-tv-border bg-tv-bg px-1 md:flex">
       {displayTabs.map((t) => {
         const isActive = t.virtual ? true : t.id === activeTabId;
         return (

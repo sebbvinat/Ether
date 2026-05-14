@@ -11,6 +11,7 @@ import { TabsBar } from "@/components/layout/TabsBar";
 import { ChartGrid } from "@/components/layout/ChartGrid";
 import { ReplayBar } from "@/components/chart/ReplayBar";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
+import { InstallBanner } from "@/components/layout/InstallBanner";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
@@ -73,6 +74,7 @@ export default function HomePage() {
       {!focusMode && <BottomPanel />}
       <BottomTabs />
       <IndicatorSettingsDialog />
+      <InstallBanner />
     </div>
   );
 }

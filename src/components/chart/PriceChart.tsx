@@ -1378,9 +1378,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
   // Compute Y of the current price for placing the countdown right under the price label
   let countdownY: number | null = null;
-  if (lastPrice && candleSeriesRef.current) {
+  let countdownAxisWidth = 60;
+  if (lastPrice && candleSeriesRef.current && chartRef.current) {
     const yCoord = candleSeriesRef.current.priceToCoordinate(lastPrice.value);
     if (yCoord !== null && isFinite(yCoord)) countdownY = yCoord;
+    try {
+      countdownAxisWidth = chartRef.current.priceScale("right").width();
+    } catch {}
   }
   const countdownIsUp = lastPrice ? lastPrice.pct >= 0 : true;
 
@@ -1390,22 +1394,33 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
       {countdownY !== null && (
         <div
-          className="pointer-events-none absolute z-10 tabular-nums"
+          className="pointer-events-none absolute z-10"
           style={{
-            right: 2,
-            top: countdownY + 13,
-            background: countdownIsUp ? TV_COLORS.green : TV_COLORS.red,
-            color: "#fff",
-            fontSize: 10,
-            padding: "1px 4px",
-            borderRadius: 2,
-            fontWeight: 500,
-            lineHeight: 1.3,
-            minWidth: 38,
-            textAlign: "center",
+            right: 0,
+            top: countdownY + 12,
+            width: countdownAxisWidth - 2,
           }}
         >
-          <Countdown timeframe={timeframe} bare />
+          <div
+            className="mx-auto tabular-nums"
+            style={{
+              background: countdownIsUp ? TV_COLORS.green : TV_COLORS.red,
+              color: "#fff",
+              fontSize: 10,
+              padding: "1px 4px",
+              borderRadius: 2,
+              fontWeight: 500,
+              lineHeight: 1.3,
+              minWidth: 38,
+              maxWidth: countdownAxisWidth - 6,
+              textAlign: "center",
+              display: "inline-block",
+              float: "right",
+              marginRight: 2,
+            }}
+          >
+            <Countdown timeframe={timeframe} bare />
+          </div>
         </div>
       )}
       {measureRender}
