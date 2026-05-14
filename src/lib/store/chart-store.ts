@@ -362,6 +362,8 @@ interface ChartState {
   mobileRightOpen: boolean;
   /** Currently selected drawing — Delete/Supr removes it */
   selectedDrawingId: string | null;
+  /** When true, secondary panes (RSI, MACD) collapse and only main chart shows */
+  panesCollapsed: boolean;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -424,6 +426,8 @@ interface ChartState {
   setMobileLeftOpen: (v: boolean) => void;
   setMobileRightOpen: (v: boolean) => void;
   selectDrawing: (id: string | null) => void;
+  setPanesCollapsed: (v: boolean) => void;
+  togglePanesCollapsed: () => void;
   startReplay: (slotId: string, total: number) => void;
   stopReplay: () => void;
   setReplayIndex: (idx: number) => void;
@@ -486,6 +490,7 @@ export const useChartStore = create<ChartState>()(
       mobileLeftOpen: false,
       mobileRightOpen: false,
       selectedDrawingId: null,
+      panesCollapsed: false,
       replay: {
         active: false,
         slotId: null,
@@ -953,6 +958,9 @@ export const useChartStore = create<ChartState>()(
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
       setMobileRightOpen: (mobileRightOpen) => set({ mobileRightOpen }),
       selectDrawing: (selectedDrawingId) => set({ selectedDrawingId }),
+      setPanesCollapsed: (panesCollapsed) => set({ panesCollapsed }),
+      togglePanesCollapsed: () =>
+        set((s) => ({ panesCollapsed: !s.panesCollapsed })),
       startReplay: (slotId, total) =>
         set({
           replay: {

@@ -131,6 +131,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const updateDrawing = useChartStore((s) => s.updateDrawing);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const selectDrawing = useChartStore((s) => s.selectDrawing);
+  const panesCollapsed = useChartStore((s) => s.panesCollapsed);
+  const togglePanesCollapsed = useChartStore((s) => s.togglePanesCollapsed);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -1270,6 +1272,37 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [compares.join(","), timeframe]);
+
+  // Collapse / expand secondary panes (RSI, MACD) on double-click
+  useEffect(() => {
+    if (!chartRef.current) return;
+    const chart = chartRef.current;
+    try {
+      const panes = chart.panes();
+      const isMobile =
+        typeof window !== "undefined" && window.innerWidth < 768;
+      const mainStretch = panesCollapsed ? 1 : isMobile ? 5 : 3;
+      panes[0]?.setStretchFactor(mainStretch);
+      for (let i = 1; i < panes.length; i++) {
+        panes[i]?.setStretchFactor(panesCollapsed ? 0.0001 : 1);
+      }
+      requestAnimationFrame(() => recomputePaneOffsets());
+    } catch (e) {
+      console.warn("panesCollapsed apply failed:", e);
+    }
+  }, [panesCollapsed, indicators.rsi, indicators.macd]);
+
+  // Double-click toggle for collapsed panes
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: MouseEvent) => {
+      e.preventDefault();
+      togglePanesCollapsed();
+    };
+    el.addEventListener("dblclick", handler);
+    return () => el.removeEventListener("dblclick", handler);
+  }, [togglePanesCollapsed]);
 
   // Log scale toggle
   useEffect(() => {
