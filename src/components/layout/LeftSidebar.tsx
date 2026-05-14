@@ -101,7 +101,7 @@ export function LeftSidebar() {
   return (
     <aside
       className={cn(
-        "z-30 flex w-11 flex-col items-center border-r border-tv-border bg-tv-panel py-1",
+        "z-30 flex w-11 flex-col items-center overflow-y-auto border-r border-tv-border bg-tv-panel py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
         "md:relative md:translate-x-0",
         "fixed inset-y-0 left-0 transition-transform",
         mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",

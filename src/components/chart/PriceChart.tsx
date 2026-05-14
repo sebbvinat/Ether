@@ -207,6 +207,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const [pillsCollapsed, setPillsCollapsed] = useState(false);
+  /** Live preview while hovering with long/short tool active */
+  const [lsHover, setLsHover] = useState<{ time: number; price: number } | null>(
+    null,
+  );
 
   // Helper — compute pane top offsets from chart layout
   function recomputePaneOffsets() {
@@ -310,6 +314,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       const tool = toolRef.current;
       const sym = symbolRef.current;
 
+      // Click on empty chart with cursor tool → deselect any selected drawing
+      if (tool === "cursor") {
+        useChartStore.getState().selectDrawing(null);
+      }
+
       // If replay is active for this slot, clicking a candle moves the replay index
       if (replayActiveRef.current && param.time) {
         const tApi = Number(param.time);
@@ -400,12 +409,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         if (!param.time) return;
         const time = Number(param.time);
         const current = draftRef.current;
-        if (!current || current.type !== tool) {
-          setDraft({
+        if (
+          !current ||
+          current.type === "long" ||
+          current.type === "short" ||
+          current.type !== tool
+        ) {
+          const newDraft: DrawDraft = {
             type: tool,
             a: { time, price },
             b: { time, price },
-          });
+          };
+          draftRef.current = newDraft;
+          setDraft(newDraft);
         } else {
           addDrawingRef.current({
             type: tool,
@@ -413,6 +429,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             a: current.a,
             b: { time, price },
           });
+          // Aggressively clear draft + tool so crosshair move can't re-apply it
+          draftRef.current = null;
+          toolRef.current = "cursor";
           setDraft(null);
           setToolRef.current("cursor");
         }
@@ -460,15 +479,32 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }
       }
 
+      // Long/short hover preview — track cursor for live SL/TP lines
+      if (
+        (toolRef.current === "long" || toolRef.current === "short") &&
+        param.point &&
+        param.time &&
+        candleSeriesRef.current
+      ) {
+        const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
+        if (price !== null && isFinite(price)) {
+          setLsHover({ time: Number(param.time), price });
+        }
+      } else if (
+        toolRef.current !== "long" &&
+        toolRef.current !== "short" &&
+        lsHover
+      ) {
+        setLsHover(null);
+      }
+
       const draftNow = draftRef.current;
+      // Only update draft.b if the active tool MATCHES the draft type (avoids stuck endpoint after commit)
       if (
         draftNow &&
-        (toolRef.current === "trendline" ||
-          toolRef.current === "arrow" ||
-          toolRef.current === "ray" ||
-          toolRef.current === "fib" ||
-          toolRef.current === "rect" ||
-          toolRef.current === "hrange") &&
+        draftNow.type !== "long" &&
+        draftNow.type !== "short" &&
+        draftNow.type === toolRef.current &&
         param.point &&
         param.time &&
         candleSeriesRef.current
@@ -483,8 +519,6 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           );
         }
       }
-
-      // Long/short are 1-click now — no draft phase tracking needed.
 
       if (!param.time || !candleSeriesRef.current) {
         setHover(null);
@@ -792,6 +826,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     ];
     if (!draftTools.includes(tool)) {
       setDraft(null);
+    }
+    if (tool !== "long" && tool !== "short") {
+      setLsHover(null);
     }
   }, [tool]);
 
@@ -1419,6 +1456,25 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           b: draft.b,
         }
     : null;
+
+  // Live preview while user is hovering with long/short tool (before click)
+  const lsPreview: Drawing | null =
+    lsHover && (tool === "long" || tool === "short")
+      ? {
+          id: "__ls_preview__",
+          symbol,
+          type: tool,
+          a: lsHover,
+          b: {
+            time: lsHover.time,
+            price: tool === "long" ? lsHover.price * 0.99 : lsHover.price * 1.01,
+          },
+          c: {
+            time: lsHover.time,
+            price: tool === "long" ? lsHover.price * 1.02 : lsHover.price * 0.98,
+          },
+        }
+      : null;
   void renderTick;
 
   const toCoord = (time: number, price: number) => {
@@ -1490,9 +1546,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       )}
       {measureRender}
       <DrawingsLayer
-        drawings={
-          draftAsDrawing ? [...symbolDrawings, draftAsDrawing] : symbolDrawings
-        }
+        drawings={[
+          ...symbolDrawings,
+          ...(draftAsDrawing ? [draftAsDrawing] : []),
+          ...(lsPreview ? [lsPreview] : []),
+        ]}
         selectedId={selectedDrawingId}
         toCoord={toCoord}
         fromCoord={fromCoord}

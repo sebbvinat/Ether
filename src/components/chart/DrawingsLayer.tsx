@@ -129,12 +129,15 @@ export function DrawingsLayer({
       onPointerCancel={onSvgPointerUp}
     >
       {drawings.map((d) => {
-        const isSelected = selectedId === d.id;
+        const isPreview = d.id.startsWith("__");
+        const isSelected = !isPreview && selectedId === d.id;
         const selectedWidth = isSelected ? 1 : 0;
-        const grStyle: React.CSSProperties = {
-          pointerEvents: "auto",
-          cursor: eraserActive ? "crosshair" : "pointer",
-        };
+        const grStyle: React.CSSProperties = isPreview
+          ? { pointerEvents: "none", opacity: 0.7 }
+          : {
+              pointerEvents: "auto",
+              cursor: eraserActive ? "crosshair" : "pointer",
+            };
         if (d.type === "trendline" || d.type === "arrow") {
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
@@ -196,11 +199,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -270,11 +275,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -336,11 +343,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -385,11 +394,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -448,11 +459,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -497,6 +510,7 @@ export function DrawingsLayer({
                 cx={p.x}
                 cy={Math.max(20, Math.min(containerHeight - 20, p.y))}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -550,6 +564,7 @@ export function DrawingsLayer({
                 cx={Math.min(p.x, containerWidth - 10)}
                 cy={p.y}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -578,7 +593,8 @@ export function DrawingsLayer({
           const stopOk = isLong ? stop < entry : stop > entry;
           const targetOk = isLong ? target > entry : target < entry;
           const xLeft = a.x;
-          const xRight = Math.max(a.x + 60, Math.max(b.x, c.x));
+          // Always extend zones to the right edge for clearer SL/TP visualization (TV-style)
+          const xRight = containerWidth;
           // Stop zone (red) and Target zone (green)
           const stopY1 = Math.min(a.y, b.y);
           const stopY2 = Math.max(a.y, b.y);
@@ -623,6 +639,26 @@ export function DrawingsLayer({
                 stroke={TV_BLUE}
                 strokeWidth={1.5}
               />
+              {/* SL line — dashed red, helps see the level */}
+              <line
+                x1={xLeft}
+                y1={b.y}
+                x2={xRight}
+                y2={b.y}
+                stroke={TV_RED}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              {/* TP line — dashed green */}
+              <line
+                x1={xLeft}
+                y1={c.y}
+                x2={xRight}
+                y2={c.y}
+                stroke={TV_GREEN}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
               {/* Labels */}
               <text
                 x={xLeft + 4}
@@ -656,18 +692,21 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={a.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={isPreview}
               />
               <DragHandle
                 cx={a.x}
                 cy={c.y}
                 onDown={(e) => onHandleDown(e, d.id, "c")}
+                hidden={isPreview}
               />
-              {hover === d.id && (
+              {!isPreview && hover === d.id && (
                 <RemoveHandle
                   x={xRight - 16}
                   y={a.y - 14}
@@ -704,6 +743,7 @@ export function DrawingsLayer({
                 cy={p.y - 4}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
                 small
+                hidden={isPreview}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -727,12 +767,15 @@ function DragHandle({
   cy,
   onDown,
   small,
+  hidden,
 }: {
   cx: number;
   cy: number;
   onDown: (e: React.PointerEvent<SVGCircleElement>) => void;
   small?: boolean;
+  hidden?: boolean;
 }) {
+  if (hidden) return null;
   return (
     <circle
       cx={cx}

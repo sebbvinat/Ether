@@ -50,12 +50,12 @@ export function InstallBanner() {
   if (!evt || dismissed) return null;
 
   return (
-    <div className="pointer-events-auto fixed bottom-20 left-1/2 z-40 flex max-w-[92%] -translate-x-1/2 items-center gap-2 rounded-lg border border-tv-border bg-tv-panel/95 px-3 py-2 text-xs shadow-lg backdrop-blur md:bottom-4">
+    <div className="pointer-events-auto fixed right-3 top-14 z-40 flex max-w-[92%] items-center gap-2 rounded-lg border border-tv-border bg-tv-panel/95 px-3 py-2 text-xs shadow-lg backdrop-blur">
       <Download className="h-4 w-4 text-tv-blue" />
-      <span className="text-tv-text">Instalar Ether como app</span>
+      <span className="text-tv-text">Instalar como app</span>
       <button
         onClick={install}
-        className="ml-2 rounded bg-tv-blue px-2 py-1 text-[11px] font-semibold text-white hover:bg-tv-blue/90"
+        className="ml-1 rounded bg-tv-blue px-2 py-1 text-[11px] font-semibold text-white hover:bg-tv-blue/90"
       >
         Instalar
       </button>
