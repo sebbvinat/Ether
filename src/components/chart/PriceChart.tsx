@@ -709,7 +709,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
-    const v = (key: IndicatorKey) => indicators[key] && !hidden[key];
+    const v = (key: IndicatorKey) =>
+      Boolean(indicators[key]) && !hidden[key];
     ema20Ref.current?.applyOptions({ visible: v("ema20") });
     ema50Ref.current?.applyOptions({ visible: v("ema50") });
     ema200Ref.current?.applyOptions({ visible: v("ema200") });

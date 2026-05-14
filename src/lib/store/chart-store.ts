@@ -804,6 +804,37 @@ export const useChartStore = create<ChartState>()(
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
       },
+      merge: (persistedState, currentState) => {
+        const p = (persistedState ?? {}) as Partial<ChartState>;
+        return {
+          ...currentState,
+          ...p,
+          // Deep-merge collections that might be missing keys after schema bumps
+          indicators: {
+            ...currentState.indicators,
+            ...(p.indicators ?? {}),
+          },
+          hidden: {
+            ...currentState.hidden,
+            ...(p.hidden ?? {}),
+          },
+          config: {
+            ...currentState.config,
+            ...(p.config ?? {}),
+          },
+          compares: p.compares ?? currentState.compares,
+          workspaces: p.workspaces ?? currentState.workspaces,
+          indicatorTemplates:
+            p.indicatorTemplates ?? currentState.indicatorTemplates,
+          journal: p.journal ?? currentState.journal,
+          watchlists: p.watchlists ?? currentState.watchlists,
+          yahooSymbols: p.yahooSymbols ?? currentState.yahooSymbols,
+          drawings: p.drawings ?? currentState.drawings,
+          priceLines: p.priceLines ?? currentState.priceLines,
+          binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
+          chartStyle: p.chartStyle ?? currentState.chartStyle,
+        };
+      },
     },
   ),
 );

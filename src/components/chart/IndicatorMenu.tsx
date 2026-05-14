@@ -44,7 +44,7 @@ export function IndicatorMenu() {
   const indicators = useChartStore((s) => s.indicators);
   const config = useChartStore((s) => s.config);
   const toggle = useChartStore((s) => s.toggleIndicator);
-  const templates = useChartStore((s) => s.indicatorTemplates);
+  const templates = useChartStore((s) => s.indicatorTemplates) ?? [];
   const saveTemplate = useChartStore((s) => s.saveIndicatorTemplate);
   const loadTemplate = useChartStore((s) => s.loadIndicatorTemplate);
   const deleteTemplate = useChartStore((s) => s.deleteIndicatorTemplate);
