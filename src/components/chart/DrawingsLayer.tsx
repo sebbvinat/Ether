@@ -131,6 +131,10 @@ export function DrawingsLayer({
       {drawings.map((d) => {
         const isPreview = d.id.startsWith("__");
         const isSelected = !isPreview && selectedId === d.id;
+        const isHovered = !isPreview && hover === d.id;
+        const isDragging = !isPreview && drag?.id === d.id;
+        const showHandles = !isPreview && (isSelected || isHovered || isDragging);
+        const hideHandle = !showHandles;
         const selectedWidth = isSelected ? 1 : 0;
         const grStyle: React.CSSProperties = isPreview
           ? { pointerEvents: "none", opacity: 0.7 }
@@ -199,13 +203,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -275,13 +279,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -343,13 +347,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -394,13 +398,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -459,13 +463,13 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={b.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -510,7 +514,7 @@ export function DrawingsLayer({
                 cx={p.x}
                 cy={Math.max(20, Math.min(containerHeight - 20, p.y))}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -564,7 +568,7 @@ export function DrawingsLayer({
                 cx={Math.min(p.x, containerWidth - 10)}
                 cy={p.y}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
@@ -704,19 +708,19 @@ export function DrawingsLayer({
                 cx={a.x}
                 cy={a.y}
                 onDown={(e) => onHandleDown(e, d.id, "a")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={a.x}
                 cy={b.y}
                 onDown={(e) => onHandleDown(e, d.id, "b")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               <DragHandle
                 cx={a.x}
                 cy={c.y}
                 onDown={(e) => onHandleDown(e, d.id, "c")}
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {!isPreview && hover === d.id && (
                 <RemoveHandle
@@ -755,7 +759,7 @@ export function DrawingsLayer({
                 cy={p.y - 4}
                 onDown={(e) => onHandleDown(e, d.id, "at")}
                 small
-                hidden={isPreview}
+                hidden={hideHandle}
               />
               {hover === d.id && (
                 <RemoveHandle
