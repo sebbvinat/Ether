@@ -39,7 +39,26 @@ Mientras no estén configurados, la UI deja crear alertas pero **no se disparar�
 
 3. Después de agregar, **Redeploy** el último deployment (Deployments → ... → Redeploy).
 
-## 4. Verificar
+## 4. Configurar el cron externo (cron-job.org, gratis)
+
+> **Por qué externo**: Vercel Hobby (free) solo permite cron jobs **diarios**. Para alertas que se chequean cada minuto, usamos un cron externo gratis.
+
+1. Andá a https://cron-job.org → Sign up (gratis, sin tarjeta)
+2. Dashboard → **Create cronjob**
+3. Configurar:
+   - **Title**: Ether alerts
+   - **URL**: `https://ether-three-sable.vercel.app/api/cron/check-alerts`
+   - **Schedule**: Every minute (o cada 2-5 minutos si querés ahorrar)
+   - **Request method**: GET
+   - Si configuraste `CRON_SECRET`: **Headers** → agregá `Authorization: Bearer <tu_secret>`
+4. Save. En el próximo minuto va a empezar a pingear el endpoint.
+
+Alternativas equivalentes (todas free):
+- https://www.easycron.com/
+- https://uptimerobot.com/ (monitoreo + cron)
+- GitHub Actions con `schedule: cron: '* * * * *'` (5 minutos mínimo real)
+
+## 5. Verificar
 
 1. Abrí la app → tocá el icono 🔔 (campana) arriba a la derecha
 2. El warning amarillo debería desaparecer
@@ -47,7 +66,7 @@ Mientras no estén configurados, la UI deja crear alertas pero **no se disparar�
    - Símbolo: el actual (cambialo desde el chart si querés otro)
    - Dirección: ≥ o ≤
    - Precio: un número cerca del actual (ej: BTC actual 80k → poné 79k con `≥` para que dispare ya)
-4. El cron corre cada minuto. En máximo 60s deberías recibir un msg en Telegram con:
+4. El cron externo pingea cada minuto. En máximo 60s deberías recibir un msg en Telegram con:
    ```
    📈 BTCUSDT ≥ 79000
    💰 Precio actual: 80123.45
@@ -56,6 +75,6 @@ Mientras no estén configurados, la UI deja crear alertas pero **no se disparar�
 ## Troubleshooting
 
 - **No llega nada**: verificá que le hayas mandado un mensaje al bot primero. Si no, Telegram bloquea las APIs.
-- **Cron no corre**: en Vercel free tier los cron jobs solo corren en Production deployments. Verificá en Vercel → **Crons** que aparezca `* * * * * /api/cron/check-alerts`.
-- **Test manual del cron**: abrí `https://ether-three-sable.vercel.app/api/cron/check-alerts` en el browser. Si configuraste `CRON_SECRET` necesitarás un curl con header.
+- **Cron no corre**: el cron es externo (cron-job.org). Verificá en su dashboard que el cron esté "Enabled" y mostrando responses 200.
+- **Test manual del cron**: abrí `https://ether-three-sable.vercel.app/api/cron/check-alerts` en el browser. Si configuraste `CRON_SECRET` necesitarás un curl con header `Authorization: Bearer <secret>`.
 - **Logs**: Vercel → Deployment → Functions → `/api/cron/check-alerts` → logs.

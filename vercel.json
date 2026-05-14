@@ -1,8 +1,4 @@
 {
-  "crons": [
-    {
-      "path": "/api/cron/check-alerts",
-      "schedule": "* * * * *"
-    }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "comment": "Cron-job.org externo pingea /api/cron/check-alerts cada minuto (ver SETUP.md). Vercel Hobby no permite crons sub-diarios."
 }
