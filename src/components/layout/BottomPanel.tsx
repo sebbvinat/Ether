@@ -104,9 +104,20 @@ export function BottomPanel() {
           value={s?.lastPrice != null ? formatPrice(s.lastPrice) : "—"}
         />
       )}
-      <div className="ml-auto flex items-center gap-2 whitespace-nowrap text-[10px] text-tv-text-dim">
-        <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-tv-green" />
-        <span>{liveLabel}</span>
+      <div className="ml-auto flex items-center gap-3 whitespace-nowrap text-[10px] text-tv-text-dim">
+        <a
+          href="https://www.tradingview.com/lightweight-charts/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="opacity-50 hover:text-tv-text hover:opacity-100"
+          title="Charts powered by TradingView Lightweight Charts (Apache 2.0)"
+        >
+          Charts by TradingView
+        </a>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex h-1.5 w-1.5 animate-pulse rounded-full bg-tv-green" />
+          <span>{liveLabel}</span>
+        </div>
       </div>
     </div>
   );

@@ -107,6 +107,7 @@ export function DrawingsLayer({
       style={{
         overflow: "visible",
         pointerEvents: drag ? "auto" : "none",
+        zIndex: 5,
       }}
       onPointerMove={onSvgPointerMove}
       onPointerUp={onSvgPointerUp}

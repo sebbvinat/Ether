@@ -231,6 +231,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         fontFamily: "var(--font-sans), Inter, system-ui, sans-serif",
         fontSize: 11,
         panes: { separatorColor: TV_COLORS.border, separatorHoverColor: TV_COLORS.border },
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: TV_COLORS.grid },
