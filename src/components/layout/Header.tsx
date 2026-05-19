@@ -10,7 +10,6 @@ import {
   Play,
   Sun,
   TrendingUp,
-  Zap,
 } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
@@ -70,7 +69,19 @@ export function Header() {
         {/* Brand only on desktop */}
         <div className="hidden items-center gap-1.5 pr-2 md:flex">
           <div className="flex h-6 w-6 items-center justify-center rounded bg-tv-blue/20">
-            <Zap className="h-3.5 w-3.5 text-tv-blue" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              className="h-3.5 w-3.5 text-tv-blue"
+              aria-hidden
+            >
+              <path d="M12 3 5 13l7 4 7-4z" />
+              <path d="m5 13 7 8 7-8" />
+            </svg>
           </div>
           <span className="text-sm font-semibold text-tv-text">Ether</span>
         </div>
