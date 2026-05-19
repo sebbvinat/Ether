@@ -1,7 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, Code2, LineChart, Menu, Play, TrendingUp, Zap } from "lucide-react";
+import {
+  Camera,
+  Code2,
+  LineChart,
+  Menu,
+  Moon,
+  Play,
+  Sun,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -19,6 +29,8 @@ export function Header() {
   const activeSlotId = useChartStore((s) => s.activeSlotId);
   const replay = useChartStore((s) => s.replay);
   const stopReplay = useChartStore((s) => s.stopReplay);
+  const theme = useChartStore((s) => s.theme);
+  const toggleTheme = useChartStore((s) => s.toggleTheme);
 
   function onTrade() {
     setTradeToast(true);
@@ -130,6 +142,18 @@ export function Header() {
           className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
         >
           <LineChart className="h-4 w-4" />
+        </button>
+        <button
+          onClick={toggleTheme}
+          aria-label="Cambiar tema"
+          title={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+        >
+          {theme === "dark" ? (
+            <Sun className="h-4 w-4" />
+          ) : (
+            <Moon className="h-4 w-4" />
+          )}
         </button>
         <MoreMenu />
         <button

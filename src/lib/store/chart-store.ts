@@ -329,6 +329,8 @@ interface ChartState {
   compares: Record<string, string[]>;
   /** Focus mode hides all chrome (header, sidebars, panels) — only the chart */
   focusMode: boolean;
+  /** UI theme — dark (default) or light */
+  theme: "dark" | "light";
   /** Clean mode (Z) — distraction-free: hides chrome + legend + overlays */
   cleanMode: boolean;
   /** Hide indicator legend pills (H) — keeps symbol/price line */
@@ -395,6 +397,8 @@ interface ChartState {
   setChartStyle: (s: ChartStyle) => void;
   setLogScale: (v: boolean) => void;
   setSyncCharts: (v: boolean) => void;
+  setTheme: (t: "dark" | "light") => void;
+  toggleTheme: () => void;
   setFocusMode: (v: boolean) => void;
   setCleanMode: (v: boolean) => void;
   toggleCleanMode: () => void;
@@ -497,6 +501,7 @@ export const useChartStore = create<ChartState>()(
       logScale: false,
       syncCharts: false,
       compares: {},
+      theme: "dark" as "dark" | "light",
       focusMode: false,
       cleanMode: false,
       hideLegend: false,
@@ -613,6 +618,9 @@ export const useChartStore = create<ChartState>()(
       setChartStyle: (chartStyle) => set({ chartStyle }),
       setLogScale: (logScale) => set({ logScale }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
+      setTheme: (theme) => set({ theme }),
+      toggleTheme: () =>
+        set((s) => ({ theme: s.theme === "dark" ? "light" : "dark" })),
       setFocusMode: (focusMode) => set({ focusMode }),
       setCleanMode: (cleanMode) => set({ cleanMode }),
       toggleCleanMode: () => set((s) => ({ cleanMode: !s.cleanMode })),
@@ -1033,6 +1041,7 @@ export const useChartStore = create<ChartState>()(
     {
       name: "tv-gratis-chart-state",
       partialize: (s) => ({
+        theme: s.theme,
         symbol: s.symbol,
         timeframe: s.timeframe,
         layout: s.layout,

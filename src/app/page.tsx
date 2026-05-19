@@ -30,6 +30,14 @@ export default function HomePage() {
   const toggleHideLegend = useChartStore((s) => s.toggleHideLegend);
   const tool = useChartStore((s) => s.tool);
   const setTool = useChartStore((s) => s.setTool);
+  const theme = useChartStore((s) => s.theme);
+
+  // Apply theme class to <html> (default dark needs no class; .light overrides)
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("light", theme === "light");
+    root.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
   const [pineOpen, setPineOpen] = useState(false);
   const [backtestOpen, setBacktestOpen] = useState(false);

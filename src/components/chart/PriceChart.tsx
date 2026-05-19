@@ -71,6 +71,17 @@ const TV_COLORS = {
   grid: "#1e222d",
 };
 
+const LIGHT_CHART = {
+  bg: "#ffffff",
+  panel: "#f4f6fa",
+  border: "#d6dae3",
+  text: "#131722",
+  textMuted: "#5d6068",
+  green: "#089981",
+  red: "#f23645",
+  grid: "#eef0f4",
+};
+
 interface HoverInfo {
   o: number;
   h: number;
@@ -145,6 +156,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const togglePanesCollapsed = useChartStore((s) => s.togglePanesCollapsed);
   const storeHideLegend = useChartStore((s) => s.hideLegend);
   const storeCleanMode = useChartStore((s) => s.cleanMode);
+  const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -832,6 +844,39 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: v("macd") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
   }, [indicators, hidden]);
+
+  // Re-theme the chart canvas (lightweight-charts ignores CSS variables)
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const c = theme === "light" ? LIGHT_CHART : TV_COLORS;
+    chart.applyOptions({
+      layout: {
+        background: { color: c.bg },
+        textColor: c.textMuted,
+        panes: { separatorColor: c.border, separatorHoverColor: c.border },
+      },
+      grid: {
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
+      },
+      crosshair: {
+        vertLine: { color: c.textMuted, labelBackgroundColor: c.panel },
+        horzLine: { color: c.textMuted, labelBackgroundColor: c.panel },
+      },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+    candleSeriesRef.current?.applyOptions({
+      upColor: c.green,
+      downColor: c.red,
+      borderUpColor: c.green,
+      borderDownColor: c.red,
+      wickUpColor: c.green,
+      wickDownColor: c.red,
+      priceLineColor: c.textMuted,
+    });
+  }, [theme]);
 
   // Recompute indicators when config changes (periods)
   useEffect(() => {
