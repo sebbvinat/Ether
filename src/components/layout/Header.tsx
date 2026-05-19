@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, Menu, Play, TrendingUp, Zap } from "lucide-react";
+import { Camera, Code2, LineChart, Menu, Play, TrendingUp, Zap } from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -110,6 +110,26 @@ export function Header() {
           className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
         >
           <Camera className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ether:open-pine"))
+          }
+          aria-label="Editor de Pine"
+          title="Editor de Pine"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <Code2 className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ether:open-backtest"))
+          }
+          aria-label="Backtest de estrategias"
+          title="Backtest de estrategias"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <LineChart className="h-4 w-4" />
         </button>
         <MoreMenu />
         <button

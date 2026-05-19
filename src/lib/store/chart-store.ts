@@ -9,6 +9,9 @@ export type IndicatorKey =
   | "ema20"
   | "ema50"
   | "ema200"
+  | "sma20"
+  | "sma50"
+  | "bb"
   | "vwap"
   | "rsi"
   | "macd"
@@ -241,6 +244,10 @@ export interface IndicatorConfig {
   ema20: number;
   ema50: number;
   ema200: number;
+  sma20: number;
+  sma50: number;
+  bbPeriod: number;
+  bbStdDev: number;
   rsi: number;
   macdFast: number;
   macdSlow: number;
@@ -251,6 +258,10 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   ema20: 20,
   ema50: 50,
   ema200: 200,
+  sma20: 20,
+  sma50: 50,
+  bbPeriod: 20,
+  bbStdDev: 2,
   rsi: 14,
   macdFast: 12,
   macdSlow: 26,
@@ -261,6 +272,9 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   ema20: "#ffb74d",
   ema50: "#2962ff",
   ema200: "#ab47bc",
+  sma20: "#42a5f5",
+  sma50: "#ec407a",
+  bb: "#26c6da",
   vwap: "#26a69a",
   rsi: "#ab47bc",
   macd: "#2962ff",
@@ -315,6 +329,10 @@ interface ChartState {
   compares: Record<string, string[]>;
   /** Focus mode hides all chrome (header, sidebars, panels) — only the chart */
   focusMode: boolean;
+  /** Clean mode (Z) — distraction-free: hides chrome + legend + overlays */
+  cleanMode: boolean;
+  /** Hide indicator legend pills (H) — keeps symbol/price line */
+  hideLegend: boolean;
   /** Binance market: spot or futures (perpetual) */
   binanceMarket: "spot" | "perp";
   /** Saved workspaces — named snapshots of the current setup */
@@ -378,6 +396,10 @@ interface ChartState {
   setLogScale: (v: boolean) => void;
   setSyncCharts: (v: boolean) => void;
   setFocusMode: (v: boolean) => void;
+  setCleanMode: (v: boolean) => void;
+  toggleCleanMode: () => void;
+  setHideLegend: (v: boolean) => void;
+  toggleHideLegend: () => void;
   setBinanceMarket: (m: "spot" | "perp") => void;
   saveWorkspace: (name: string) => void;
   loadWorkspace: (id: string) => void;
@@ -450,6 +472,9 @@ export const useChartStore = create<ChartState>()(
         ema20: true,
         ema50: true,
         ema200: false,
+        sma20: false,
+        sma50: false,
+        bb: false,
         vwap: false,
         rsi: true,
         macd: false,
@@ -459,6 +484,9 @@ export const useChartStore = create<ChartState>()(
         ema20: false,
         ema50: false,
         ema200: false,
+        sma20: false,
+        sma50: false,
+        bb: false,
         vwap: false,
         rsi: false,
         macd: false,
@@ -470,6 +498,8 @@ export const useChartStore = create<ChartState>()(
       syncCharts: false,
       compares: {},
       focusMode: false,
+      cleanMode: false,
+      hideLegend: false,
       binanceMarket: "spot" as "spot" | "perp",
       workspaces: [],
       indicatorTemplates: [],
@@ -584,6 +614,10 @@ export const useChartStore = create<ChartState>()(
       setLogScale: (logScale) => set({ logScale }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setFocusMode: (focusMode) => set({ focusMode }),
+      setCleanMode: (cleanMode) => set({ cleanMode }),
+      toggleCleanMode: () => set((s) => ({ cleanMode: !s.cleanMode })),
+      setHideLegend: (hideLegend) => set({ hideLegend }),
+      toggleHideLegend: () => set((s) => ({ hideLegend: !s.hideLegend })),
       setBinanceMarket: (binanceMarket) => set({ binanceMarket }),
       saveWorkspace: (name) =>
         set((s) => ({

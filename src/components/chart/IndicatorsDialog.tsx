@@ -8,20 +8,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useChartStore, type IndicatorKey } from "@/lib/store/chart-store";
+import {
+  useChartStore,
+  type IndicatorKey,
+  type IndicatorConfig,
+} from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
 interface Entry {
   key: IndicatorKey;
-  label: (cfg: {
-    ema20: number;
-    ema50: number;
-    ema200: number;
-    rsi: number;
-    macdFast: number;
-    macdSlow: number;
-    macdSignal: number;
-  }) => string;
+  label: (cfg: IndicatorConfig) => string;
   group: string;
 }
 
@@ -29,6 +25,13 @@ const ENTRIES: Entry[] = [
   { key: "ema20", group: "Medias móviles", label: (c) => `EMA ${c.ema20}` },
   { key: "ema50", group: "Medias móviles", label: (c) => `EMA ${c.ema50}` },
   { key: "ema200", group: "Medias móviles", label: (c) => `EMA ${c.ema200}` },
+  { key: "sma20", group: "Medias móviles", label: (c) => `SMA ${c.sma20}` },
+  { key: "sma50", group: "Medias móviles", label: (c) => `SMA ${c.sma50}` },
+  {
+    key: "bb",
+    group: "Volatilidad",
+    label: (c) => `Bollinger (${c.bbPeriod}, ${c.bbStdDev})`,
+  },
   { key: "vwap", group: "Volumen", label: () => "VWAP" },
   { key: "volume", group: "Volumen", label: () => "Volumen" },
   { key: "rsi", group: "Osciladores", label: (c) => `RSI (${c.rsi})` },

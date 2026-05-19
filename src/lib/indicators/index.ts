@@ -45,6 +45,43 @@ export function ema(candles: Candle[], period: number): IndicatorPoint[] {
   return out;
 }
 
+export interface BollingerPoint {
+  time: number;
+  basis: number;
+  upper: number;
+  lower: number;
+}
+
+/**
+ * Bollinger Bands — SMA basis ± (stdDev × population standard deviation).
+ */
+export function bollinger(
+  candles: Candle[],
+  period = 20,
+  mult = 2,
+): BollingerPoint[] {
+  const out: BollingerPoint[] = [];
+  if (candles.length < period) return out;
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+    const mean = sum / period;
+    let variance = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const d = candles[j].close - mean;
+      variance += d * d;
+    }
+    const sd = Math.sqrt(variance / period);
+    out.push({
+      time: candles[i].time,
+      basis: mean,
+      upper: mean + mult * sd,
+      lower: mean - mult * sd,
+    });
+  }
+  return out;
+}
+
 /**
  * RSI (Wilder) — period typically 14.
  */
