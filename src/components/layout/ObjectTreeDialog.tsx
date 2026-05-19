@@ -54,6 +54,9 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
+  atr: "ATR",
+  obv: "OBV",
+  stoch: "Estocástico",
   volume: "Volume",
 };
 

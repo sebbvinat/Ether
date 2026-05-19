@@ -33,13 +33,24 @@ const ENTRIES: Entry[] = [
     group: "Volatilidad",
     label: (c) => `Bollinger (${c.bbPeriod}, ${c.bbStdDev})`,
   },
+  {
+    key: "atr",
+    group: "Volatilidad",
+    label: (c) => `ATR (${c.atr})`,
+  },
   { key: "vwap", group: "Volumen", label: () => "VWAP" },
+  { key: "obv", group: "Volumen", label: () => "OBV" },
   { key: "volume", group: "Volumen", label: () => "Volumen" },
   { key: "rsi", group: "Osciladores", label: (c) => `RSI (${c.rsi})` },
   {
     key: "macd",
     group: "Osciladores",
     label: (c) => `MACD (${c.macdFast}, ${c.macdSlow}, ${c.macdSignal})`,
+  },
+  {
+    key: "stoch",
+    group: "Osciladores",
+    label: (c) => `Estocástico (${c.stochK}, ${c.stochD})`,
   },
 ];
 

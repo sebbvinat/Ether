@@ -15,6 +15,9 @@ export type IndicatorKey =
   | "vwap"
   | "rsi"
   | "macd"
+  | "atr"
+  | "obv"
+  | "stoch"
   | "volume";
 
 export type DrawingTool =
@@ -252,6 +255,9 @@ export interface IndicatorConfig {
   macdFast: number;
   macdSlow: number;
   macdSignal: number;
+  atr: number;
+  stochK: number;
+  stochD: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -266,6 +272,9 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   macdFast: 12,
   macdSlow: 26,
   macdSignal: 9,
+  atr: 14,
+  stochK: 14,
+  stochD: 3,
 };
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
@@ -278,6 +287,9 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   vwap: "#26a69a",
   rsi: "#ab47bc",
   macd: "#2962ff",
+  atr: "#ff7043",
+  obv: "#26c6da",
+  stoch: "#ab47bc",
   volume: "#787b86",
 };
 
@@ -482,6 +494,9 @@ export const useChartStore = create<ChartState>()(
         vwap: false,
         rsi: true,
         macd: false,
+        atr: false,
+        obv: false,
+        stoch: false,
         volume: true,
       },
       hidden: {
@@ -494,6 +509,9 @@ export const useChartStore = create<ChartState>()(
         vwap: false,
         rsi: false,
         macd: false,
+        atr: false,
+        obv: false,
+        stoch: false,
         volume: false,
       },
       config: { ...DEFAULT_CONFIG },

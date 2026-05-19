@@ -25,6 +25,9 @@ const TITLES: Record<IndicatorKey, string> = {
   vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
+  atr: "ATR",
+  obv: "OBV",
+  stoch: "Estocástico",
   volume: "Volumen",
 };
 
@@ -94,6 +97,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         bbPeriod: clamp(draft.bbPeriod, 2, 500),
         bbStdDev: clamp(draft.bbStdDev, 1, 5),
       });
+    else if (target === "atr") onSave({ atr: clamp(draft.atr, 2, 200) });
+    else if (target === "stoch")
+      onSave({
+        stochK: clamp(draft.stochK, 2, 100),
+        stochD: clamp(draft.stochD, 1, 50),
+      });
     else if (target === "rsi") onSave({ rsi: clamp(draft.rsi, 2, 100) });
     else if (target === "macd")
       onSave({
@@ -101,7 +110,12 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         macdSlow: clamp(draft.macdSlow, 2, 200),
         macdSignal: clamp(draft.macdSignal, 2, 100),
       });
-    else if (target === "volume" || target === "vwap") onSave({});
+    else if (
+      target === "volume" ||
+      target === "vwap" ||
+      target === "obv"
+    )
+      onSave({});
   }
 
   return (
@@ -138,6 +152,27 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           onChange={(n) => setDraft((d) => ({ ...d, rsi: n }))}
         />
       )}
+      {target === "atr" && (
+        <Field
+          label="Período"
+          value={draft.atr}
+          onChange={(n) => setDraft((d) => ({ ...d, atr: n }))}
+        />
+      )}
+      {target === "stoch" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="%K"
+            value={draft.stochK}
+            onChange={(n) => setDraft((d) => ({ ...d, stochK: n }))}
+          />
+          <Field
+            label="%D"
+            value={draft.stochD}
+            onChange={(n) => setDraft((d) => ({ ...d, stochD: n }))}
+          />
+        </div>
+      )}
       {target === "macd" && (
         <div className="grid grid-cols-3 gap-2">
           <Field
@@ -157,10 +192,9 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           />
         </div>
       )}
-      {target === "volume" && (
+      {(target === "volume" || target === "vwap" || target === "obv") && (
         <p className="text-xs text-tv-text-muted">
-          El indicador de volumen no tiene parámetros configurables en esta
-          versión.
+          Este indicador no tiene parámetros configurables.
         </p>
       )}
 
