@@ -49,11 +49,18 @@ export default function HomePage() {
   useEffect(() => {
     const openPine = () => setPineOpen(true);
     const openBt = () => setBacktestOpen(true);
+    // Doble click sobre el chart bg dispara este evento → toggle focus.
+    const toggleFocus = () => {
+      const s = useChartStore.getState();
+      s.setFocusMode(!s.focusMode);
+    };
     window.addEventListener("ether:open-pine", openPine);
     window.addEventListener("ether:open-backtest", openBt);
+    window.addEventListener("ether:focus-toggle", toggleFocus);
     return () => {
       window.removeEventListener("ether:open-pine", openPine);
       window.removeEventListener("ether:open-backtest", openBt);
+      window.removeEventListener("ether:focus-toggle", toggleFocus);
     };
   }, []);
 
@@ -109,7 +116,13 @@ export default function HomePage() {
   ]);
 
   const backdropOpen = mobileLeftOpen || mobileRightOpen;
-  const chromeHidden = focusMode || cleanMode;
+  // Z (cleanMode): oculta TODO el chrome — para capturas o vista pelada.
+  // F (focusMode): oculta el panel inferior + tabs + status bar pero
+  // mantiene header, sidebars y toolbar. Pensado para concentrarse en el
+  // chart sin perder los controles.
+  const chromeHidden = cleanMode;
+  const bottomHidden = cleanMode || focusMode;
+  const sideChromeHidden = cleanMode;
 
   function closeAll() {
     setMobileLeftOpen(false);
@@ -118,15 +131,15 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-tv-bg">
-      {!chromeHidden && <TabsBar />}
+      {!bottomHidden && <TabsBar />}
       {!chromeHidden && <Header />}
       <div className="relative flex min-h-0 flex-1">
-        {!chromeHidden && <LeftSidebar />}
+        {!sideChromeHidden && <LeftSidebar />}
         <main className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
             <ChartGrid />
           </div>
-          {chromeHidden && (
+          {(focusMode || cleanMode) && (
             <button
               onClick={() => {
                 setCleanMode(false);
@@ -134,7 +147,7 @@ export default function HomePage() {
               }}
               className="absolute right-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-tv-panel/90 px-3 py-1.5 text-xs text-tv-text-muted shadow-lg ring-1 ring-tv-border backdrop-blur hover:text-tv-text"
               title="Salir (Esc)"
-              aria-label="Salir del modo enfoque"
+              aria-label="Salir del modo enfoque/limpio"
             >
               <Minimize2 className="h-3.5 w-3.5" />
               <span>Salir</span>
@@ -142,7 +155,7 @@ export default function HomePage() {
             </button>
           )}
         </main>
-        {!chromeHidden && <RightSidebar />}
+        {!sideChromeHidden && <RightSidebar />}
         {backdropOpen && (
           <button
             type="button"
@@ -152,9 +165,9 @@ export default function HomePage() {
           />
         )}
       </div>
-      {!chromeHidden && <ReplayBar />}
-      {!chromeHidden && <BottomPanel />}
-      {!chromeHidden && <StatusBar />}
+      {!bottomHidden && <ReplayBar />}
+      {!bottomHidden && <BottomPanel />}
+      {!bottomHidden && <StatusBar />}
       <BottomTabs />
       <IndicatorSettingsDialog />
       <InstallBanner />
