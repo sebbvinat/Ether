@@ -145,6 +145,38 @@ export interface DrawingPoint {
   price: number;
 }
 
+/** Estilo aplicado a un dibujo (color, línea, texto, visibilidad por TF, etc.).
+ *  Vive en un mapa paralelo `drawingStyles[drawingId]` para no inflar el
+ *  discriminated union de Drawing con ~17 campos opcionales por variante. */
+export interface DrawingStyle {
+  color?: string;
+  lineStyle?: "solid" | "dashed" | "dotted";
+  lineWidth?: number;
+  extend?: "none" | "right" | "left" | "both";
+  showMiddlePoint?: boolean;
+  showPriceLabels?: boolean;
+  stats?: "hidden" | "info" | "extended";
+  statsPosition?: "left" | "right";
+  alwaysShowStats?: boolean;
+  text?: string;
+  textColor?: string;
+  textSize?: number;
+  textBold?: boolean;
+  textItalic?: boolean;
+  textVAlign?: "top" | "middle" | "bottom";
+  textHAlign?: "left" | "center" | "right";
+  /** Si está definido, el dibujo sólo se renderiza cuando el TF actual está
+   *  incluido. Undefined → visible en todos. */
+  visibleTfs?: string[];
+  visibleRanges?: Partial<Record<string, { min: number; max: number }>>;
+}
+
+export interface DrawingTemplate {
+  id: string;
+  name: string;
+  style: DrawingStyle;
+}
+
 export type Drawing =
   | {
       id: string;
@@ -489,6 +521,12 @@ interface ChartState {
   selectedDrawingId: string | null;
   /** When true, secondary panes (RSI, MACD) collapse and only main chart shows */
   panesCollapsed: boolean;
+  /** Estilos por drawing (color, line style, extend, text, visibility, stats). */
+  drawingStyles: Record<string, DrawingStyle>;
+  /** Templates de estilo guardados por el usuario. */
+  drawingTemplates: DrawingTemplate[];
+  /** Drawing cuyo dialog de propiedades está abierto (null = cerrado). Ephemeral. */
+  drawingPropsTargetId: string | null;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -560,6 +598,13 @@ interface ChartState {
     }>,
   ) => void;
   clearDrawings: (symbol?: string) => void;
+  setDrawingStyle: (id: string, patch: Partial<DrawingStyle>) => void;
+  setDrawingStyleFull: (id: string, style: DrawingStyle) => void;
+  openDrawingProps: (id: string) => void;
+  closeDrawingProps: () => void;
+  saveDrawingTemplate: (name: string, style: DrawingStyle) => DrawingTemplate;
+  deleteDrawingTemplate: (id: string) => void;
+  applyDrawingTemplate: (drawingId: string, templateId: string) => void;
   setSymbolDialogOpen: (v: boolean) => void;
   setSettingsTarget: (k: IndicatorKey | null) => void;
   setMobileLeftOpen: (v: boolean) => void;
@@ -648,6 +693,9 @@ export const useChartStore = create<ChartState>()(
       mobileRightOpen: false,
       selectedDrawingId: null,
       panesCollapsed: false,
+      drawingStyles: {},
+      drawingTemplates: [],
+      drawingPropsTargetId: null,
       replay: {
         active: false,
         slotId: null,
@@ -1105,9 +1153,29 @@ export const useChartStore = create<ChartState>()(
           drawings: [...state.drawings, { ...d, id: newId() } satisfies Drawing],
         })),
       removeDrawing: (id) =>
-        set((state) => ({
-          drawings: state.drawings.filter((d) => d.id !== id),
-        })),
+        set((state) => {
+          // Cleanup del style asociado (si existía)
+          if (id in state.drawingStyles) {
+            const nextStyles = { ...state.drawingStyles };
+            delete nextStyles[id];
+            return {
+              drawings: state.drawings.filter((d) => d.id !== id),
+              drawingStyles: nextStyles,
+              // Si el dialog estaba abierto sobre este drawing, cerrarlo
+              drawingPropsTargetId:
+                state.drawingPropsTargetId === id
+                  ? null
+                  : state.drawingPropsTargetId,
+            };
+          }
+          return {
+            drawings: state.drawings.filter((d) => d.id !== id),
+            drawingPropsTargetId:
+              state.drawingPropsTargetId === id
+                ? null
+                : state.drawingPropsTargetId,
+          };
+        }),
       updateDrawing: (id, patch) =>
         set((state) => ({
           drawings: state.drawings.map((d) =>
@@ -1115,14 +1183,65 @@ export const useChartStore = create<ChartState>()(
           ),
         })),
       clearDrawings: (symbol) =>
+        set((state) => {
+          // Identificar los ids que se van a borrar para limpiar también su style
+          const idsToRemove = new Set(
+            (symbol
+              ? state.drawings.filter((d) => d.symbol === symbol)
+              : state.drawings
+            ).map((d) => d.id),
+          );
+          const nextStyles: Record<string, DrawingStyle> = {};
+          for (const [id, st] of Object.entries(state.drawingStyles)) {
+            if (!idsToRemove.has(id)) nextStyles[id] = st;
+          }
+          return {
+            drawings: symbol
+              ? state.drawings.filter((d) => d.symbol !== symbol)
+              : [],
+            priceLines: symbol
+              ? state.priceLines.filter((p) => p.symbol !== symbol)
+              : [],
+            drawingStyles: nextStyles,
+            drawingPropsTargetId:
+              state.drawingPropsTargetId &&
+              idsToRemove.has(state.drawingPropsTargetId)
+                ? null
+                : state.drawingPropsTargetId,
+          };
+        }),
+      setDrawingStyle: (id, patch) =>
         set((state) => ({
-          drawings: symbol
-            ? state.drawings.filter((d) => d.symbol !== symbol)
-            : [],
-          priceLines: symbol
-            ? state.priceLines.filter((p) => p.symbol !== symbol)
-            : [],
+          drawingStyles: {
+            ...state.drawingStyles,
+            [id]: { ...(state.drawingStyles[id] ?? {}), ...patch },
+          },
         })),
+      setDrawingStyleFull: (id, style) =>
+        set((state) => ({
+          drawingStyles: { ...state.drawingStyles, [id]: style },
+        })),
+      openDrawingProps: (id) => set({ drawingPropsTargetId: id }),
+      closeDrawingProps: () => set({ drawingPropsTargetId: null }),
+      saveDrawingTemplate: (name, style) => {
+        const tpl: DrawingTemplate = { id: newId(), name, style };
+        set((state) => ({
+          drawingTemplates: [...state.drawingTemplates, tpl],
+        }));
+        return tpl;
+      },
+      deleteDrawingTemplate: (id) =>
+        set((state) => ({
+          drawingTemplates: state.drawingTemplates.filter((t) => t.id !== id),
+        })),
+      applyDrawingTemplate: (drawingId, templateId) =>
+        set((state) => {
+          const t = state.drawingTemplates.find((x) => x.id === templateId);
+          if (!t) return {};
+          return {
+            drawingStyles: { ...state.drawingStyles, [drawingId]: { ...t.style } },
+          };
+        }),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
@@ -1197,6 +1316,8 @@ export const useChartStore = create<ChartState>()(
         magnetMode: s.magnetMode,
         lockDrawings: s.lockDrawings,
         hideDrawings: s.hideDrawings,
+        drawingStyles: s.drawingStyles,
+        drawingTemplates: s.drawingTemplates,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
@@ -1228,6 +1349,8 @@ export const useChartStore = create<ChartState>()(
           yahooSymbols: p.yahooSymbols ?? currentState.yahooSymbols,
           drawings: p.drawings ?? currentState.drawings,
           priceLines: p.priceLines ?? currentState.priceLines,
+          drawingStyles: p.drawingStyles ?? currentState.drawingStyles,
+          drawingTemplates: p.drawingTemplates ?? currentState.drawingTemplates,
           binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
           chartStyle: p.chartStyle ?? currentState.chartStyle,
           tabs: p.tabs ?? currentState.tabs,

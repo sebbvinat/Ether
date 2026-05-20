@@ -15,6 +15,7 @@ import { InstallBanner } from "@/components/layout/InstallBanner";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { PineEditor } from "@/components/pine/PineEditor";
 import { BacktestDialog } from "@/components/backtest/BacktestDialog";
+import { DrawingPropertiesDialog } from "@/components/chart/DrawingPropertiesDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
@@ -164,6 +165,7 @@ export default function HomePage() {
         symbol={symbol}
         timeframe={timeframe}
       />
+      <DrawingPropertiesDialog />
     </div>
   );
 }

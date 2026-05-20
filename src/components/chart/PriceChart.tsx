@@ -176,6 +176,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const storeCleanMode = useChartStore((s) => s.cleanMode);
   const storeHideDrawings = useChartStore((s) => s.hideDrawings);
   const storeLockDrawings = useChartStore((s) => s.lockDrawings);
+  const drawingStyles = useChartStore((s) => s.drawingStyles);
   const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
@@ -2287,6 +2288,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           ...(draftAsDrawing ? [draftAsDrawing] : []),
           ...(lsPreview ? [lsPreview] : []),
         ]}
+        styles={drawingStyles}
+        timeframe={timeframe}
         selectedId={selectedDrawingId}
         toCoord={toCoord}
         fromCoord={fromCoord}
