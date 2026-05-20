@@ -1379,30 +1379,89 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedDrawingId, removeDrawing, selectDrawing]);
 
-  // Capture chart as PNG — triggered by Header via custom event
+  // Capture chart as PNG — triggered by Header via custom event.
+  // Compone el canvas de lightweight-charts + el SVG de DrawingsLayer
+  // (dibujos: trendlines, long/short, fib, etc.) en un solo PNG. Sin esto
+  // el screenshot del chart no mostraría ningún dibujo.
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ slotId?: string }>;
       if (ce.detail?.slotId && slotId && ce.detail.slotId !== slotId) return;
       const chart = chartRef.current;
       if (!chart) return;
-      const canvas = chart.takeScreenshot();
-      canvas.toBlob((blob) => {
-        if (!blob) return;
+      const chartCanvas = chart.takeScreenshot();
+
+      // Crear un canvas combinado del mismo tamaño que el chart canvas.
+      const out = document.createElement("canvas");
+      out.width = chartCanvas.width;
+      out.height = chartCanvas.height;
+      const ctx = out.getContext("2d");
+      if (!ctx) return;
+      // 1) chart canvas como capa base
+      ctx.drawImage(chartCanvas, 0, 0);
+
+      // 2) buscar el SVG de drawings (hermano del containerRef en el wrapper)
+      const wrapper = containerRef.current?.parentElement;
+      const svg = wrapper?.querySelector("svg");
+
+      const finalize = () => {
+        out.toBlob((blob) => {
+          if (!blob) return;
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          const safeSymbol = symbol.replace(/[^a-zA-Z0-9]/g, "") || "chart";
+          const stamp = new Date()
+            .toISOString()
+            .replace(/[:.]/g, "-")
+            .slice(0, 19);
+          a.download = `${safeSymbol}-${timeframe}-${stamp}.png`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        });
+      };
+
+      if (!svg) {
+        finalize();
+        return;
+      }
+
+      try {
+        // Asegurar dimensiones explícitas en el SVG serializado.
+        const cloned = svg.cloneNode(true) as SVGSVGElement;
+        const wrapRect = wrapper!.getBoundingClientRect();
+        cloned.setAttribute("width", String(wrapRect.width));
+        cloned.setAttribute("height", String(wrapRect.height));
+        cloned.setAttribute(
+          "viewBox",
+          `0 0 ${wrapRect.width} ${wrapRect.height}`,
+        );
+        const xml = new XMLSerializer().serializeToString(cloned);
+        const blob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        const safeSymbol = symbol.replace(/[^a-zA-Z0-9]/g, "") || "chart";
-        const stamp = new Date()
-          .toISOString()
-          .replace(/[:.]/g, "-")
-          .slice(0, 19);
-        a.download = `${safeSymbol}-${timeframe}-${stamp}.png`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      });
+        const img = new Image();
+        img.onload = () => {
+          // Escalar al tamaño del out canvas (puede diferir si el chart tiene
+          // padding interno respecto al wrapper). Usamos el ratio canvas/wrapper.
+          const sx = out.width / wrapRect.width;
+          const sy = out.height / wrapRect.height;
+          ctx.save();
+          ctx.scale(sx, sy);
+          ctx.drawImage(img, 0, 0);
+          ctx.restore();
+          URL.revokeObjectURL(url);
+          finalize();
+        };
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          finalize();
+        };
+        img.src = url;
+      } catch {
+        finalize();
+      }
     };
     window.addEventListener("ether:capture", handler);
     return () => window.removeEventListener("ether:capture", handler);
@@ -2228,8 +2287,24 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     const chart = chartRef.current;
     const series = candleSeriesRef.current;
     if (!chart || !series) return null;
-    const time = chart.timeScale().coordinateToTime(x);
-    const price = series.coordinateToPrice(y);
+    // Clampear x e y al rango visible del chart. Sin esto, cuando el cursor
+    // se va más lejos que el handle (drag rápido), `coordinateToTime` y
+    // `coordinateToPrice` devuelven null y el move handler deja de mover el
+    // punto — el usuario percibe que el handle "se cuelga" del cursor.
+    const w = containerSize.width;
+    const h = containerSize.height;
+    const cx = Math.max(0, Math.min(w - 1, x));
+    const cy = Math.max(0, Math.min(h - 1, y));
+    let time = chart.timeScale().coordinateToTime(cx);
+    // Si el x clampeado todavía cae fuera del time range (ej. cursor al
+    // borde extremo donde no hay vela), tomamos el último tiempo conocido
+    // del candle visible para no perder el move.
+    if (time === null) {
+      const ts = chart.timeScale();
+      const range = ts.getVisibleRange();
+      if (range) time = cx < w / 2 ? range.from : range.to;
+    }
+    const price = series.coordinateToPrice(cy);
     if (time === null || price === null || !isFinite(price)) return null;
     return { time: Number(time), price };
   };
@@ -2247,7 +2322,17 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const countdownIsUp = lastPrice ? lastPrice.pct >= 0 : true;
 
   return (
-    <div className="relative h-full w-full">
+    <div
+      className="relative h-full w-full"
+      onDoubleClick={(e) => {
+        // Doble click sobre el fondo del chart → toggle focus mode.
+        // Si el target es un dibujo, el onDoubleClick del <g> ya lo
+        // interceptó con stopPropagation (Wave 7) y no llega acá.
+        if (e.target === e.currentTarget || e.target instanceof HTMLDivElement) {
+          window.dispatchEvent(new CustomEvent("ether:focus-toggle"));
+        }
+      }}
+    >
       <div ref={containerRef} className="h-full w-full" />
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
       {countdownY !== null && (
@@ -2327,7 +2412,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
                 : getInstrument(symbol).exchange}
             </span>
           </div>
-          {hover && (
+          {hover && !legendHidden && (
             <div className="hidden items-center gap-x-3 font-mono text-[11px] md:flex">
               <span className="text-tv-text-muted">
                 O <span className={greenOrRed(hover.c - hover.o)}>{formatPrice(hover.o)}</span>
