@@ -172,7 +172,6 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const selectDrawing = useChartStore((s) => s.selectDrawing);
   const panesCollapsed = useChartStore((s) => s.panesCollapsed);
-  const togglePanesCollapsed = useChartStore((s) => s.togglePanesCollapsed);
   const storeHideLegend = useChartStore((s) => s.hideLegend);
   const storeCleanMode = useChartStore((s) => s.cleanMode);
   const theme = useChartStore((s) => s.theme);
@@ -1600,17 +1599,34 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     };
   }, [lastPrice]);
 
-  // Double-click toggle for collapsed panes
+  // Double-click on the price axis (right edge) resets autoScale to recenter
+  // the chart on the data. Anywhere else: no-op so lightweight-charts handles
+  // its own default behavior. (We used to toggle panes-collapsed on container
+  // dblclick — that hijacked the price-axis dblclick and broke the standard
+  // "double-click to recenter" gesture.)
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const handler = (e: MouseEvent) => {
-      e.preventDefault();
-      togglePanesCollapsed();
+      const chart = chartRef.current;
+      if (!chart) return;
+      // Width of the right price scale — only intercept dblclicks inside it.
+      let axisWidth = 0;
+      try {
+        axisWidth = chart.priceScale("right").width();
+      } catch {}
+      const rect = el.getBoundingClientRect();
+      const offsetX = e.clientX - rect.left;
+      if (axisWidth > 0 && offsetX >= rect.width - axisWidth) {
+        e.preventDefault();
+        try {
+          chart.priceScale("right").applyOptions({ autoScale: true });
+        } catch {}
+      }
     };
     el.addEventListener("dblclick", handler);
     return () => el.removeEventListener("dblclick", handler);
-  }, [togglePanesCollapsed]);
+  }, []);
 
   // Log scale toggle
   useEffect(() => {
