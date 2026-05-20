@@ -388,7 +388,7 @@ function SymbolList({
             </div>
             <span
               className={cn(
-                "text-right tabular-nums transition-colors",
+                "text-right font-mono text-[11px] tabular-nums transition-colors",
                 f === "up" && "text-tv-green",
                 f === "down" && "text-tv-red",
                 !f && "text-tv-text",
@@ -399,7 +399,7 @@ function SymbolList({
             <div className="flex items-center justify-end gap-1">
               <span
                 className={cn(
-                  "tabular-nums",
+                  "font-mono text-[11px] tabular-nums",
                   row
                     ? row.pct >= 0
                       ? "text-tv-green"

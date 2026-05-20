@@ -1936,7 +1936,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             </span>
           </div>
           {hover && (
-            <div className="hidden items-center gap-x-3 text-[11px] md:flex">
+            <div className="hidden items-center gap-x-3 font-mono text-[11px] md:flex">
               <span className="text-tv-text-muted">
                 O <span className={greenOrRed(hover.c - hover.o)}>{formatPrice(hover.o)}</span>
               </span>
@@ -1964,10 +1964,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         <div className="flex h-5 items-center gap-1.5 md:h-7 md:gap-2">
           {lastPrice ? (
             <>
-              <span className={`text-sm font-semibold tabular-nums md:text-lg ${greenOrRed(lastPrice.pct)}`}>
+              <span className={`font-mono text-sm font-semibold tabular-nums md:text-lg ${greenOrRed(lastPrice.pct)}`}>
                 {formatPrice(lastPrice.value)}
               </span>
-              <span className={`text-[10px] md:text-xs ${greenOrRed(lastPrice.pct)}`}>
+              <span className={`font-mono text-[10px] tabular-nums md:text-xs ${greenOrRed(lastPrice.pct)}`}>
                 {lastPrice.pct >= 0 ? "+" : ""}
                 {lastPrice.pct.toFixed(2)}%
               </span>

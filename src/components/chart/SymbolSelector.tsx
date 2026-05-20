@@ -163,7 +163,9 @@ export function SymbolSelector({ slotId, compact }: Props = {}) {
             compact ? "h-3 w-3" : "h-3.5 w-3.5",
           )}
         />
-        <span className="tabular-nums">{selectedDisplayName}</span>
+        <span className="font-mono tabular-nums tracking-tight">
+          {selectedDisplayName}
+        </span>
         <ChevronDown
           className={cn(
             "text-tv-text-muted",

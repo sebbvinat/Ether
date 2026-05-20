@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Geist, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PWARegister } from "@/components/layout/PWARegister";
 import "./globals.css";
 
-const inter = Inter({
+const geist = Geist({
   variable: "--font-sans",
   subsets: ["latin"],
   display: "swap",
@@ -12,6 +12,13 @@ const inter = Inter({
 
 const jetbrains = JetBrains_Mono({
   variable: "--font-mono",
+  subsets: ["latin"],
+  display: "swap",
+});
+
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-serif",
+  weight: "400",
   subsets: ["latin"],
   display: "swap",
 });
@@ -45,7 +52,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`dark ${inter.variable} ${jetbrains.variable} h-full antialiased`}
+      className={`dark ${geist.variable} ${jetbrains.variable} ${instrumentSerif.variable} h-full antialiased`}
     >
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
