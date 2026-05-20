@@ -174,6 +174,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const panesCollapsed = useChartStore((s) => s.panesCollapsed);
   const storeHideLegend = useChartStore((s) => s.hideLegend);
   const storeCleanMode = useChartStore((s) => s.cleanMode);
+  const storeHideDrawings = useChartStore((s) => s.hideDrawings);
+  const storeLockDrawings = useChartStore((s) => s.lockDrawings);
   const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
@@ -287,6 +289,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         points: DrawingPoint[];
         phase: number;
         maxPoints: number;
+      }
+    // Wave 6C — brush polyline (pointer drag)
+    | {
+        type: "brush";
+        points: DrawingPoint[];
       };
   const [draft, setDraft] = useState<DrawDraft>(null);
   const draftRef = useRef(draft);
@@ -430,10 +437,40 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     // Click handler — dispatch to active tool
     chart.subscribeClick((param) => {
       if (!param.point || !candleSeriesRef.current) return;
-      const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
-      if (price === null || !isFinite(price)) return;
+      const rawPrice = candleSeriesRef.current.coordinateToPrice(param.point.y);
+      if (rawPrice === null || !isFinite(rawPrice)) return;
       const tool = toolRef.current;
       const sym = symbolRef.current;
+
+      // Wave 6C — magnet snap: round price to nearest OHLC of the candle
+      // closest in time to the click. Off if magnetMode is false.
+      let price = rawPrice as number;
+      const magnetOn = useChartStore.getState().magnetMode;
+      if (magnetOn && param.time) {
+        const t = Number(param.time);
+        const arr = candlesRef.current;
+        let near: (typeof arr)[number] | null = null;
+        let bestDiff = Infinity;
+        for (const c of arr) {
+          const dt = Math.abs(c.time - t);
+          if (dt < bestDiff) {
+            bestDiff = dt;
+            near = c;
+          }
+        }
+        if (near) {
+          let snapped = price;
+          let snapDiff = Infinity;
+          for (const v of [near.open, near.high, near.low, near.close]) {
+            const dp = Math.abs(v - price);
+            if (dp < snapDiff) {
+              snapDiff = dp;
+              snapped = v;
+            }
+          }
+          price = snapped;
+        }
+      }
 
       // Click on empty chart with cursor tool → deselect any selected drawing
       if (tool === "cursor") {
@@ -1053,6 +1090,84 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
   }, [indicators, hidden]);
 
+  // Wave 6C — brush polyline (pointer drag). Disables chart pan/zoom while
+  // active so dragging draws instead of panning. Commits on pointerup.
+  useEffect(() => {
+    if (tool !== "brush") return;
+    const el = containerRef.current;
+    const chart = chartRef.current;
+    if (!el || !chart) return;
+
+    chart.applyOptions({ handleScroll: false, handleScale: false });
+
+    let lastX = -1;
+    let lastY = -1;
+    const getRel = (e: PointerEvent) => {
+      const rect = el.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+
+    const onDown = (e: PointerEvent) => {
+      const { x, y } = getRel(e);
+      const pt = fromCoord(x, y);
+      if (!pt) return;
+      try {
+        el.setPointerCapture(e.pointerId);
+      } catch {}
+      lastX = x;
+      lastY = y;
+      const newDraft: DrawDraft = { type: "brush", points: [pt] };
+      draftRef.current = newDraft;
+      setDraft(newDraft);
+    };
+    const onMove = (e: PointerEvent) => {
+      const curr = draftRef.current;
+      if (!curr || curr.type !== "brush") return;
+      const { x, y } = getRel(e);
+      if (Math.hypot(x - lastX, y - lastY) < 3) return;
+      const pt = fromCoord(x, y);
+      if (!pt) return;
+      lastX = x;
+      lastY = y;
+      setDraft((prev) =>
+        prev && prev.type === "brush"
+          ? { type: "brush", points: [...prev.points, pt] }
+          : prev,
+      );
+    };
+    const onUp = (e: PointerEvent) => {
+      const curr = draftRef.current;
+      if (curr && curr.type === "brush" && curr.points.length > 1) {
+        addDrawingRef.current({
+          type: "brush",
+          symbol: symbolRef.current,
+          points: curr.points,
+        });
+      }
+      try {
+        el.releasePointerCapture(e.pointerId);
+      } catch {}
+      draftRef.current = null;
+      setDraft(null);
+      setToolRef.current("cursor");
+    };
+
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    return () => {
+      try {
+        chart.applyOptions({ handleScroll: true, handleScale: true });
+      } catch {}
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tool]);
+
   // Re-theme the chart canvas (lightweight-charts ignores CSS variables)
   useEffect(() => {
     const chart = chartRef.current;
@@ -1190,6 +1305,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "hs",
         "gannfan",
         "callout",
+        // Wave 6C
+        "brush",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
         ? "crosshair"
@@ -1228,6 +1345,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       "hs",
       "gannfan",
       "callout",
+      // Wave 6C
+      "brush",
     ];
     if (!draftTools.includes(tool)) {
       setDraft(null);
@@ -2178,6 +2297,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }}
         onSelect={selectDrawing}
         eraserActive={tool === "eraser"}
+        hideDrawings={storeHideDrawings}
+        lockDrawings={storeLockDrawings}
         containerWidth={containerSize.width}
         containerHeight={containerSize.height}
       />

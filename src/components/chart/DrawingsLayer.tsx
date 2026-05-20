@@ -61,6 +61,10 @@ interface Props {
   onSelect: (id: string | null) => void;
   /** If true, clicking a drawing removes it (eraser tool active) */
   eraserActive?: boolean;
+  /** Wave 6C — hide all drawings (no render, no interaction) */
+  hideDrawings?: boolean;
+  /** Wave 6C — lock all drawings (no selection, no drag, no eraser) */
+  lockDrawings?: boolean;
   containerWidth: number;
   containerHeight: number;
 }
@@ -74,6 +78,8 @@ export function DrawingsLayer({
   onRemove,
   onSelect,
   eraserActive,
+  hideDrawings,
+  lockDrawings,
   containerWidth,
   containerHeight,
 }: Props) {
@@ -84,6 +90,7 @@ export function DrawingsLayer({
   const [drag, setDrag] = useState<DragState | null>(null);
 
   function handleClick(id: string) {
+    if (lockDrawings) return; // locked — no select/erase
     if (eraserActive) {
       onRemove(id);
     } else {
@@ -161,6 +168,9 @@ export function DrawingsLayer({
     setDrag(null);
   }
 
+  // Wave 6C — hide everything when hideDrawings is on
+  if (hideDrawings) return null;
+
   return (
     <svg
       className="absolute inset-0 h-full w-full"
@@ -178,7 +188,8 @@ export function DrawingsLayer({
         const isSelected = !isPreview && selectedId === d.id;
         const isHovered = !isPreview && hover === d.id;
         const isDragging = !isPreview && drag?.id === d.id;
-        const showHandles = !isPreview && (isSelected || isHovered || isDragging);
+        const showHandles =
+          !lockDrawings && !isPreview && (isSelected || isHovered || isDragging);
         const hideHandle = !showHandles;
         const selectedWidth = isSelected ? 1 : 0;
         const grStyle: React.CSSProperties = isPreview
@@ -2194,6 +2205,48 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={a.x}
                   y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- brush (variable-N polyline, freehand) ---
+        if (d.type === "brush") {
+          if (d.points.length < 2) return null;
+          const color = d.color ?? TV_BLUE;
+          const coords = d.points
+            .map((p) => toCoord(p.time, p.price))
+            .filter((c): c is Coord => c !== null);
+          if (coords.length < 2) return null;
+          const path = coords.map((p) => `${p.x},${p.y}`).join(" ");
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <polyline
+                points={path}
+                stroke="transparent"
+                strokeWidth={12}
+                fill="none"
+              />
+              <polyline
+                points={path}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={coords[0].x}
+                  y={coords[0].y - 14}
                   onRemove={() => onRemove(d.id)}
                 />
               )}

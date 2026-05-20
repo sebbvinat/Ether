@@ -61,7 +61,9 @@ export type DrawingTool =
   | "elliott5"
   | "hs"
   | "gannfan"
-  | "callout";
+  | "callout"
+  // Wave 6C
+  | "brush";
 
 export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
@@ -243,7 +245,9 @@ export type Drawing =
   | { id: string; symbol: string; type: "elliott5"; points: DrawingPoint[]; color?: string }
   | { id: string; symbol: string; type: "hs"; points: DrawingPoint[]; color?: string }
   | { id: string; symbol: string; type: "gannfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
-  | { id: string; symbol: string; type: "callout"; a: DrawingPoint; b: DrawingPoint; text: string; color?: string };
+  | { id: string; symbol: string; type: "callout"; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
+  // Wave 6C
+  | { id: string; symbol: string; type: "brush"; points: DrawingPoint[]; color?: string };
 
 export type DrawingInput =
   | {
@@ -298,7 +302,9 @@ export type DrawingInput =
   | { type: "elliott5"; symbol: string; points: DrawingPoint[]; color?: string }
   | { type: "hs"; symbol: string; points: DrawingPoint[]; color?: string }
   | { type: "gannfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
-  | { type: "callout"; symbol: string; a: DrawingPoint; b: DrawingPoint; text: string; color?: string };
+  | { type: "callout"; symbol: string; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
+  // Wave 6C
+  | { type: "brush"; symbol: string; points: DrawingPoint[]; color?: string };
 
 export function layoutSlotCount(l: LayoutType): number {
   switch (l) {
@@ -428,6 +434,12 @@ interface ChartState {
   cleanMode: boolean;
   /** Hide indicator legend pills (H) — keeps symbol/price line */
   hideLegend: boolean;
+  /** Wave 6C — magnet snap: rounds click prices to nearest OHLC of the candle */
+  magnetMode: boolean;
+  /** Wave 6C — locks all drawings: disables selection, drag handles, eraser */
+  lockDrawings: boolean;
+  /** Wave 6C — hides all drawings without removing them */
+  hideDrawings: boolean;
   /** Binance market: spot or futures (perpetual) */
   binanceMarket: "spot" | "perp";
   /** Saved workspaces — named snapshots of the current setup */
@@ -497,6 +509,12 @@ interface ChartState {
   toggleCleanMode: () => void;
   setHideLegend: (v: boolean) => void;
   toggleHideLegend: () => void;
+  setMagnetMode: (v: boolean) => void;
+  toggleMagnetMode: () => void;
+  setLockDrawings: (v: boolean) => void;
+  toggleLockDrawings: () => void;
+  setHideDrawings: (v: boolean) => void;
+  toggleHideDrawings: () => void;
   setBinanceMarket: (m: "spot" | "perp") => void;
   saveWorkspace: (name: string) => void;
   loadWorkspace: (id: string) => void;
@@ -606,6 +624,9 @@ export const useChartStore = create<ChartState>()(
       focusMode: false,
       cleanMode: false,
       hideLegend: false,
+      magnetMode: false,
+      lockDrawings: false,
+      hideDrawings: false,
       binanceMarket: "spot" as "spot" | "perp",
       workspaces: [],
       indicatorTemplates: [],
@@ -727,6 +748,12 @@ export const useChartStore = create<ChartState>()(
       toggleCleanMode: () => set((s) => ({ cleanMode: !s.cleanMode })),
       setHideLegend: (hideLegend) => set({ hideLegend }),
       toggleHideLegend: () => set((s) => ({ hideLegend: !s.hideLegend })),
+      setMagnetMode: (magnetMode) => set({ magnetMode }),
+      toggleMagnetMode: () => set((s) => ({ magnetMode: !s.magnetMode })),
+      setLockDrawings: (lockDrawings) => set({ lockDrawings }),
+      toggleLockDrawings: () => set((s) => ({ lockDrawings: !s.lockDrawings })),
+      setHideDrawings: (hideDrawings) => set({ hideDrawings }),
+      toggleHideDrawings: () => set((s) => ({ hideDrawings: !s.hideDrawings })),
       setBinanceMarket: (binanceMarket) => set({ binanceMarket }),
       saveWorkspace: (name) =>
         set((s) => ({
@@ -1167,6 +1194,9 @@ export const useChartStore = create<ChartState>()(
         yahooSymbols: s.yahooSymbols,
         drawings: s.drawings,
         priceLines: s.priceLines,
+        magnetMode: s.magnetMode,
+        lockDrawings: s.lockDrawings,
+        hideDrawings: s.hideDrawings,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
