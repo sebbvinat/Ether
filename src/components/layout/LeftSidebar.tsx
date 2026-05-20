@@ -215,7 +215,10 @@ export function LeftSidebar() {
     <aside
       ref={sidebarRef}
       className={cn(
-        "z-30 flex w-11 flex-col items-center overflow-y-auto border-r border-tv-border bg-tv-panel py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        // overflow-visible es CRÍTICO acá: el flyout es absolute con left-full
+        // y width 256px, y se rompía porque overflow-y-auto fuerza overflow-x:auto
+        // por spec, recortándolo a 0px.
+        "z-30 flex w-11 flex-col items-center overflow-visible border-r border-tv-border bg-tv-panel py-1",
         "md:relative md:translate-x-0",
         "fixed inset-y-0 left-0 transition-transform",
         mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
