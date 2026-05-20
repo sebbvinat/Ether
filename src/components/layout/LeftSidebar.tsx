@@ -14,8 +14,11 @@ interface ToolDef {
   label: string;
   /** Number of clicks required to place; "poly" for freehand. 0 = stateless action. */
   clicks: number | "poly";
-  /** Production DrawingTool this maps to. Absent = not implemented yet. */
+  /** Production DrawingTool this maps to. Absent (for drawing kind) = not
+   *  implemented yet. */
   storeKey?: DrawingTool;
+  /** When set, this entry is a store toggle (no drawing), not a drawing tool. */
+  toggleKey?: "magnetMode" | "lockDrawings" | "hideDrawings";
 }
 
 interface Group {
@@ -89,7 +92,7 @@ const GROUPS: Group[] = [
       { id: "rect", glyph: "▢", label: "Rectángulo", clicks: 2, storeKey: "rect" },
       { id: "ellipse", glyph: "○", label: "Elipse", clicks: 2, storeKey: "ellipse" },
       { id: "triangle", glyph: "△", label: "Triángulo", clicks: 3, storeKey: "triangle" },
-      { id: "brush", glyph: "✎", label: "Pincel (a mano alzada)", clicks: "poly" },
+      { id: "brush", glyph: "✎", label: "Pincel (a mano alzada)", clicks: "poly", storeKey: "brush" },
     ],
   },
   {
@@ -130,9 +133,9 @@ const GROUPS: Group[] = [
     glyph: "⌖",
     label: "Imán / bloqueo",
     tools: [
-      { id: "magnet", glyph: "⌖", label: "Modo imán", clicks: 0 },
-      { id: "lock", glyph: "⚿", label: "Bloquear dibujos", clicks: 0 },
-      { id: "hidedraw", glyph: "ø", label: "Ocultar dibujos", clicks: 0 },
+      { id: "magnet", glyph: "⌖", label: "Modo imán", clicks: 0, toggleKey: "magnetMode" },
+      { id: "lock", glyph: "⚿", label: "Bloquear dibujos", clicks: 0, toggleKey: "lockDrawings" },
+      { id: "hidedraw", glyph: "ø", label: "Ocultar dibujos", clicks: 0, toggleKey: "hideDrawings" },
     ],
   },
 ];
@@ -158,6 +161,25 @@ export function LeftSidebar() {
   const symbol = useChartStore((s) => s.symbol);
   const mobileOpen = useChartStore((s) => s.mobileLeftOpen);
   const setMobileLeftOpen = useChartStore((s) => s.setMobileLeftOpen);
+  // Wave 6C — toggle states (read for visual active state)
+  const magnetMode = useChartStore((s) => s.magnetMode);
+  const lockDrawings = useChartStore((s) => s.lockDrawings);
+  const hideDrawings = useChartStore((s) => s.hideDrawings);
+  const toggleMagnetMode = useChartStore((s) => s.toggleMagnetMode);
+  const toggleLockDrawings = useChartStore((s) => s.toggleLockDrawings);
+  const toggleHideDrawings = useChartStore((s) => s.toggleHideDrawings);
+
+  const toggleStateOf = (key: ToolDef["toggleKey"]): boolean => {
+    if (key === "magnetMode") return magnetMode;
+    if (key === "lockDrawings") return lockDrawings;
+    if (key === "hideDrawings") return hideDrawings;
+    return false;
+  };
+  const fireToggle = (key: ToolDef["toggleKey"]): void => {
+    if (key === "magnetMode") toggleMagnetMode();
+    else if (key === "lockDrawings") toggleLockDrawings();
+    else if (key === "hideDrawings") toggleHideDrawings();
+  };
 
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
@@ -176,6 +198,13 @@ export function LeftSidebar() {
   const activeGroupId = activeMapping?.groupId ?? "cursor";
 
   const pickTool = (t: ToolDef) => {
+    // Toggle entry: flips the store boolean, doesn't set the active tool.
+    if (t.toggleKey) {
+      fireToggle(t.toggleKey);
+      setOpenGroup(null);
+      setMobileLeftOpen(false);
+      return;
+    }
     if (!t.storeKey) return; // próximamente — no-op
     setTool(t.storeKey);
     setOpenGroup(null);
@@ -240,8 +269,11 @@ export function LeftSidebar() {
                   {g.label}
                 </div>
                 {g.tools.map((t) => {
-                  const isActive = t.storeKey === tool;
-                  const disabled = !t.storeKey;
+                  const isToggle = !!t.toggleKey;
+                  const isActive = isToggle
+                    ? toggleStateOf(t.toggleKey)
+                    : t.storeKey === tool;
+                  const disabled = !isToggle && !t.storeKey;
                   return (
                     <button
                       key={t.id}
@@ -269,6 +301,17 @@ export function LeftSidebar() {
                       {disabled ? (
                         <span className="ml-auto shrink-0 rounded bg-tv-bg px-1.5 py-px text-[9px] uppercase tracking-wider text-tv-text-dim">
                           próximamente
+                        </span>
+                      ) : isToggle ? (
+                        <span
+                          className={cn(
+                            "ml-auto shrink-0 rounded px-1.5 py-px font-mono text-[9px] uppercase tracking-wider",
+                            isActive
+                              ? "bg-tv-blue/20 text-tv-blue"
+                              : "bg-tv-bg text-tv-text-muted",
+                          )}
+                        >
+                          {isActive ? "ON" : "OFF"}
                         </span>
                       ) : (
                         <span className="ml-auto shrink-0 font-mono text-[10px] text-tv-text-muted">
