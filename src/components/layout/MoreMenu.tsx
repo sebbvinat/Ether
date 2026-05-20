@@ -14,9 +14,10 @@ import {
   Play,
   Bell,
   Radar,
-  Settings2,
   Download,
   Upload,
+  Code2,
+  LineChart,
 } from "lucide-react";
 import { useChartStore } from "@/lib/store/chart-store";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
@@ -215,6 +216,25 @@ export function MoreMenu() {
                 onClick={() => {
                   setOpen(false);
                   setFocusMode(true);
+                }}
+              />
+            </Section>
+
+            <Section label="Herramientas">
+              <Row
+                icon={<Code2 className="h-4 w-4" />}
+                label="Editor de Pine"
+                onClick={() => {
+                  setOpen(false);
+                  window.dispatchEvent(new CustomEvent("ether:open-pine"));
+                }}
+              />
+              <Row
+                icon={<LineChart className="h-4 w-4" />}
+                label="Backtest de estrategias"
+                onClick={() => {
+                  setOpen(false);
+                  window.dispatchEvent(new CustomEvent("ether:open-backtest"));
                 }}
               />
             </Section>

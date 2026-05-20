@@ -45,6 +45,43 @@ export function ema(candles: Candle[], period: number): IndicatorPoint[] {
   return out;
 }
 
+export interface BollingerPoint {
+  time: number;
+  basis: number;
+  upper: number;
+  lower: number;
+}
+
+/**
+ * Bollinger Bands — SMA basis ± (stdDev × population standard deviation).
+ */
+export function bollinger(
+  candles: Candle[],
+  period = 20,
+  mult = 2,
+): BollingerPoint[] {
+  const out: BollingerPoint[] = [];
+  if (candles.length < period) return out;
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += candles[j].close;
+    const mean = sum / period;
+    let variance = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const d = candles[j].close - mean;
+      variance += d * d;
+    }
+    const sd = Math.sqrt(variance / period);
+    out.push({
+      time: candles[i].time,
+      basis: mean,
+      upper: mean + mult * sd,
+      lower: mean - mult * sd,
+    });
+  }
+  return out;
+}
+
 /**
  * RSI (Wilder) — period typically 14.
  */
@@ -113,6 +150,95 @@ export function macd(
     out.push({ time: p.time, macd: p.value, signal: s, histogram: p.value - s });
   }
   void slowStartTime;
+  return out;
+}
+
+/**
+ * ATR — Average True Range (Wilder smoothing).
+ */
+export function atr(candles: Candle[], period = 14): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length <= period) return out;
+  const tr: number[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (i === 0) {
+      tr.push(candles[i].high - candles[i].low);
+      continue;
+    }
+    const pc = candles[i - 1].close;
+    tr.push(
+      Math.max(
+        candles[i].high - candles[i].low,
+        Math.abs(candles[i].high - pc),
+        Math.abs(candles[i].low - pc),
+      ),
+    );
+  }
+  let prev = 0;
+  for (let i = 1; i <= period; i++) prev += tr[i];
+  prev /= period;
+  out.push({ time: candles[period].time, value: prev });
+  for (let i = period + 1; i < candles.length; i++) {
+    prev = (prev * (period - 1) + tr[i]) / period;
+    out.push({ time: candles[i].time, value: prev });
+  }
+  return out;
+}
+
+/**
+ * OBV — On-Balance Volume (cumulative).
+ */
+export function obv(candles: Candle[]): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length === 0) return out;
+  let acc = 0;
+  out.push({ time: candles[0].time, value: 0 });
+  for (let i = 1; i < candles.length; i++) {
+    if (candles[i].close > candles[i - 1].close) acc += candles[i].volume;
+    else if (candles[i].close < candles[i - 1].close) acc -= candles[i].volume;
+    out.push({ time: candles[i].time, value: acc });
+  }
+  return out;
+}
+
+export interface StochasticPoint {
+  time: number;
+  k: number;
+  d: number;
+}
+
+/**
+ * Stochastic oscillator — %K over kPeriod, %D = SMA(%K, dPeriod).
+ */
+export function stochastic(
+  candles: Candle[],
+  kPeriod = 14,
+  dPeriod = 3,
+): StochasticPoint[] {
+  if (candles.length < kPeriod) return [];
+  const kRaw: { time: number; value: number }[] = [];
+  for (let i = kPeriod - 1; i < candles.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - kPeriod + 1; j <= i; j++) {
+      if (candles[j].high > hh) hh = candles[j].high;
+      if (candles[j].low < ll) ll = candles[j].low;
+    }
+    const range = hh - ll;
+    const k = range === 0 ? 50 : ((candles[i].close - ll) / range) * 100;
+    kRaw.push({ time: candles[i].time, value: k });
+  }
+  const out: StochasticPoint[] = [];
+  for (let i = 0; i < kRaw.length; i++) {
+    if (i < dPeriod - 1) continue;
+    let sum = 0;
+    for (let j = i - dPeriod + 1; j <= i; j++) sum += kRaw[j].value;
+    out.push({
+      time: kRaw[i].time,
+      k: kRaw[i].value,
+      d: sum / dPeriod,
+    });
+  }
   return out;
 }
 

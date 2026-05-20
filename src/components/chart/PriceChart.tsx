@@ -16,7 +16,18 @@ import {
 } from "lightweight-charts";
 import { fetchCandles, fetchOlderCandles, subscribeMarket } from "@/lib/data";
 import { getInstrument } from "@/lib/instruments";
-import { ema, rsi, macd, vwap, heikinAshi } from "@/lib/indicators";
+import {
+  ema,
+  sma,
+  bollinger,
+  rsi,
+  macd,
+  atr,
+  obv,
+  stochastic,
+  vwap,
+  heikinAshi,
+} from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
   INDICATOR_COLORS,
@@ -71,6 +82,17 @@ const TV_COLORS = {
   grid: "#1e222d",
 };
 
+const LIGHT_CHART = {
+  bg: "#ffffff",
+  panel: "#f4f6fa",
+  border: "#d6dae3",
+  text: "#131722",
+  textMuted: "#5d6068",
+  green: "#089981",
+  red: "#f23645",
+  grid: "#eef0f4",
+};
+
 interface HoverInfo {
   o: number;
   h: number;
@@ -85,11 +107,20 @@ interface LastValues {
   ema20?: number;
   ema50?: number;
   ema200?: number;
+  sma20?: number;
+  sma50?: number;
+  bbUpper?: number;
+  bbBasis?: number;
+  bbLower?: number;
   vwap?: number;
   rsi?: number;
   macd?: number;
   macdSignal?: number;
   macdHist?: number;
+  atr?: number;
+  obv?: number;
+  stochK?: number;
+  stochD?: number;
   volume?: number;
 }
 
@@ -106,6 +137,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const ema20Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema50Ref = useRef<ISeriesApi<"Line"> | null>(null);
   const ema200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const sma20Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const sma50Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbBasisRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
@@ -115,6 +151,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const macdRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdSignalRef = useRef<ISeriesApi<"Line"> | null>(null);
   const macdHistRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const atrRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const obvRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochKRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochDRef = useRef<ISeriesApi<"Line"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -133,6 +173,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const selectDrawing = useChartStore((s) => s.selectDrawing);
   const panesCollapsed = useChartStore((s) => s.panesCollapsed);
   const togglePanesCollapsed = useChartStore((s) => s.togglePanesCollapsed);
+  const storeHideLegend = useChartStore((s) => s.hideLegend);
+  const storeCleanMode = useChartStore((s) => s.cleanMode);
+  const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
   const setSettingsTarget = useChartStore((s) => s.setSettingsTarget);
@@ -181,6 +224,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   }
 
   const [hover, setHover] = useState<HoverInfo | null>(null);
+  const [hoverValues, setHoverValues] = useState<LastValues>({});
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
   const [lastValues, setLastValues] = useState<LastValues>({});
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
@@ -301,6 +345,42 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       color: INDICATOR_COLORS.vwap,
       lineWidth: 2,
       lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    sma20Ref.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.sma20,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    sma50Ref.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.sma50,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    bbUpperRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.bb,
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    bbBasisRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.bb,
+      lineWidth: 1,
+      lineStyle: 2,
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    });
+    bbLowerRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.bb,
+      lineWidth: 1,
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
@@ -524,6 +604,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
       if (!param.time || !candleSeriesRef.current) {
         setHover(null);
+        setHoverValues({});
         return;
       }
       const data = param.seriesData.get(candleSeriesRef.current);
@@ -533,14 +614,42 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       if (data && "open" in data) {
         const o = data.open as number;
         const c = data.close as number;
+        const v = vol && "value" in vol ? (vol.value as number) : 0;
         setHover({
           o,
           h: data.high as number,
           l: data.low as number,
           c,
-          v: vol && "value" in vol ? (vol.value as number) : 0,
+          v,
           time: Number(param.time),
           pct: o === 0 ? 0 : ((c - o) / o) * 100,
+        });
+        const lineVal = (
+          ref: { current: ISeriesApi<"Line"> | null },
+        ): number | undefined => {
+          const r = ref.current;
+          if (!r) return undefined;
+          const d = param.seriesData.get(r);
+          return d && "value" in d ? (d.value as number) : undefined;
+        };
+        setHoverValues({
+          ema20: lineVal(ema20Ref),
+          ema50: lineVal(ema50Ref),
+          ema200: lineVal(ema200Ref),
+          sma20: lineVal(sma20Ref),
+          sma50: lineVal(sma50Ref),
+          bbUpper: lineVal(bbUpperRef),
+          bbBasis: lineVal(bbBasisRef),
+          bbLower: lineVal(bbLowerRef),
+          vwap: lineVal(vwapRef),
+          rsi: lineVal(rsiRef),
+          macd: lineVal(macdRef),
+          macdSignal: lineVal(macdSignalRef),
+          atr: lineVal(atrRef),
+          obv: lineVal(obvRef),
+          stochK: lineVal(stochKRef),
+          stochD: lineVal(stochDRef),
+          volume: v,
         });
       }
     });
@@ -581,6 +690,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       ema20Ref.current = null;
       ema50Ref.current = null;
       ema200Ref.current = null;
+      sma20Ref.current = null;
+      sma50Ref.current = null;
+      bbUpperRef.current = null;
+      bbBasisRef.current = null;
+      bbLowerRef.current = null;
       vwapRef.current = null;
       rsiRef.current = null;
       rsi30Ref.current = null;
@@ -588,6 +702,10 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       macdRef.current = null;
       macdSignalRef.current = null;
       macdHistRef.current = null;
+      atrRef.current = null;
+      obvRef.current = null;
+      stochKRef.current = null;
+      stochDRef.current = null;
     };
   }, []);
 
@@ -621,116 +739,121 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     requestAnimationFrame(() => recomputePaneOffsets());
   }, [indicators.volume]);
 
-  // RSI pane
+  // Unified subpane manager — rebuilds the lower panes (rsi, macd, atr, obv,
+  // stoch) in a fixed order whenever the active set changes, so pane indices
+  // always stay sequential and correct.
   useEffect(() => {
-    if (!chartRef.current) return;
-    if (indicators.rsi && !rsiRef.current) {
-      const paneIndex = 1;
-      const r = chartRef.current.addSeries(
-        LineSeries,
-        {
-          color: INDICATOR_COLORS.rsi,
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        },
-        paneIndex,
-      );
-      const r30 = chartRef.current.addSeries(
-        LineSeries,
-        {
-          color: TV_COLORS.textMuted,
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        },
-        paneIndex,
-      );
-      const r70 = chartRef.current.addSeries(
-        LineSeries,
-        {
-          color: TV_COLORS.textMuted,
-          lineWidth: 1,
-          lineStyle: 2,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        },
-        paneIndex,
-      );
-      rsiRef.current = r;
-      rsi30Ref.current = r30;
-      rsi70Ref.current = r70;
-      try {
-        const isMobile =
-          typeof window !== "undefined" && window.innerWidth < 768;
-        chartRef.current.panes()[1]?.setStretchFactor(1);
-        chartRef.current.panes()[0]?.setStretchFactor(isMobile ? 5 : 3);
-      } catch {}
-      updateRSI();
-    } else if (!indicators.rsi && rsiRef.current && chartRef.current) {
-      chartRef.current.removeSeries(rsiRef.current);
-      if (rsi30Ref.current) chartRef.current.removeSeries(rsi30Ref.current);
-      if (rsi70Ref.current) chartRef.current.removeSeries(rsi70Ref.current);
-      rsiRef.current = null;
-      rsi30Ref.current = null;
-      rsi70Ref.current = null;
-    }
-    requestAnimationFrame(() => recomputePaneOffsets());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators.rsi]);
+    const chart = chartRef.current;
+    if (!chart) return;
 
-  // MACD pane
-  useEffect(() => {
-    if (!chartRef.current) return;
-    if (indicators.macd && !macdRef.current) {
-      const paneIndex = indicators.rsi ? 2 : 1;
-      const m = chartRef.current.addSeries(
-        LineSeries,
-        {
-          color: INDICATOR_COLORS.macd,
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        },
-        paneIndex,
-      );
-      const s = chartRef.current.addSeries(
-        LineSeries,
-        {
-          color: TV_COLORS.yellow,
-          lineWidth: 1,
-          priceLineVisible: false,
-          lastValueVisible: false,
-        },
-        paneIndex,
-      );
-      const h = chartRef.current.addSeries(
-        HistogramSeries,
-        { priceLineVisible: false, lastValueVisible: false },
-        paneIndex,
-      );
-      macdRef.current = m;
-      macdSignalRef.current = s;
-      macdHistRef.current = h;
-      try {
-        const isMobile =
-          typeof window !== "undefined" && window.innerWidth < 768;
-        chartRef.current.panes()[paneIndex]?.setStretchFactor(1);
-        chartRef.current.panes()[0]?.setStretchFactor(isMobile ? 5 : 3);
-      } catch {}
-      updateMACD();
-    } else if (!indicators.macd && macdRef.current && chartRef.current) {
-      if (macdRef.current) chartRef.current.removeSeries(macdRef.current);
-      if (macdSignalRef.current) chartRef.current.removeSeries(macdSignalRef.current);
-      if (macdHistRef.current) chartRef.current.removeSeries(macdHistRef.current);
-      macdRef.current = null;
-      macdSignalRef.current = null;
-      macdHistRef.current = null;
+    const subRefs = [
+      rsiRef,
+      rsi30Ref,
+      rsi70Ref,
+      macdRef,
+      macdSignalRef,
+      macdHistRef,
+      atrRef,
+      obvRef,
+      stochKRef,
+      stochDRef,
+    ];
+    for (const ref of subRefs) {
+      if (ref.current) {
+        try {
+          chart.removeSeries(ref.current);
+        } catch {}
+        ref.current = null;
+      }
     }
+
+    const order: IndicatorKey[] = ["rsi", "macd", "atr", "obv", "stoch"];
+    const active = order.filter((k) => indicators[k]);
+    const dim = { priceLineVisible: false, lastValueVisible: false } as const;
+
+    active.forEach((key, i) => {
+      const pane = i + 1;
+      if (key === "rsi") {
+        rsiRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.rsi, lineWidth: 1, ...dim },
+          pane,
+        );
+        rsi30Ref.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.textMuted, lineWidth: 1, lineStyle: 2, ...dim },
+          pane,
+        );
+        rsi70Ref.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.textMuted, lineWidth: 1, lineStyle: 2, ...dim },
+          pane,
+        );
+      } else if (key === "macd") {
+        macdRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.macd, lineWidth: 1, ...dim },
+          pane,
+        );
+        macdSignalRef.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.yellow, lineWidth: 1, ...dim },
+          pane,
+        );
+        macdHistRef.current = chart.addSeries(
+          HistogramSeries,
+          { ...dim },
+          pane,
+        );
+      } else if (key === "atr") {
+        atrRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.atr, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "obv") {
+        obvRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.obv, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "stoch") {
+        stochKRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.stoch, lineWidth: 1, ...dim },
+          pane,
+        );
+        stochDRef.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.yellow, lineWidth: 1, ...dim },
+          pane,
+        );
+      }
+    });
+
+    try {
+      const isMobile =
+        typeof window !== "undefined" && window.innerWidth < 768;
+      chart.panes()[0]?.setStretchFactor(isMobile ? 5 : 3);
+      for (let p = 1; p <= active.length; p++) {
+        chart.panes()[p]?.setStretchFactor(1);
+      }
+    } catch {}
+
+    updateRSI();
+    updateMACD();
+    updateATR();
+    updateOBV();
+    updateStoch();
     requestAnimationFrame(() => recomputePaneOffsets());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators.macd, indicators.rsi]);
+  }, [
+    indicators.rsi,
+    indicators.macd,
+    indicators.atr,
+    indicators.obv,
+    indicators.stoch,
+  ]);
 
   // Visibility — eye toggle (hidden state) + enabled state combined
   useEffect(() => {
@@ -739,6 +862,11 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     ema20Ref.current?.applyOptions({ visible: v("ema20") });
     ema50Ref.current?.applyOptions({ visible: v("ema50") });
     ema200Ref.current?.applyOptions({ visible: v("ema200") });
+    sma20Ref.current?.applyOptions({ visible: v("sma20") });
+    sma50Ref.current?.applyOptions({ visible: v("sma50") });
+    bbUpperRef.current?.applyOptions({ visible: v("bb") });
+    bbBasisRef.current?.applyOptions({ visible: v("bb") });
+    bbLowerRef.current?.applyOptions({ visible: v("bb") });
     vwapRef.current?.applyOptions({ visible: v("vwap") });
     if (rsiRef.current) rsiRef.current.applyOptions({ visible: v("rsi") });
     if (rsi30Ref.current) rsi30Ref.current.applyOptions({ visible: v("rsi") });
@@ -746,13 +874,59 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (macdRef.current) macdRef.current.applyOptions({ visible: v("macd") });
     if (macdSignalRef.current) macdSignalRef.current.applyOptions({ visible: v("macd") });
     if (macdHistRef.current) macdHistRef.current.applyOptions({ visible: v("macd") });
+    if (atrRef.current) atrRef.current.applyOptions({ visible: v("atr") });
+    if (obvRef.current) obvRef.current.applyOptions({ visible: v("obv") });
+    if (stochKRef.current) stochKRef.current.applyOptions({ visible: v("stoch") });
+    if (stochDRef.current) stochDRef.current.applyOptions({ visible: v("stoch") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
   }, [indicators, hidden]);
+
+  // Re-theme the chart canvas (lightweight-charts ignores CSS variables)
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const c = theme === "light" ? LIGHT_CHART : TV_COLORS;
+    chart.applyOptions({
+      layout: {
+        background: { color: c.bg },
+        textColor: c.textMuted,
+        panes: { separatorColor: c.border, separatorHoverColor: c.border },
+      },
+      grid: {
+        vertLines: { color: c.grid },
+        horzLines: { color: c.grid },
+      },
+      crosshair: {
+        vertLine: { color: c.textMuted, labelBackgroundColor: c.panel },
+        horzLine: { color: c.textMuted, labelBackgroundColor: c.panel },
+      },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+    candleSeriesRef.current?.applyOptions({
+      upColor: c.green,
+      downColor: c.red,
+      borderUpColor: c.green,
+      borderDownColor: c.red,
+      wickUpColor: c.green,
+      wickDownColor: c.red,
+      priceLineColor: c.textMuted,
+    });
+  }, [theme]);
 
   // Recompute indicators when config changes (periods)
   useEffect(() => {
     updateEMAs();
-  }, [config.ema20, config.ema50, config.ema200]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    config.ema20,
+    config.ema50,
+    config.ema200,
+    config.sma20,
+    config.sma50,
+    config.bbPeriod,
+    config.bbStdDev,
+  ]);
 
   useEffect(() => {
     updateRSI();
@@ -761,6 +935,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   useEffect(() => {
     updateMACD();
   }, [config.macdFast, config.macdSlow, config.macdSignal]);
+
+  useEffect(() => {
+    updateATR();
+  }, [config.atr]);
+
+  useEffect(() => {
+    updateStoch();
+  }, [config.stochK, config.stochD]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -946,6 +1128,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             updateEMAs();
             updateRSI();
             updateMACD();
+            updateATR();
+            updateOBV();
+            updateStoch();
           })
           .catch((e) => console.error("loadOlder", e))
           .finally(() => {
@@ -1046,12 +1231,55 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       );
       last200 = data.at(-1)?.value;
     }
+
+    let lastSma20: number | undefined;
+    let lastSma50: number | undefined;
+    if (sma20Ref.current) {
+      const data = sma(c, cfg.sma20);
+      sma20Ref.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      );
+      lastSma20 = data.at(-1)?.value;
+    }
+    if (sma50Ref.current) {
+      const data = sma(c, cfg.sma50);
+      sma50Ref.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+      );
+      lastSma50 = data.at(-1)?.value;
+    }
+
+    let lastBbUpper: number | undefined;
+    let lastBbBasis: number | undefined;
+    let lastBbLower: number | undefined;
+    if (bbBasisRef.current && bbUpperRef.current && bbLowerRef.current) {
+      const data = bollinger(c, cfg.bbPeriod, cfg.bbStdDev);
+      bbUpperRef.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })),
+      );
+      bbBasisRef.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.basis })),
+      );
+      bbLowerRef.current.setData(
+        data.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })),
+      );
+      const lb = data.at(-1);
+      lastBbUpper = lb?.upper;
+      lastBbBasis = lb?.basis;
+      lastBbLower = lb?.lower;
+    }
+
     const lastVol = c.at(-1)?.volume;
     setLastValues((prev) => ({
       ...prev,
       ema20: last20,
       ema50: last50,
       ema200: last200,
+      sma20: lastSma20,
+      sma50: lastSma50,
+      bbUpper: lastBbUpper,
+      bbBasis: lastBbBasis,
+      bbLower: lastBbLower,
       vwap: lastVwap,
       volume: lastVol,
     }));
@@ -1106,6 +1334,45 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     }));
   }
 
+  function updateATR() {
+    const c = getViewCandles();
+    if (c.length === 0 || !atrRef.current) return;
+    const data = atr(c, configRef.current.atr);
+    atrRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, atr: data.at(-1)?.value }));
+  }
+
+  function updateOBV() {
+    const c = getViewCandles();
+    if (c.length === 0 || !obvRef.current) return;
+    const data = obv(c);
+    obvRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, obv: data.at(-1)?.value }));
+  }
+
+  function updateStoch() {
+    const c = getViewCandles();
+    if (c.length === 0 || !stochKRef.current) return;
+    const cfg = configRef.current;
+    const data = stochastic(c, cfg.stochK, cfg.stochD);
+    stochKRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })),
+    );
+    stochDRef.current?.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })),
+    );
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      stochK: last?.k,
+      stochD: last?.d,
+    }));
+  }
+
   // Load historical data + subscribe live
   useEffect(() => {
     const unsub = subscribeMarket(symbol, timeframe, {
@@ -1145,6 +1412,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateEMAs();
         updateRSI();
         updateMACD();
+        updateATR();
+        updateOBV();
+        updateStoch();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -1200,6 +1470,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateEMAs();
         updateRSI();
         updateMACD();
+        updateATR();
+        updateOBV();
+        updateStoch();
         const prev = arr[arr.length - 2] ?? lastCandle;
         setLastPrice({
           value: k.close,
@@ -1428,6 +1701,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     updateEMAs();
     updateRSI();
     updateMACD();
+    updateATR();
+    updateOBV();
+    updateStoch();
     const last = view[view.length - 1];
     const prev = view[view.length - 2] ?? last;
     setLastPrice({
@@ -1441,14 +1717,29 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const greenOrRed = (n: number) =>
     n >= 0 ? "text-tv-green" : "text-tv-red";
 
+  // Indicator pills reflect the hovered bar when the crosshair is over the
+  // chart, falling back to the latest bar value otherwise.
+  const pillSource = hover ? hoverValues : lastValues;
+  const pv = (key: keyof LastValues): number | undefined => pillSource[key];
+  // H (hide legend) or Z (clean mode) hides the indicator legend.
+  const legendHidden = storeHideLegend || storeCleanMode;
+
   // Helpers for pill rendering
   const isShown = (key: IndicatorKey) =>
     indicators[key] && (key === "volume" || true); // always renderable if enabled
   void isShown;
 
   // Determine which pane each indicator lives in (based on current layout)
-  const rsiPaneIdx = 1;
-  const macdPaneIdx = indicators.rsi ? 2 : 1;
+  // Subpane index = position in the fixed order among active subpanes (+1 for
+  // the price pane). Mirrors the unified subpane manager.
+  const subPaneOrder: IndicatorKey[] = ["rsi", "macd", "atr", "obv", "stoch"];
+  const activeSubPanes = subPaneOrder.filter((k) => indicators[k]);
+  const subPaneIdx = (k: IndicatorKey) => activeSubPanes.indexOf(k) + 1;
+  const rsiPaneIdx = subPaneIdx("rsi");
+  const macdPaneIdx = subPaneIdx("macd");
+  const atrPaneIdx = subPaneIdx("atr");
+  const obvPaneIdx = subPaneIdx("obv");
+  const stochPaneIdx = subPaneIdx("stoch");
 
   let measureRender: React.ReactNode = null;
   if (
@@ -1706,12 +1997,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         {/* Indicator pills for the main pane (fixed position below price) */}
         <div
           className="mt-0.5 flex flex-col items-start gap-0.5 md:mt-1 md:gap-1"
-          style={{ display: pillsCollapsed ? "none" : undefined }}
+          style={{
+            display: pillsCollapsed || legendHidden ? "none" : undefined,
+          }}
         >
           {indicators.ema20 && (
             <IndicatorPill
               name={`EMA ${config.ema20}`}
-              value={lastValues.ema20 !== undefined ? formatPrice(lastValues.ema20) : undefined}
+              value={pv("ema20") !== undefined ? formatPrice(pv("ema20")!) : undefined}
               color={INDICATOR_COLORS.ema20}
               hidden={hidden.ema20}
               onToggleHide={() => toggleHidden("ema20")}
@@ -1722,7 +2015,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           {indicators.ema50 && (
             <IndicatorPill
               name={`EMA ${config.ema50}`}
-              value={lastValues.ema50 !== undefined ? formatPrice(lastValues.ema50) : undefined}
+              value={pv("ema50") !== undefined ? formatPrice(pv("ema50")!) : undefined}
               color={INDICATOR_COLORS.ema50}
               hidden={hidden.ema50}
               onToggleHide={() => toggleHidden("ema50")}
@@ -1733,7 +2026,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           {indicators.ema200 && (
             <IndicatorPill
               name={`EMA ${config.ema200}`}
-              value={lastValues.ema200 !== undefined ? formatPrice(lastValues.ema200) : undefined}
+              value={pv("ema200") !== undefined ? formatPrice(pv("ema200")!) : undefined}
               color={INDICATOR_COLORS.ema200}
               hidden={hidden.ema200}
               onToggleHide={() => toggleHidden("ema200")}
@@ -1741,13 +2034,48 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onRemove={() => removeIndicator("ema200")}
             />
           )}
+          {indicators.sma20 && (
+            <IndicatorPill
+              name={`SMA ${config.sma20}`}
+              value={pv("sma20") !== undefined ? formatPrice(pv("sma20")!) : undefined}
+              color={INDICATOR_COLORS.sma20}
+              hidden={hidden.sma20}
+              onToggleHide={() => toggleHidden("sma20")}
+              onSettings={() => setSettingsTarget("sma20")}
+              onRemove={() => removeIndicator("sma20")}
+            />
+          )}
+          {indicators.sma50 && (
+            <IndicatorPill
+              name={`SMA ${config.sma50}`}
+              value={pv("sma50") !== undefined ? formatPrice(pv("sma50")!) : undefined}
+              color={INDICATOR_COLORS.sma50}
+              hidden={hidden.sma50}
+              onToggleHide={() => toggleHidden("sma50")}
+              onSettings={() => setSettingsTarget("sma50")}
+              onRemove={() => removeIndicator("sma50")}
+            />
+          )}
+          {indicators.bb && (
+            <IndicatorPill
+              name={`BB ${config.bbPeriod}, ${config.bbStdDev}`}
+              value={
+                pv("bbBasis") !== undefined
+                  ? formatPrice(pv("bbBasis")!)
+                  : undefined
+              }
+              color={INDICATOR_COLORS.bb}
+              hidden={hidden.bb}
+              onToggleHide={() => toggleHidden("bb")}
+              onSettings={() => setSettingsTarget("bb")}
+              onRemove={() => removeIndicator("bb")}
+            />
+          )}
           {indicators.vwap && (
             <IndicatorPill
               name="VWAP"
               value={
-                lastValues.vwap !== undefined
-                  ? formatPrice(lastValues.vwap)
-                  : undefined
+                pv("vwap") !== undefined ? formatPrice(pv("vwap")!) : undefined
               }
               color={INDICATOR_COLORS.vwap}
               hidden={hidden.vwap}
@@ -1760,7 +2088,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             <div className="hidden md:block">
             <IndicatorPill
               name="Vol"
-              value={lastValues.volume !== undefined ? formatVolume(lastValues.volume) : undefined}
+              value={pv("volume") !== undefined ? formatVolume(pv("volume")!) : undefined}
               color={INDICATOR_COLORS.volume}
               hidden={hidden.volume}
               onToggleHide={() => toggleHidden("volume")}
@@ -1773,14 +2101,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       </div>
 
       {/* RSI pane label */}
-      {indicators.rsi && paneOffsets[rsiPaneIdx] && !pillsCollapsed && (
+      {indicators.rsi && paneOffsets[rsiPaneIdx] && !pillsCollapsed && !legendHidden && (
         <div
           style={{ top: paneOffsets[rsiPaneIdx].top + 6, left: 12 }}
           className="pointer-events-none absolute z-10"
         >
           <IndicatorPill
             name={`RSI ${config.rsi}`}
-            value={lastValues.rsi !== undefined ? lastValues.rsi.toFixed(2) : undefined}
+            value={pv("rsi") !== undefined ? pv("rsi")!.toFixed(1) : undefined}
             color={INDICATOR_COLORS.rsi}
             hidden={hidden.rsi}
             onToggleHide={() => toggleHidden("rsi")}
@@ -1791,7 +2119,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       )}
 
       {/* MACD pane label */}
-      {indicators.macd && paneOffsets[macdPaneIdx] && !pillsCollapsed && (
+      {indicators.macd && paneOffsets[macdPaneIdx] && !pillsCollapsed && !legendHidden && (
         <div
           style={{ top: paneOffsets[macdPaneIdx].top + 6, left: 12 }}
           className="pointer-events-none absolute z-10"
@@ -1799,8 +2127,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           <IndicatorPill
             name={`MACD ${config.macdFast}, ${config.macdSlow}, ${config.macdSignal}`}
             value={
-              lastValues.macd !== undefined
-                ? `${lastValues.macd.toFixed(2)} / ${(lastValues.macdSignal ?? 0).toFixed(2)}`
+              pv("macd") !== undefined
+                ? `${pv("macd")!.toFixed(2)} / ${(pv("macdSignal") ?? 0).toFixed(2)}`
                 : undefined
             }
             color={INDICATOR_COLORS.macd}
@@ -1808,6 +2136,64 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             onToggleHide={() => toggleHidden("macd")}
             onSettings={() => setSettingsTarget("macd")}
             onRemove={() => removeIndicator("macd")}
+          />
+        </div>
+      )}
+
+      {/* ATR pane label */}
+      {indicators.atr && paneOffsets[atrPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[atrPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`ATR ${config.atr}`}
+            value={pv("atr") !== undefined ? formatPrice(pv("atr")!) : undefined}
+            color={INDICATOR_COLORS.atr}
+            hidden={hidden.atr}
+            onToggleHide={() => toggleHidden("atr")}
+            onSettings={() => setSettingsTarget("atr")}
+            onRemove={() => removeIndicator("atr")}
+          />
+        </div>
+      )}
+
+      {/* OBV pane label */}
+      {indicators.obv && paneOffsets[obvPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[obvPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name="OBV"
+            value={pv("obv") !== undefined ? formatVolume(pv("obv")!) : undefined}
+            color={INDICATOR_COLORS.obv}
+            hidden={hidden.obv}
+            onToggleHide={() => toggleHidden("obv")}
+            onSettings={() => setSettingsTarget("obv")}
+            onRemove={() => removeIndicator("obv")}
+          />
+        </div>
+      )}
+
+      {/* Stochastic pane label */}
+      {indicators.stoch && paneOffsets[stochPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[stochPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`Stoch ${config.stochK}, ${config.stochD}`}
+            value={
+              pv("stochK") !== undefined
+                ? `${pv("stochK")!.toFixed(1)} / ${(pv("stochD") ?? 0).toFixed(1)}`
+                : undefined
+            }
+            color={INDICATOR_COLORS.stoch}
+            hidden={hidden.stoch}
+            onToggleHide={() => toggleHidden("stoch")}
+            onSettings={() => setSettingsTarget("stoch")}
+            onRemove={() => removeIndicator("stoch")}
           />
         </div>
       )}

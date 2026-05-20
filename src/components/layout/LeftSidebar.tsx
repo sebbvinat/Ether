@@ -143,7 +143,12 @@ export function LeftSidebar() {
       <div className="my-1 h-px w-6 bg-tv-border" />
 
       <button
-        onClick={() => clearDrawings(symbol)}
+        onClick={() => {
+          if (
+            window.confirm("¿Borrar todos los dibujos del gráfico?")
+          )
+            clearDrawings(symbol);
+        }}
         aria-label="Borrar todos los dibujos"
         title="Borrar todos los dibujos de este símbolo"
         className="group relative my-0.5 flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-red"

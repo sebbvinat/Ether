@@ -1,7 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Camera, Menu, Play, TrendingUp, Zap } from "lucide-react";
+import {
+  Camera,
+  Code2,
+  LineChart,
+  Menu,
+  Moon,
+  Play,
+  Sun,
+  TrendingUp,
+} from "lucide-react";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -19,6 +28,8 @@ export function Header() {
   const activeSlotId = useChartStore((s) => s.activeSlotId);
   const replay = useChartStore((s) => s.replay);
   const stopReplay = useChartStore((s) => s.stopReplay);
+  const theme = useChartStore((s) => s.theme);
+  const toggleTheme = useChartStore((s) => s.toggleTheme);
 
   function onTrade() {
     setTradeToast(true);
@@ -58,7 +69,19 @@ export function Header() {
         {/* Brand only on desktop */}
         <div className="hidden items-center gap-1.5 pr-2 md:flex">
           <div className="flex h-6 w-6 items-center justify-center rounded bg-tv-blue/20">
-            <Zap className="h-3.5 w-3.5 text-tv-blue" />
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              className="h-3.5 w-3.5 text-tv-blue"
+              aria-hidden
+            >
+              <path d="M12 3 5 13l7 4 7-4z" />
+              <path d="m5 13 7 8 7-8" />
+            </svg>
           </div>
           <span className="text-sm font-semibold text-tv-text">Ether</span>
         </div>
@@ -110,6 +133,38 @@ export function Header() {
           className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
         >
           <Camera className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ether:open-pine"))
+          }
+          aria-label="Editor de Pine"
+          title="Editor de Pine"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <Code2 className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("ether:open-backtest"))
+          }
+          aria-label="Backtest de estrategias"
+          title="Backtest de estrategias"
+          className="hidden h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text md:flex"
+        >
+          <LineChart className="h-4 w-4" />
+        </button>
+        <button
+          onClick={toggleTheme}
+          aria-label="Cambiar tema"
+          title={theme === "dark" ? "Tema claro" : "Tema oscuro"}
+          className="flex h-8 w-8 items-center justify-center rounded text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+        >
+          {theme === "dark" ? (
+            <Sun className="h-4 w-4" />
+          ) : (
+            <Moon className="h-4 w-4" />
+          )}
         </button>
         <MoreMenu />
         <button

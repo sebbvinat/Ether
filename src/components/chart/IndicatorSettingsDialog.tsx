@@ -19,9 +19,15 @@ const TITLES: Record<IndicatorKey, string> = {
   ema20: "EMA — Slot 1",
   ema50: "EMA — Slot 2",
   ema200: "EMA — Slot 3",
+  sma20: "SMA — Slot 1",
+  sma50: "SMA — Slot 2",
+  bb: "Bandas de Bollinger",
   vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
+  atr: "ATR",
+  obv: "OBV",
+  stoch: "Estocástico",
   volume: "Volumen",
 };
 
@@ -74,32 +80,29 @@ interface FormProps {
 
 function SettingsForm({ target, config, onSave, onReset }: FormProps) {
   // Local draft state to avoid recalculating chart on every keystroke
-  const [draft, setDraft] = useState({
-    ema20: config.ema20,
-    ema50: config.ema50,
-    ema200: config.ema200,
-    rsi: config.rsi,
-    macdFast: config.macdFast,
-    macdSlow: config.macdSlow,
-    macdSignal: config.macdSignal,
-  });
+  const [draft, setDraft] = useState({ ...config });
 
   useEffect(() => {
-    setDraft({
-      ema20: config.ema20,
-      ema50: config.ema50,
-      ema200: config.ema200,
-      rsi: config.rsi,
-      macdFast: config.macdFast,
-      macdSlow: config.macdSlow,
-      macdSignal: config.macdSignal,
-    });
+    setDraft({ ...config });
   }, [config, target]);
 
   function save() {
     if (target === "ema20") onSave({ ema20: clamp(draft.ema20, 2, 500) });
     else if (target === "ema50") onSave({ ema50: clamp(draft.ema50, 2, 500) });
     else if (target === "ema200") onSave({ ema200: clamp(draft.ema200, 2, 500) });
+    else if (target === "sma20") onSave({ sma20: clamp(draft.sma20, 2, 500) });
+    else if (target === "sma50") onSave({ sma50: clamp(draft.sma50, 2, 500) });
+    else if (target === "bb")
+      onSave({
+        bbPeriod: clamp(draft.bbPeriod, 2, 500),
+        bbStdDev: clamp(draft.bbStdDev, 1, 5),
+      });
+    else if (target === "atr") onSave({ atr: clamp(draft.atr, 2, 200) });
+    else if (target === "stoch")
+      onSave({
+        stochK: clamp(draft.stochK, 2, 100),
+        stochD: clamp(draft.stochD, 1, 50),
+      });
     else if (target === "rsi") onSave({ rsi: clamp(draft.rsi, 2, 100) });
     else if (target === "macd")
       onSave({
@@ -107,17 +110,40 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         macdSlow: clamp(draft.macdSlow, 2, 200),
         macdSignal: clamp(draft.macdSignal, 2, 100),
       });
-    else if (target === "volume") onSave({});
+    else if (
+      target === "volume" ||
+      target === "vwap" ||
+      target === "obv"
+    )
+      onSave({});
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {(target === "ema20" || target === "ema50" || target === "ema200") && (
+      {(target === "ema20" ||
+        target === "ema50" ||
+        target === "ema200" ||
+        target === "sma20" ||
+        target === "sma50") && (
         <Field
           label="Período"
           value={draft[target]}
           onChange={(n) => setDraft((d) => ({ ...d, [target]: n }))}
         />
+      )}
+      {target === "bb" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="Período"
+            value={draft.bbPeriod}
+            onChange={(n) => setDraft((d) => ({ ...d, bbPeriod: n }))}
+          />
+          <Field
+            label="Desv. estándar"
+            value={draft.bbStdDev}
+            onChange={(n) => setDraft((d) => ({ ...d, bbStdDev: n }))}
+          />
+        </div>
       )}
       {target === "rsi" && (
         <Field
@@ -125,6 +151,27 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           value={draft.rsi}
           onChange={(n) => setDraft((d) => ({ ...d, rsi: n }))}
         />
+      )}
+      {target === "atr" && (
+        <Field
+          label="Período"
+          value={draft.atr}
+          onChange={(n) => setDraft((d) => ({ ...d, atr: n }))}
+        />
+      )}
+      {target === "stoch" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="%K"
+            value={draft.stochK}
+            onChange={(n) => setDraft((d) => ({ ...d, stochK: n }))}
+          />
+          <Field
+            label="%D"
+            value={draft.stochD}
+            onChange={(n) => setDraft((d) => ({ ...d, stochD: n }))}
+          />
+        </div>
       )}
       {target === "macd" && (
         <div className="grid grid-cols-3 gap-2">
@@ -145,10 +192,9 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           />
         </div>
       )}
-      {target === "volume" && (
+      {(target === "volume" || target === "vwap" || target === "obv") && (
         <p className="text-xs text-tv-text-muted">
-          El indicador de volumen no tiene parámetros configurables en esta
-          versión.
+          Este indicador no tiene parámetros configurables.
         </p>
       )}
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Minimize2 } from "lucide-react";
 import { Header } from "@/components/layout/Header";
 import { LeftSidebar } from "@/components/layout/LeftSidebar";
@@ -12,6 +12,9 @@ import { ChartGrid } from "@/components/layout/ChartGrid";
 import { ReplayBar } from "@/components/chart/ReplayBar";
 import { IndicatorSettingsDialog } from "@/components/chart/IndicatorSettingsDialog";
 import { InstallBanner } from "@/components/layout/InstallBanner";
+import { StatusBar } from "@/components/layout/StatusBar";
+import { PineEditor } from "@/components/pine/PineEditor";
+import { BacktestDialog } from "@/components/backtest/BacktestDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
@@ -21,18 +24,91 @@ export default function HomePage() {
   const setMobileRightOpen = useChartStore((s) => s.setMobileRightOpen);
   const focusMode = useChartStore((s) => s.focusMode);
   const setFocusMode = useChartStore((s) => s.setFocusMode);
+  const cleanMode = useChartStore((s) => s.cleanMode);
+  const setCleanMode = useChartStore((s) => s.setCleanMode);
+  const toggleCleanMode = useChartStore((s) => s.toggleCleanMode);
+  const toggleHideLegend = useChartStore((s) => s.toggleHideLegend);
+  const tool = useChartStore((s) => s.tool);
+  const setTool = useChartStore((s) => s.setTool);
+  const theme = useChartStore((s) => s.theme);
 
-  // Esc exits focus mode
+  // Apply theme class to <html> (default dark needs no class; .light overrides)
   useEffect(() => {
-    if (!focusMode) return;
+    const root = document.documentElement;
+    root.classList.toggle("light", theme === "light");
+    root.classList.toggle("dark", theme === "dark");
+  }, [theme]);
+
+  const [pineOpen, setPineOpen] = useState(false);
+  const [backtestOpen, setBacktestOpen] = useState(false);
+  const symbol = useChartStore((s) => s.symbol);
+  const timeframe = useChartStore((s) => s.timeframe);
+
+  // Pine / Backtest open via window events (dispatched from header/menu)
+  useEffect(() => {
+    const openPine = () => setPineOpen(true);
+    const openBt = () => setBacktestOpen(true);
+    window.addEventListener("ether:open-pine", openPine);
+    window.addEventListener("ether:open-backtest", openBt);
+    return () => {
+      window.removeEventListener("ether:open-pine", openPine);
+      window.removeEventListener("ether:open-backtest", openBt);
+    };
+  }, []);
+
+  // Global keyboard shortcuts: Z clean · F focus · H hide-legend · Alt+R replay · Esc cascade
+  useEffect(() => {
+    const isTyping = (el: EventTarget | null): boolean => {
+      const n = el as HTMLElement | null;
+      return (
+        !!n &&
+        (n.tagName === "INPUT" ||
+          n.tagName === "TEXTAREA" ||
+          n.isContentEditable === true)
+      );
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFocusMode(false);
+      if (isTyping(document.activeElement)) return;
+      const k = e.key.toLowerCase();
+      if (e.key === "Escape") {
+        if (cleanMode) setCleanMode(false);
+        else if (focusMode) setFocusMode(false);
+        else if (tool !== "cursor") setTool("cursor");
+        return;
+      }
+      if (e.metaKey || e.ctrlKey) return;
+      if (k === "r" && e.altKey) {
+        e.preventDefault();
+        const st = useChartStore.getState();
+        if (st.replay.active) st.stopReplay();
+        else
+          window.dispatchEvent(
+            new CustomEvent("ether:start-replay", {
+              detail: { slotId: st.activeSlotId },
+            }),
+          );
+        return;
+      }
+      if (e.altKey) return;
+      if (k === "z") toggleCleanMode();
+      else if (k === "f") setFocusMode(!focusMode);
+      else if (k === "h") toggleHideLegend();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [focusMode, setFocusMode]);
+  }, [
+    cleanMode,
+    focusMode,
+    tool,
+    setCleanMode,
+    setFocusMode,
+    setTool,
+    toggleCleanMode,
+    toggleHideLegend,
+  ]);
 
   const backdropOpen = mobileLeftOpen || mobileRightOpen;
+  const chromeHidden = focusMode || cleanMode;
 
   function closeAll() {
     setMobileLeftOpen(false);
@@ -41,26 +117,31 @@ export default function HomePage() {
 
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-tv-bg">
-      {!focusMode && <TabsBar />}
-      {!focusMode && <Header />}
+      {!chromeHidden && <TabsBar />}
+      {!chromeHidden && <Header />}
       <div className="relative flex min-h-0 flex-1">
-        {!focusMode && <LeftSidebar />}
+        {!chromeHidden && <LeftSidebar />}
         <main className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1">
             <ChartGrid />
           </div>
-          {focusMode && (
+          {chromeHidden && (
             <button
-              onClick={() => setFocusMode(false)}
-              className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-tv-panel/90 text-tv-text-muted shadow-lg ring-1 ring-tv-border backdrop-blur hover:text-tv-text"
-              title="Salir del modo enfoque (Esc)"
+              onClick={() => {
+                setCleanMode(false);
+                setFocusMode(false);
+              }}
+              className="absolute right-3 top-3 z-30 flex items-center gap-1.5 rounded-full bg-tv-panel/90 px-3 py-1.5 text-xs text-tv-text-muted shadow-lg ring-1 ring-tv-border backdrop-blur hover:text-tv-text"
+              title="Salir (Esc)"
               aria-label="Salir del modo enfoque"
             >
-              <Minimize2 className="h-4 w-4" />
+              <Minimize2 className="h-3.5 w-3.5" />
+              <span>Salir</span>
+              <span className="rounded bg-tv-bg px-1 py-px text-[10px]">Esc</span>
             </button>
           )}
         </main>
-        {!focusMode && <RightSidebar />}
+        {!chromeHidden && <RightSidebar />}
         {backdropOpen && (
           <button
             type="button"
@@ -70,11 +151,19 @@ export default function HomePage() {
           />
         )}
       </div>
-      {!focusMode && <ReplayBar />}
-      {!focusMode && <BottomPanel />}
+      {!chromeHidden && <ReplayBar />}
+      {!chromeHidden && <BottomPanel />}
+      {!chromeHidden && <StatusBar />}
       <BottomTabs />
       <IndicatorSettingsDialog />
       <InstallBanner />
+      <PineEditor open={pineOpen} onClose={() => setPineOpen(false)} />
+      <BacktestDialog
+        open={backtestOpen}
+        onClose={() => setBacktestOpen(false)}
+        symbol={symbol}
+        timeframe={timeframe}
+      />
     </div>
   );
 }

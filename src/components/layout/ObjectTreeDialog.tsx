@@ -48,9 +48,15 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   ema20: "EMA 20",
   ema50: "EMA 50",
   ema200: "EMA 200",
+  sma20: "SMA 20",
+  sma50: "SMA 50",
+  bb: "Bollinger",
   vwap: "VWAP",
   rsi: "RSI",
   macd: "MACD",
+  atr: "ATR",
+  obv: "OBV",
+  stoch: "Estocástico",
   volume: "Volume",
 };
 
