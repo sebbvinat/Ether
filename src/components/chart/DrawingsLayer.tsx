@@ -1,7 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
+import {
+  useChartStore,
+  type Drawing,
+  type DrawingPoint,
+  type DrawingStyle,
+} from "@/lib/store/chart-store";
+import { formatPrice } from "@/lib/format";
 
 const TV_GREEN = "#26a69a";
 const TV_RED = "#ef5350";
@@ -43,6 +49,10 @@ type HandleKey = "a" | "b" | "c" | "at";
 
 interface Props {
   drawings: Drawing[];
+  /** Estilos por drawing id (color, line style, extend, text, visibility, stats). */
+  styles: Record<string, DrawingStyle>;
+  /** Timeframe activo — usado para filtrar visibility por TF. */
+  timeframe: string;
   selectedId: string | null;
   toCoord: (time: number, price: number) => Coord | null;
   fromCoord: (x: number, y: number) => DrawingPoint | null;
@@ -71,6 +81,8 @@ interface Props {
 
 export function DrawingsLayer({
   drawings,
+  styles,
+  timeframe,
   selectedId,
   toCoord,
   fromCoord,
@@ -83,6 +95,129 @@ export function DrawingsLayer({
   containerWidth,
   containerHeight,
 }: Props) {
+  const openDrawingProps = useChartStore((s) => s.openDrawingProps);
+
+  /** dash array por estilo de línea (solid/dashed/dotted). */
+  function lineDash(s: DrawingStyle | undefined): string | undefined {
+    if (!s || !s.lineStyle || s.lineStyle === "solid") return undefined;
+    if (s.lineStyle === "dashed") return "6 4";
+    return "2 3";
+  }
+
+  /** Doble click sobre el `<g>` raíz de un drawing → abre dialog de props. */
+  function onDrawingDblClick(
+    e: React.MouseEvent<SVGGElement>,
+    id: string,
+  ) {
+    e.stopPropagation();
+    e.preventDefault();
+    openDrawingProps(id);
+  }
+
+  /** True si el drawing es visible en el TF actual según su style.visibleTfs. */
+  function visibleInTf(s: DrawingStyle | undefined): boolean {
+    if (!s || !s.visibleTfs) return true;
+    return s.visibleTfs.includes(timeframe);
+  }
+
+  /** Caja de stats para drawings 2-pt: Δprice / %change / bars. */
+  function statsBox(
+    s: DrawingStyle | undefined,
+    a: DrawingPoint,
+    b: DrawingPoint,
+    aCoord: Coord,
+    bCoord: Coord,
+    isHovered: boolean,
+  ): React.ReactNode {
+    if (!s || !s.stats || s.stats === "hidden") return null;
+    if (!s.alwaysShowStats && !isHovered) return null;
+    const dPrice = b.price - a.price;
+    const pct = a.price === 0 ? 0 : (dPrice / a.price) * 100;
+    const dDurMs = Math.abs(b.time - a.time) * 1000;
+    const lines: string[] = [
+      `${dPrice >= 0 ? "+" : ""}${formatPrice(dPrice)}`,
+      `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`,
+    ];
+    if (s.stats === "extended") {
+      const hours = Math.round(dDurMs / 3_600_000);
+      lines.push(`${hours}h`);
+    }
+    const pos = s.statsPosition ?? "right";
+    const anchor = pos === "right" ? bCoord : aCoord;
+    const ox = pos === "right" ? 10 : -90;
+    return (
+      <g
+        key="__stats"
+        transform={`translate(${anchor.x + ox}, ${anchor.y - 8})`}
+        style={{ pointerEvents: "none" }}
+      >
+        <rect
+          width={80}
+          height={lines.length * 12 + 6}
+          fill="rgba(30,34,45,0.95)"
+          stroke="rgba(120,123,134,0.4)"
+          strokeWidth={0.5}
+          rx={3}
+        />
+        {lines.map((ln, i) => (
+          <text
+            key={i}
+            x={40}
+            y={12 + i * 12}
+            fill={TV_TEXT}
+            fontSize={9}
+            fontFamily="var(--font-mono), monospace"
+            textAnchor="middle"
+          >
+            {ln}
+          </text>
+        ))}
+      </g>
+    );
+  }
+
+  /** Texto-label de drawing: <text> posicionado relativo al bounding box.
+   *  bbox: { minX, minY, maxX, maxY } en coords SVG. */
+  function textLabel(
+    s: DrawingStyle | undefined,
+    bbox: { minX: number; minY: number; maxX: number; maxY: number },
+    fallbackColor: string,
+  ): React.ReactNode {
+    if (!s || !s.text || !s.text.trim()) return null;
+    const size = s.textSize ?? 12;
+    const vAlign = s.textVAlign ?? "top";
+    const hAlign = s.textHAlign ?? "center";
+    let x: number;
+    let y: number;
+    let anchor: "start" | "middle" | "end" = "middle";
+    if (hAlign === "left") {
+      x = bbox.minX;
+      anchor = "start";
+    } else if (hAlign === "right") {
+      x = bbox.maxX;
+      anchor = "end";
+    } else {
+      x = (bbox.minX + bbox.maxX) / 2;
+    }
+    if (vAlign === "top") y = bbox.minY - 6;
+    else if (vAlign === "bottom") y = bbox.maxY + size + 2;
+    else y = (bbox.minY + bbox.maxY) / 2 + size / 3;
+    return (
+      <text
+        x={x}
+        y={y}
+        textAnchor={anchor}
+        fill={s.textColor ?? fallbackColor}
+        fontSize={size}
+        fontWeight={s.textBold ? 700 : 500}
+        fontStyle={s.textItalic ? "italic" : "normal"}
+        fontFamily="var(--font-mono), monospace"
+        style={{ pointerEvents: "none" }}
+      >
+        {s.text}
+      </text>
+    );
+  }
   type DragState =
     | { id: string; handle: HandleKey }
     | { id: string; handle: "points"; index: number; basePoints: DrawingPoint[] };
@@ -185,6 +320,9 @@ export function DrawingsLayer({
     >
       {drawings.map((d) => {
         const isPreview = d.id.startsWith("__");
+        // Look up style + filter por visibility por TF (skip si está oculto)
+        const ds = isPreview ? undefined : styles[d.id];
+        if (!isPreview && !visibleInTf(ds)) return null;
         const isSelected = !isPreview && selectedId === d.id;
         const isHovered = !isPreview && hover === d.id;
         const isDragging = !isPreview && drag?.id === d.id;
@@ -192,6 +330,12 @@ export function DrawingsLayer({
           !lockDrawings && !isPreview && (isSelected || isHovered || isDragging);
         const hideHandle = !showHandles;
         const selectedWidth = isSelected ? 1 : 0;
+        // dasharray + width customizable por style
+        const dashArr = lineDash(ds);
+        const styleWidth = ds?.lineWidth;
+        // helper: stroke width final aplicando style + selected bump
+        const sw = (base: number) =>
+          (styleWidth ?? base) + selectedWidth;
         const grStyle: React.CSSProperties = isPreview
           ? { pointerEvents: "none", opacity: 0.7 }
           : {
@@ -203,7 +347,31 @@ export function DrawingsLayer({
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
           const isUp = d.b.price >= d.a.price;
-          const color = isUp ? TV_GREEN : TV_RED;
+          const baseColor = isUp ? TV_GREEN : TV_RED;
+          const color = ds?.color ?? baseColor;
+          // Extend: calcular endpoints visibles según extend (none/right/left/both)
+          let drawA = a;
+          let drawB = b;
+          if (
+            d.type === "trendline" &&
+            ds?.extend &&
+            ds.extend !== "none" &&
+            a.x !== b.x
+          ) {
+            const m = (b.y - a.y) / (b.x - a.x);
+            const yAt = (x: number) => a.y + m * (x - a.x);
+            if (ds.extend === "left" || ds.extend === "both") {
+              drawA = { x: 0, y: yAt(0) };
+            }
+            if (ds.extend === "right" || ds.extend === "both") {
+              drawB = { x: containerWidth, y: yAt(containerWidth) };
+            }
+          }
+          // Middle point dot (sólo trendline)
+          const midPoint =
+            d.type === "trendline" && ds?.showMiddlePoint
+              ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+              : null;
           // Arrow head
           let headRender: React.ReactNode = null;
           if (d.type === "arrow") {
@@ -235,25 +403,35 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {/* invisible hit area for easier click */}
               <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
+                x1={drawA.x}
+                y1={drawA.y}
+                x2={drawB.x}
+                y2={drawB.y}
                 stroke="transparent"
                 strokeWidth={12}
               />
               <line
-                x1={a.x}
-                y1={a.y}
-                x2={b.x}
-                y2={b.y}
+                x1={drawA.x}
+                y1={drawA.y}
+                x2={drawB.x}
+                y2={drawB.y}
                 stroke={color}
-                strokeWidth={1.5 + selectedWidth}
+                strokeWidth={sw(1.5)}
+                strokeDasharray={dashArr}
               />
+              {midPoint && (
+                <circle
+                  cx={midPoint.x}
+                  cy={midPoint.y}
+                  r={3}
+                  fill={color}
+                />
+              )}
               {headRender}
               <DragHandle
                 cx={a.x}
@@ -267,6 +445,17 @@ export function DrawingsLayer({
                 onDown={(e) => onHandleDown(e, d.id, "b")}
                 hidden={hideHandle}
               />
+              {textLabel(
+                ds,
+                {
+                  minX: Math.min(a.x, b.x),
+                  minY: Math.min(a.y, b.y),
+                  maxX: Math.max(a.x, b.x),
+                  maxY: Math.max(a.y, b.y),
+                },
+                color,
+              )}
+              {statsBox(ds, d.a, d.b, a, b, isHovered)}
               {hover === d.id && (
                 <RemoveHandle
                   x={(a.x + b.x) / 2}
@@ -288,13 +477,14 @@ export function DrawingsLayer({
           const priceBottom = Math.min(d.a.price, d.b.price);
           const range = priceTop - priceBottom;
           const isUp = d.b.price >= d.a.price;
-          const color = isUp ? TV_GREEN : TV_RED;
+          const color = ds?.color ?? (isUp ? TV_GREEN : TV_RED);
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <rect
@@ -370,6 +560,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {FIB_LEVELS.map(({ level, color }) => {
@@ -431,13 +622,14 @@ export function DrawingsLayer({
           const w = Math.abs(b.x - a.x);
           const h = Math.abs(b.y - a.y);
           const isUp = d.b.price >= d.a.price;
-          const color = isUp ? TV_GREEN : TV_RED;
+          const color = ds?.color ?? (isUp ? TV_GREEN : TV_RED);
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <rect
@@ -478,7 +670,7 @@ export function DrawingsLayer({
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
           const isUp = d.b.price >= d.a.price;
-          const color = isUp ? TV_GREEN : TV_RED;
+          const color = ds?.color ?? (isUp ? TV_GREEN : TV_RED);
           // Extend beyond b in the same direction up to the right edge
           const dx = b.x - a.x;
           const dy = b.y - a.y;
@@ -497,6 +689,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -547,6 +740,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -592,6 +786,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -672,6 +867,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {/* Stop zone (red translucent) */}
@@ -798,6 +994,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <text
@@ -836,13 +1033,14 @@ export function DrawingsLayer({
         if (d.type === "hline") {
           const a = toCoord(d.at.time, d.at.price);
           if (!a) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -901,13 +1099,14 @@ export function DrawingsLayer({
         if (d.type === "cross") {
           const a = toCoord(d.at.time, d.at.price);
           if (!a) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -967,7 +1166,7 @@ export function DrawingsLayer({
         if (d.type === "flag") {
           const a = toCoord(d.at.time, d.at.price);
           if (!a) return null;
-          const color = d.color ?? TV_YELLOW;
+          const color = ds?.color ?? d.color ?? TV_YELLOW;
           const flagH = 18;
           return (
             <g
@@ -975,6 +1174,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -1022,13 +1222,14 @@ export function DrawingsLayer({
         if (d.type === "plabel") {
           const a = toCoord(d.at.time, d.at.price);
           if (!a) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -1088,13 +1289,14 @@ export function DrawingsLayer({
           const cy = (a.y + b.y) / 2;
           const rx = Math.abs(b.x - a.x) / 2;
           const ry = Math.abs(b.y - a.y) / 2;
-          const color = d.color ?? (d.b.price >= d.a.price ? TV_GREEN : TV_RED);
+          const color = ds?.color ?? d.color ?? (d.b.price >= d.a.price ? TV_GREEN : TV_RED);
           return (
             <g
               key={d.id}
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <ellipse
@@ -1137,7 +1339,7 @@ export function DrawingsLayer({
           if (!a || !b) return null;
           const xL = Math.min(a.x, b.x);
           const xW = Math.abs(b.x - a.x);
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           // Estimate bars by guessing avg bar pixel width (rough)
           const bars = Math.max(1, Math.round(xW / 6));
           return (
@@ -1146,6 +1348,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <rect
@@ -1198,7 +1401,7 @@ export function DrawingsLayer({
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
           const isUp = d.b.price >= d.a.price;
-          const color = d.color ?? (isUp ? TV_GREEN : TV_RED);
+          const color = ds?.color ?? d.color ?? (isUp ? TV_GREEN : TV_RED);
           const x = Math.min(a.x, b.x);
           const y = Math.min(a.y, b.y);
           const w = Math.abs(b.x - a.x);
@@ -1212,6 +1415,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <rect
@@ -1273,7 +1477,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const period = Math.abs(b.x - a.x);
           if (period < 4) return null;
           const startX = Math.min(a.x, b.x);
@@ -1290,6 +1494,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {lines.map((x, i) => (
@@ -1335,7 +1540,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           // Band offset perpendicular to the trend line — using a simple
           // y-axis offset proportional to the y delta for a clean look.
           const bandHalf = Math.max(8, Math.abs(b.y - a.y) * 0.25);
@@ -1349,6 +1554,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <polygon
@@ -1417,6 +1623,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {FIB_EXT_LEVELS.map(({ level, color }) => {
@@ -1495,7 +1702,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const r = Math.hypot(b.x - a.x, b.y - a.y);
           if (r < 4) return null;
           const ratios = [0.382, 0.5, 0.618, 1.0];
@@ -1505,6 +1712,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {ratios.map((ratio, i) => {
@@ -1561,7 +1769,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const ratios = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
@@ -1571,6 +1779,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {ratios.map((r, i) => {
@@ -1618,7 +1827,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const x = Math.min(a.x, b.x);
           const y = Math.min(a.y, b.y);
           const w = Math.abs(b.x - a.x);
@@ -1629,6 +1838,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <rect
@@ -1714,7 +1924,7 @@ export function DrawingsLayer({
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
           const isUp = d.b.price >= d.a.price;
-          const color = d.color ?? (isUp ? TV_GREEN : TV_RED);
+          const color = ds?.color ?? d.color ?? (isUp ? TV_GREEN : TV_RED);
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           const angleDeg = (Math.atan2(-dy, dx) * 180) / Math.PI;
@@ -1735,6 +1945,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
@@ -1820,6 +2031,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(dd.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(dd.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, dd.id)}
               style={grStyle}
             >
               {renderShape(coords)}
@@ -1956,7 +2168,7 @@ export function DrawingsLayer({
         // --- triangle (3pt) / triangle3 (3pt) ---
         if (d.type === "triangle" || d.type === "triangle3") {
           if (d.points.length < 3) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           return renderNPoint(d, color, (pts) => {
             const polyStr = pts.map((p) => `${p.x},${p.y}`).join(" ");
             return (
@@ -1974,7 +2186,7 @@ export function DrawingsLayer({
         // --- elliott3 (3pt: a/b/c) ---
         if (d.type === "elliott3") {
           if (d.points.length < 3) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const labels = ["a", "b", "c"];
           return renderNPoint(d, color, (pts) => (
             <>
@@ -2007,7 +2219,7 @@ export function DrawingsLayer({
         // --- abcd (4pt: A/B/C/D) ---
         if (d.type === "abcd") {
           if (d.points.length < 4) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const labels = ["A", "B", "C", "D"];
           return renderNPoint(d, color, (pts) => (
             <>
@@ -2039,7 +2251,7 @@ export function DrawingsLayer({
         // --- xabcd (5pt: X/A/B/C/D) ---
         if (d.type === "xabcd") {
           if (d.points.length < 5) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const labels = ["X", "A", "B", "C", "D"];
           return renderNPoint(d, color, (pts) => (
             <>
@@ -2071,7 +2283,7 @@ export function DrawingsLayer({
         // --- elliott5 (5pt: 1/2/3/4/5) ---
         if (d.type === "elliott5") {
           if (d.points.length < 5) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const labels = ["1", "2", "3", "4", "5"];
           return renderNPoint(d, color, (pts) => (
             <>
@@ -2104,7 +2316,7 @@ export function DrawingsLayer({
         // --- hs (head-and-shoulders, 5pt) ---
         if (d.type === "hs") {
           if (d.points.length < 5) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const labels = ["L", "H", "Cabeza", "H", "R"];
           return renderNPoint(d, color, (pts) => (
             <>
@@ -2150,7 +2362,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
           // 9 Gann ratios — y-slope multipliers relative to dy
@@ -2171,6 +2383,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               {ratios.map(([n, dd2], i) => {
@@ -2215,7 +2428,7 @@ export function DrawingsLayer({
         // --- brush (variable-N polyline, freehand) ---
         if (d.type === "brush") {
           if (d.points.length < 2) return null;
-          const color = d.color ?? TV_BLUE;
+          const color = ds?.color ?? d.color ?? TV_BLUE;
           const coords = d.points
             .map((p) => toCoord(p.time, p.price))
             .filter((c): c is Coord => c !== null);
@@ -2227,6 +2440,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <polyline
@@ -2259,7 +2473,7 @@ export function DrawingsLayer({
           const a = toCoord(d.a.time, d.a.price);
           const b = toCoord(d.b.time, d.b.price);
           if (!a || !b) return null;
-          const color = d.color ?? TV_YELLOW;
+          const color = ds?.color ?? d.color ?? TV_YELLOW;
           const text = d.text || "";
           // Approximate text width: ~6px per char + padding
           const w = Math.max(40, text.length * 6.5 + 14);
@@ -2272,6 +2486,7 @@ export function DrawingsLayer({
               onMouseEnter={() => setHover(d.id)}
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
               style={grStyle}
             >
               <line
