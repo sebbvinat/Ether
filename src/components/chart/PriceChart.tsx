@@ -1085,8 +1085,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (!chartRef.current) return;
     let loading = false;
     let exhausted = false;
+    let cancelled = false;
     const handler = (range: { from: unknown; to: unknown } | null) => {
-      if (!range || loading || exhausted) return;
+      if (cancelled || !range || loading || exhausted) return;
       const arr = candlesRef.current;
       if (arr.length < 10) return;
       const firstTime = arr[0].time;
@@ -1096,6 +1097,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         loading = true;
         fetchOlderCandles(symbol, timeframe, firstTime)
           .then((older) => {
+            // Bail out if symbol/timeframe changed while the fetch was in
+            // flight — otherwise we'd setData with stale-tf candles.
+            if (cancelled) return;
             if (older.length === 0) {
               exhausted = true;
               return;
@@ -1138,14 +1142,20 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           });
       }
     };
-    chartRef.current
-      .timeScale()
-      .subscribeVisibleLogicalRangeChange(() => {
-        const r = chartRef.current?.timeScale().getVisibleRange();
-        handler(r as { from: unknown; to: unknown } | null);
-      });
+    const rangeHandler = () => {
+      const r = chartRef.current?.timeScale().getVisibleRange();
+      handler(r as { from: unknown; to: unknown } | null);
+    };
+    const ts = chartRef.current.timeScale();
+    ts.subscribeVisibleLogicalRangeChange(rangeHandler);
     return () => {
-      // Unsubscribe handled by chart.remove() in unmount cleanup
+      // Detach this effect's handler AND mark in-flight fetches as cancelled,
+      // so that across timeframe/symbol changes we don't accumulate stale
+      // closures or apply old-tf results to the new chart.
+      cancelled = true;
+      try {
+        ts.unsubscribeVisibleLogicalRangeChange(rangeHandler);
+      } catch {}
     };
   }, [symbol, timeframe]);
 
