@@ -39,7 +39,7 @@ import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
 import { Countdown } from "./Countdown";
-import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
+import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
 interface MeasurePoint {
   time: number;
@@ -250,7 +250,22 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     | "fibarc"
     | "fibfan"
     | "gannbox"
-    | "trendangle";
+    | "trendangle"
+    // Wave 6B — 2-point (no text)
+    | "gannfan"
+    // Wave 6B — 2-point with text prompt at commit
+    | "callout";
+  // Wave 6B — multi-point tools
+  type NPointDraftType =
+    | "channel"
+    | "pitch"
+    | "triangle"
+    | "triangle3"
+    | "elliott3"
+    | "abcd"
+    | "xabcd"
+    | "elliott5"
+    | "hs";
   type DrawDraft =
     | null
     | {
@@ -265,6 +280,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         c: DrawingPoint;
         /** 1 means waiting for stop, 2 waiting for target */
         phase: 1 | 2;
+      }
+    | {
+        type: NPointDraftType;
+        /** Array length = phase (committed) + 1 (in-progress hover slot) */
+        points: DrawingPoint[];
+        phase: number;
+        maxPoints: number;
       };
   const [draft, setDraft] = useState<DrawDraft>(null);
   const draftRef = useRef(draft);
@@ -527,7 +549,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         tool === "fibarc" ||
         tool === "fibfan" ||
         tool === "gannbox" ||
-        tool === "trendangle"
+        tool === "trendangle" ||
+        // Wave 6B — 2-point (no text)
+        tool === "gannfan"
       ) {
         if (!param.time) return;
         const time = Number(param.time);
@@ -557,6 +581,104 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           toolRef.current = "cursor";
           setDraft(null);
           setToolRef.current("cursor");
+        }
+        return;
+      }
+
+      // Wave 6B — callout (2pt + text prompt on 2nd click)
+      if (tool === "callout") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        const current = draftRef.current;
+        if (
+          !current ||
+          !("a" in current) ||
+          current.type !== "callout"
+        ) {
+          const newDraft: DrawDraft = {
+            type: "callout",
+            a: { time, price },
+            b: { time, price },
+          };
+          draftRef.current = newDraft;
+          setDraft(newDraft);
+        } else {
+          const text = window.prompt("Texto del callout:") ?? "";
+          if (text.trim()) {
+            addDrawingRef.current({
+              type: "callout",
+              symbol: sym,
+              a: current.a,
+              b: { time, price },
+              text: text.trim(),
+            });
+          }
+          draftRef.current = null;
+          toolRef.current = "cursor";
+          setDraft(null);
+          setToolRef.current("cursor");
+        }
+        return;
+      }
+
+      // Wave 6B — N-point tools (channel 3, pitch 3, triangle 3, triangle3 3,
+      // elliott3 3, abcd 4, xabcd 5, elliott5 5, hs 5)
+      const MAX_PTS: Partial<Record<DrawingTool, number>> = {
+        channel: 3,
+        pitch: 3,
+        triangle: 3,
+        triangle3: 3,
+        elliott3: 3,
+        abcd: 4,
+        xabcd: 5,
+        elliott5: 5,
+        hs: 5,
+      };
+      const maxPts = MAX_PTS[tool];
+      if (maxPts !== undefined) {
+        if (!param.time) return;
+        const time = Number(param.time);
+        const pt: DrawingPoint = { time, price };
+        const current = draftRef.current;
+        const isMatchingNDraft =
+          current &&
+          "points" in current &&
+          (current as { type: string }).type === tool;
+        if (!isMatchingNDraft) {
+          // First click — start a draft with 1 committed point + hover slot
+          const newDraft: DrawDraft = {
+            type: tool as NPointDraftType,
+            points: [pt, pt],
+            phase: 1,
+            maxPoints: maxPts,
+          };
+          draftRef.current = newDraft;
+          setDraft(newDraft);
+        } else {
+          // Append the new point; commit if we hit maxPoints
+          const cur = current as Extract<DrawDraft, { phase: number; maxPoints: number }>;
+          const committed = cur.points.slice(0, cur.phase);
+          const nextCommitted = [...committed, pt];
+          if (nextCommitted.length === cur.maxPoints) {
+            addDrawingRef.current({
+              type: tool as NPointDraftType,
+              symbol: sym,
+              points: nextCommitted,
+            });
+            draftRef.current = null;
+            toolRef.current = "cursor";
+            setDraft(null);
+            setToolRef.current("cursor");
+          } else {
+            const newDraft: DrawDraft = {
+              type: tool as NPointDraftType,
+              points: [...nextCommitted, pt],
+              phase: nextCommitted.length,
+              maxPoints: cur.maxPoints,
+            };
+            draftRef.current = newDraft;
+            setDraft(newDraft);
+          }
         }
         return;
       }
@@ -622,7 +744,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       }
 
       const draftNow = draftRef.current;
-      // Only update draft.b if the active tool MATCHES the draft type (avoids stuck endpoint after commit)
+      // Only update the in-progress draft endpoint if the active tool MATCHES
+      // the draft type (avoids stuck endpoint after commit).
       if (
         draftNow &&
         draftNow.type !== "long" &&
@@ -635,11 +758,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         const price = candleSeriesRef.current.coordinateToPrice(param.point.y);
         if (price !== null && isFinite(price)) {
           const time = Number(param.time);
-          setDraft((prev) =>
-            prev && prev.type !== "long" && prev.type !== "short"
-              ? { ...prev, b: { time, price } }
-              : prev,
-          );
+          setDraft((prev) => {
+            if (!prev || prev.type === "long" || prev.type === "short") {
+              return prev;
+            }
+            // N-point draft: update the hover slot (last index)
+            if ("points" in prev) {
+              const next = [...prev.points];
+              next[next.length - 1] = { time, price };
+              return { ...prev, points: next };
+            }
+            // 2-point draft
+            return { ...prev, b: { time, price } };
+          });
         }
       }
 
@@ -1047,6 +1178,18 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "fibfan",
         "gannbox",
         "trendangle",
+        // Wave 6B
+        "channel",
+        "pitch",
+        "triangle",
+        "triangle3",
+        "elliott3",
+        "abcd",
+        "xabcd",
+        "elliott5",
+        "hs",
+        "gannfan",
+        "callout",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
         ? "crosshair"
@@ -1073,6 +1216,18 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       "fibfan",
       "gannbox",
       "trendangle",
+      // Wave 6B
+      "channel",
+      "pitch",
+      "triangle",
+      "triangle3",
+      "elliott3",
+      "abcd",
+      "xabcd",
+      "elliott5",
+      "hs",
+      "gannfan",
+      "callout",
     ];
     if (!draftTools.includes(tool)) {
       setDraft(null);
@@ -1880,24 +2035,44 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   }
   // Coord converter for the drawings layer (only valid for the main pane)
   const symbolDrawings = drawings.filter((d) => d.symbol === symbol);
-  const draftAsDrawing: Drawing | null = draft
-    ? draft.type === "long" || draft.type === "short"
-      ? {
-          id: "__draft__",
-          symbol,
-          type: draft.type,
-          a: draft.a,
-          b: draft.b,
-          c: draft.c,
-        }
-      : {
-          id: "__draft__",
-          symbol,
-          type: draft.type,
-          a: draft.a,
-          b: draft.b,
-        }
-    : null;
+  let draftAsDrawing: Drawing | null = null;
+  if (draft) {
+    if (draft.type === "long" || draft.type === "short") {
+      draftAsDrawing = {
+        id: "__draft__",
+        symbol,
+        type: draft.type,
+        a: draft.a,
+        b: draft.b,
+        c: draft.c,
+      };
+    } else if ("points" in draft) {
+      // N-point draft preview
+      draftAsDrawing = {
+        id: "__draft__",
+        symbol,
+        type: draft.type,
+        points: draft.points,
+      };
+    } else if (draft.type === "callout") {
+      draftAsDrawing = {
+        id: "__draft__",
+        symbol,
+        type: "callout",
+        a: draft.a,
+        b: draft.b,
+        text: "",
+      };
+    } else {
+      draftAsDrawing = {
+        id: "__draft__",
+        symbol,
+        type: draft.type,
+        a: draft.a,
+        b: draft.b,
+      };
+    }
+  }
 
   // Live preview while user is hovering with long/short tool (before click)
   const lsPreview: Drawing | null =

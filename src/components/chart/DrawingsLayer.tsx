@@ -53,6 +53,8 @@ interface Props {
       b: DrawingPoint;
       c: DrawingPoint;
       at: DrawingPoint;
+      points: DrawingPoint[];
+      text: string;
     }>,
   ) => void;
   onRemove: (id: string) => void;
@@ -75,10 +77,11 @@ export function DrawingsLayer({
   containerWidth,
   containerHeight,
 }: Props) {
+  type DragState =
+    | { id: string; handle: HandleKey }
+    | { id: string; handle: "points"; index: number; basePoints: DrawingPoint[] };
   const [hover, setHover] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ id: string; handle: HandleKey } | null>(
-    null,
-  );
+  const [drag, setDrag] = useState<DragState | null>(null);
 
   function handleClick(id: string) {
     if (eraserActive) {
@@ -111,6 +114,27 @@ export function DrawingsLayer({
     setDrag({ id, handle });
   }
 
+  /** Drag handler for one point of an N-point drawing. Captures the base
+   *  points array so move events can update only the indexed slot. */
+  function onPointsHandleDown(
+    e: React.PointerEvent<SVGCircleElement>,
+    id: string,
+    index: number,
+    basePoints: DrawingPoint[],
+  ) {
+    e.stopPropagation();
+    e.preventDefault();
+    const svg = e.currentTarget.ownerSVGElement;
+    if (svg) {
+      try {
+        svg.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+    }
+    setDrag({ id, handle: "points", index, basePoints });
+  }
+
   function onSvgPointerMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!drag) return;
     const rect = svgRect(e.currentTarget);
@@ -118,7 +142,13 @@ export function DrawingsLayer({
     const y = e.clientY - rect.top;
     const pt = fromCoord(x, y);
     if (!pt) return;
-    onUpdate(drag.id, { [drag.handle]: pt });
+    if (drag.handle === "points") {
+      const next = drag.basePoints.slice();
+      next[drag.index] = pt;
+      onUpdate(drag.id, { points: next });
+    } else {
+      onUpdate(drag.id, { [drag.handle]: pt });
+    }
   }
 
   function onSvgPointerUp(e: React.PointerEvent<SVGSVGElement>) {
@@ -1749,6 +1779,494 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={(a.x + b.x) / 2}
                   y={(a.y + b.y) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // ============================================================
+        // Wave 6B — 11 nuevas herramientas multi-punto + callout + gannfan
+        // ============================================================
+
+        // helper: convert d.points → SVG coords; null if any off-chart
+        const renderNPoint = (
+          dd: typeof d & { points: DrawingPoint[] },
+          color: string,
+          renderShape: (pts: Coord[]) => React.ReactNode,
+        ): React.ReactNode => {
+          const pts = dd.points.map((p) => toCoord(p.time, p.price));
+          if (pts.some((p) => p == null)) return null;
+          const coords = pts as Coord[];
+          const xs = coords.map((c) => c.x);
+          const ys = coords.map((c) => c.y);
+          const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+          const yMin = Math.min(...ys);
+          return (
+            <g
+              key={dd.id}
+              onMouseEnter={() => setHover(dd.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(dd.id)}
+              style={grStyle}
+            >
+              {renderShape(coords)}
+              {coords.map((c, i) => (
+                <DragHandle
+                  key={`h-${i}`}
+                  cx={c.x}
+                  cy={c.y}
+                  onDown={(e) =>
+                    onPointsHandleDown(e, dd.id, i, dd.points)
+                  }
+                  hidden={hideHandle}
+                />
+              ))}
+              {hover === dd.id && (
+                <RemoveHandle
+                  x={cx}
+                  y={yMin - 14}
+                  onRemove={() => onRemove(dd.id)}
+                />
+              )}
+              {/* unused color binding kept for symmetry */}
+              <title>{color}</title>
+            </g>
+          );
+        };
+
+        // --- channel (3pt) — parallel channel ---
+        if (d.type === "channel") {
+          if (d.points.length < 3) return null;
+          const color =
+            d.color ?? (d.points[1].price >= d.points[0].price ? TV_GREEN : TV_RED);
+          return renderNPoint(d, color, (pts) => {
+            const [a, b, c] = pts;
+            // Offset for second parallel line = c's y minus interpolated y at c.x on line ab
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const tAtC = dx !== 0 ? (c.x - a.x) / dx : 0;
+            const yLineAtC = a.y + dy * tAtC;
+            const offset = c.y - yLineAtC;
+            const a2 = { x: a.x, y: a.y + offset };
+            const b2 = { x: b.x, y: b.y + offset };
+            return (
+              <>
+                <polygon
+                  points={`${a.x},${a.y} ${b.x},${b.y} ${b2.x},${b2.y} ${a2.x},${a2.y}`}
+                  fill={color}
+                  fillOpacity={0.06}
+                />
+                <line
+                  x1={a.x}
+                  y1={a.y}
+                  x2={b.x}
+                  y2={b.y}
+                  stroke={color}
+                  strokeWidth={1.5 + selectedWidth}
+                />
+                <line
+                  x1={a2.x}
+                  y1={a2.y}
+                  x2={b2.x}
+                  y2={b2.y}
+                  stroke={color}
+                  strokeWidth={1.5 + selectedWidth}
+                />
+              </>
+            );
+          });
+        }
+
+        // --- pitch (pitchfork, 3pt) ---
+        if (d.type === "pitch") {
+          if (d.points.length < 3) return null;
+          const color =
+            d.color ?? (d.points[2].price >= d.points[1].price ? TV_GREEN : TV_RED);
+          return renderNPoint(d, color, (pts) => {
+            const [a, b, c] = pts;
+            const mx = (b.x + c.x) / 2;
+            const my = (b.y + c.y) / 2;
+            // Direction of median
+            const dx = mx - a.x;
+            const dy = my - a.y;
+            // Extend median far to the right; tines parallel to median from b, c
+            const fac = 6;
+            const medianEnd = { x: mx + dx * fac, y: my + dy * fac };
+            const tineB = { x: b.x + dx * fac, y: b.y + dy * fac };
+            const tineC = { x: c.x + dx * fac, y: c.y + dy * fac };
+            return (
+              <>
+                <polygon
+                  points={`${b.x},${b.y} ${tineB.x},${tineB.y} ${tineC.x},${tineC.y} ${c.x},${c.y}`}
+                  fill={color}
+                  fillOpacity={0.06}
+                />
+                <line
+                  x1={b.x}
+                  y1={b.y}
+                  x2={c.x}
+                  y2={c.y}
+                  stroke={color}
+                  strokeWidth={1}
+                  strokeDasharray="3 3"
+                  opacity={0.6}
+                />
+                <line
+                  x1={a.x}
+                  y1={a.y}
+                  x2={medianEnd.x}
+                  y2={medianEnd.y}
+                  stroke={color}
+                  strokeWidth={1.5 + selectedWidth}
+                />
+                <line
+                  x1={b.x}
+                  y1={b.y}
+                  x2={tineB.x}
+                  y2={tineB.y}
+                  stroke={color}
+                  strokeWidth={1.5 + selectedWidth}
+                />
+                <line
+                  x1={c.x}
+                  y1={c.y}
+                  x2={tineC.x}
+                  y2={tineC.y}
+                  stroke={color}
+                  strokeWidth={1.5 + selectedWidth}
+                />
+              </>
+            );
+          });
+        }
+
+        // --- triangle (3pt) / triangle3 (3pt) ---
+        if (d.type === "triangle" || d.type === "triangle3") {
+          if (d.points.length < 3) return null;
+          const color = d.color ?? TV_BLUE;
+          return renderNPoint(d, color, (pts) => {
+            const polyStr = pts.map((p) => `${p.x},${p.y}`).join(" ");
+            return (
+              <polygon
+                points={polyStr}
+                fill={color}
+                fillOpacity={0.08}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+              />
+            );
+          });
+        }
+
+        // --- elliott3 (3pt: a/b/c) ---
+        if (d.type === "elliott3") {
+          if (d.points.length < 3) return null;
+          const color = d.color ?? TV_BLUE;
+          const labels = ["a", "b", "c"];
+          return renderNPoint(d, color, (pts) => (
+            <>
+              <polyline
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+              />
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={6} fill={color} fillOpacity={0.85} />
+                  <text
+                    x={p.x}
+                    y={p.y + 3}
+                    fill="#000"
+                    fontSize={9}
+                    fontWeight={700}
+                    fontFamily="var(--font-mono), monospace"
+                    textAnchor="middle"
+                  >
+                    {labels[i]}
+                  </text>
+                </g>
+              ))}
+            </>
+          ));
+        }
+
+        // --- abcd (4pt: A/B/C/D) ---
+        if (d.type === "abcd") {
+          if (d.points.length < 4) return null;
+          const color = d.color ?? TV_BLUE;
+          const labels = ["A", "B", "C", "D"];
+          return renderNPoint(d, color, (pts) => (
+            <>
+              <polyline
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+              />
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={4} fill={color} />
+                  <text
+                    x={p.x + 8}
+                    y={p.y - 6}
+                    fill={color}
+                    fontSize={11}
+                    fontWeight={700}
+                    fontFamily="var(--font-mono), monospace"
+                  >
+                    {labels[i]}
+                  </text>
+                </g>
+              ))}
+            </>
+          ));
+        }
+
+        // --- xabcd (5pt: X/A/B/C/D) ---
+        if (d.type === "xabcd") {
+          if (d.points.length < 5) return null;
+          const color = d.color ?? TV_BLUE;
+          const labels = ["X", "A", "B", "C", "D"];
+          return renderNPoint(d, color, (pts) => (
+            <>
+              <polyline
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+              />
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={4} fill={color} />
+                  <text
+                    x={p.x + 8}
+                    y={p.y - 6}
+                    fill={color}
+                    fontSize={11}
+                    fontWeight={700}
+                    fontFamily="var(--font-mono), monospace"
+                  >
+                    {labels[i]}
+                  </text>
+                </g>
+              ))}
+            </>
+          ));
+        }
+
+        // --- elliott5 (5pt: 1/2/3/4/5) ---
+        if (d.type === "elliott5") {
+          if (d.points.length < 5) return null;
+          const color = d.color ?? TV_BLUE;
+          const labels = ["1", "2", "3", "4", "5"];
+          return renderNPoint(d, color, (pts) => (
+            <>
+              <polyline
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+              />
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={7} fill={color} fillOpacity={0.85} />
+                  <text
+                    x={p.x}
+                    y={p.y + 4}
+                    fill="#000"
+                    fontSize={10}
+                    fontWeight={700}
+                    fontFamily="var(--font-mono), monospace"
+                    textAnchor="middle"
+                  >
+                    {labels[i]}
+                  </text>
+                </g>
+              ))}
+            </>
+          ));
+        }
+
+        // --- hs (head-and-shoulders, 5pt) ---
+        if (d.type === "hs") {
+          if (d.points.length < 5) return null;
+          const color = d.color ?? TV_BLUE;
+          const labels = ["L", "H", "Cabeza", "H", "R"];
+          return renderNPoint(d, color, (pts) => (
+            <>
+              <polyline
+                points={pts.map((p) => `${p.x},${p.y}`).join(" ")}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill="none"
+              />
+              {/* Neckline */}
+              <line
+                x1={pts[0].x}
+                y1={pts[1].y}
+                x2={pts[4].x}
+                y2={pts[3].y}
+                stroke={color}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+                opacity={0.7}
+              />
+              {pts.map((p, i) => (
+                <g key={i}>
+                  <circle cx={p.x} cy={p.y} r={3} fill={color} />
+                  <text
+                    x={p.x}
+                    y={p.y - 8}
+                    fill={color}
+                    fontSize={10}
+                    fontWeight={700}
+                    fontFamily="var(--font-mono), monospace"
+                    textAnchor="middle"
+                  >
+                    {labels[i]}
+                  </text>
+                </g>
+              ))}
+            </>
+          ));
+        }
+
+        // --- gannfan (2pt: 9 ratio fan lines from A) ---
+        if (d.type === "gannfan") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          // 9 Gann ratios — y-slope multipliers relative to dy
+          const ratios: [number, number][] = [
+            [1, 8],
+            [1, 4],
+            [1, 3],
+            [1, 2],
+            [1, 1],
+            [2, 1],
+            [3, 1],
+            [4, 1],
+            [8, 1],
+          ];
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              {ratios.map(([n, dd2], i) => {
+                const sx = dx * 30;
+                const sy = dy * (n / dd2) * 30;
+                return (
+                  <line
+                    key={i}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={a.x + sx}
+                    y2={a.y + sy}
+                    stroke={color}
+                    strokeWidth={1 + selectedWidth}
+                    opacity={0.65}
+                  />
+                );
+              })}
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- callout (2pt: arrow from a to text balloon at b) ---
+        if (d.type === "callout") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_YELLOW;
+          const text = d.text || "";
+          // Approximate text width: ~6px per char + padding
+          const w = Math.max(40, text.length * 6.5 + 14);
+          const h = 22;
+          const rx = b.x - w / 2;
+          const ry = b.y - h / 2;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={color}
+                strokeWidth={1.25}
+                opacity={0.7}
+              />
+              <circle cx={a.x} cy={a.y} r={3} fill={color} />
+              <rect
+                x={rx}
+                y={ry}
+                width={w}
+                height={h}
+                fill={color}
+                opacity={0.92}
+                rx={3}
+              />
+              <text
+                x={b.x}
+                y={b.y + 4}
+                fill="#000"
+                fontSize={11}
+                fontWeight={500}
+                fontFamily="var(--font-sans), Inter, sans-serif"
+                textAnchor="middle"
+              >
+                {text}
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={rx + w + 10}
+                  y={ry}
                   onRemove={() => onRemove(d.id)}
                 />
               )}
