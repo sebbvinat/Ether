@@ -35,7 +35,9 @@ export function IndicatorPill({
       />
       <span className="font-medium text-tv-text">{name}</span>
       {value !== undefined && (
-        <span className="tabular-nums text-tv-text-muted">{value}</span>
+        <span className="font-mono tabular-nums text-tv-text-muted">
+          {value}
+        </span>
       )}
       <div className="ml-1 flex items-center gap-0.5 md:opacity-0 md:transition-opacity md:group-hover/pill:opacity-100">
         <button

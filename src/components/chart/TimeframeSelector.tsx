@@ -50,7 +50,7 @@ export function TimeframeSelector({ slotId, compact }: Props = {}) {
       <div className="relative md:hidden">
         <button
           onClick={() => setOpen((v) => !v)}
-          className="flex h-7 items-center gap-1 rounded bg-tv-bg px-2 text-[11px] font-semibold uppercase text-tv-text hover:bg-tv-panel-hover"
+          className="flex h-7 items-center gap-1 rounded bg-tv-bg px-2 font-mono text-[11px] font-semibold uppercase text-tv-text hover:bg-tv-panel-hover"
         >
           {tf}
           <ChevronDown className="h-3 w-3 text-tv-text-muted" />
@@ -72,7 +72,7 @@ export function TimeframeSelector({ slotId, compact }: Props = {}) {
                     setOpen(false);
                   }}
                   className={cn(
-                    "rounded py-1 text-[11px] font-medium uppercase",
+                    "rounded py-1 font-mono text-[11px] font-medium uppercase",
                     tf === t
                       ? "bg-tv-blue/15 text-tv-blue"
                       : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
@@ -98,7 +98,7 @@ export function TimeframeSelector({ slotId, compact }: Props = {}) {
             key={t}
             onClick={() => setTf(t, targetId)}
             className={cn(
-              "rounded font-medium uppercase transition-colors",
+              "rounded font-mono font-medium uppercase transition-colors",
               compact ? "px-1.5 py-0.5 text-[10px]" : "px-2 py-1 text-xs",
               tf === t
                 ? "bg-tv-panel-hover text-tv-text"

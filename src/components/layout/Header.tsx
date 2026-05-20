@@ -83,7 +83,9 @@ export function Header() {
               <path d="m5 13 7 8 7-8" />
             </svg>
           </div>
-          <span className="text-sm font-semibold text-tv-text">Ether</span>
+          <span className="font-serif text-lg italic leading-none text-tv-text">
+            Ether
+          </span>
         </div>
         <Separator
           orientation="vertical"
