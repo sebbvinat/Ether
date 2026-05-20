@@ -233,10 +233,28 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const measureRef = useRef(measure);
   measureRef.current = measure;
 
+  type TwoPointDraftType =
+    | "trendline"
+    | "arrow"
+    | "ray"
+    | "fib"
+    | "rect"
+    | "hrange"
+    // Wave 6A — 2-point tools
+    | "ellipse"
+    | "trange"
+    | "forecast"
+    | "cycle"
+    | "regression"
+    | "fibext"
+    | "fibarc"
+    | "fibfan"
+    | "gannbox"
+    | "trendangle";
   type DrawDraft =
     | null
     | {
-        type: "trendline" | "arrow" | "ray" | "fib" | "rect" | "hrange";
+        type: TwoPointDraftType;
         a: DrawingPoint;
         b: DrawingPoint;
       }
@@ -420,12 +438,25 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         return;
       }
 
-      if (tool === "hline") {
-        addPriceLineRef.current(price, sym);
+      if (tool === "vline" || tool === "hlineExt") {
+        if (!param.time) return;
+        const time = Number(param.time);
+        addDrawingRef.current({
+          type: tool,
+          symbol: sym,
+          at: { time, price },
+        });
+        setToolRef.current("cursor");
         return;
       }
 
-      if (tool === "vline" || tool === "hlineExt") {
+      // Wave 6A — 1-point tools that commit immediately
+      if (
+        tool === "hline" ||
+        tool === "cross" ||
+        tool === "flag" ||
+        tool === "plabel"
+      ) {
         if (!param.time) return;
         const time = Number(param.time);
         addDrawingRef.current({
@@ -485,7 +516,18 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         tool === "ray" ||
         tool === "fib" ||
         tool === "rect" ||
-        tool === "hrange"
+        tool === "hrange" ||
+        // Wave 6A — 2-point tools
+        tool === "ellipse" ||
+        tool === "trange" ||
+        tool === "forecast" ||
+        tool === "cycle" ||
+        tool === "regression" ||
+        tool === "fibext" ||
+        tool === "fibarc" ||
+        tool === "fibfan" ||
+        tool === "gannbox" ||
+        tool === "trendangle"
       ) {
         if (!param.time) return;
         const time = Number(param.time);
@@ -991,6 +1033,20 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "long",
         "short",
         "text",
+        // Wave 6A
+        "cross",
+        "flag",
+        "plabel",
+        "ellipse",
+        "trange",
+        "forecast",
+        "cycle",
+        "regression",
+        "fibext",
+        "fibarc",
+        "fibfan",
+        "gannbox",
+        "trendangle",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
         ? "crosshair"
@@ -1006,6 +1062,17 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       "hrange",
       "long",
       "short",
+      // Wave 6A (2-point)
+      "ellipse",
+      "trange",
+      "forecast",
+      "cycle",
+      "regression",
+      "fibext",
+      "fibarc",
+      "fibfan",
+      "gannbox",
+      "trendangle",
     ];
     if (!draftTools.includes(tool)) {
       setDraft(null);

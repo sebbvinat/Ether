@@ -35,7 +35,21 @@ export type DrawingTool =
   | "short"
   | "text"
   | "measure"
-  | "eraser";
+  | "eraser"
+  // Wave 6A — new tools
+  | "cross"
+  | "flag"
+  | "plabel"
+  | "ellipse"
+  | "trange"
+  | "forecast"
+  | "cycle"
+  | "regression"
+  | "fibext"
+  | "fibarc"
+  | "fibfan"
+  | "gannbox"
+  | "trendangle";
 
 export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
@@ -189,7 +203,23 @@ export type Drawing =
       type: "text";
       at: DrawingPoint;
       text: string;
-    };
+    }
+  // Wave 6A — 1-point types
+  | { id: string; symbol: string; type: "hline"; at: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "cross"; at: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "flag"; at: DrawingPoint; text?: string; color?: string }
+  | { id: string; symbol: string; type: "plabel"; at: DrawingPoint; text?: string; color?: string }
+  // Wave 6A — 2-point types
+  | { id: string; symbol: string; type: "ellipse"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "trange"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "forecast"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "cycle"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "regression"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "fibext"; a: DrawingPoint; b: DrawingPoint }
+  | { id: string; symbol: string; type: "fibarc"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "fibfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "gannbox"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "trendangle"; a: DrawingPoint; b: DrawingPoint; color?: string };
 
 export type DrawingInput =
   | {
@@ -217,7 +247,22 @@ export type DrawingInput =
       symbol: string;
       at: DrawingPoint;
       text: string;
-    };
+    }
+  // Wave 6A
+  | { type: "hline"; symbol: string; at: DrawingPoint; color?: string }
+  | { type: "cross"; symbol: string; at: DrawingPoint; color?: string }
+  | { type: "flag"; symbol: string; at: DrawingPoint; text?: string; color?: string }
+  | { type: "plabel"; symbol: string; at: DrawingPoint; text?: string; color?: string }
+  | { type: "ellipse"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "trange"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "forecast"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "cycle"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "regression"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "fibext"; symbol: string; a: DrawingPoint; b: DrawingPoint }
+  | { type: "fibarc"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "fibfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "gannbox"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "trendangle"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string };
 
 export function layoutSlotCount(l: LayoutType): number {
   switch (l) {

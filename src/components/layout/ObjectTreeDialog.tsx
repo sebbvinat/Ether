@@ -29,7 +29,10 @@ interface Props {
   onOpenChange: (v: boolean) => void;
 }
 
-const DRAWING_ICONS = {
+import type { LucideIcon } from "lucide-react";
+import type { Drawing } from "@/lib/store/chart-store";
+
+const DRAWING_ICONS: Partial<Record<Drawing["type"], LucideIcon>> = {
   trendline: TrendingUp,
   ray: TrendingUp,
   vline: Minus,
@@ -42,7 +45,7 @@ const DRAWING_ICONS = {
   short: Square,
   text: Type,
   hline: Minus,
-} as const;
+};
 
 const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   ema20: "EMA 20",
@@ -123,7 +126,7 @@ export function ObjectTreeDialog({ open, onOpenChange }: Props) {
               />
             ))}
             {symbolDrawings.map((d) => {
-              const Icon = DRAWING_ICONS[d.type];
+              const Icon = DRAWING_ICONS[d.type] ?? Layers;
               const label =
                 d.type === "text"
                   ? `Texto · "${d.text.slice(0, 24)}${d.text.length > 24 ? "…" : ""}"`
