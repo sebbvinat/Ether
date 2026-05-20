@@ -19,6 +19,21 @@ const FIB_LEVELS = [
   { level: 1, color: "#787b86" },
 ];
 
+// Wave 6A — extension levels for fibext (project beyond 1.0)
+const FIB_EXT_LEVELS = [
+  { level: 0, color: "#787b86" },
+  { level: 0.382, color: "#26a69a" },
+  { level: 0.618, color: "#ab47bc" },
+  { level: 1, color: "#787b86" },
+  { level: 1.272, color: "#ffb74d" },
+  { level: 1.618, color: "#ef5350" },
+  { level: 2, color: "#2962ff" },
+  { level: 2.618, color: "#ab47bc" },
+];
+
+// Wave 6A — sub-divisions for gann box grid
+const GANN_DIVS = [0.236, 0.382, 0.5, 0.618, 0.786];
+
 interface Coord {
   x: number;
   y: number;
@@ -765,6 +780,975 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={p.x + Math.max(20, d.text.length * 7)}
                   y={p.y - 12}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // ============================================================
+        // Wave 6A — 14 nuevas herramientas (1 y 2 puntos)
+        // ============================================================
+
+        // --- hline (1pt, full-width dashed) ---
+        if (d.type === "hline") {
+          const a = toCoord(d.at.time, d.at.price);
+          if (!a) return null;
+          const color = d.color ?? TV_BLUE;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={0}
+                y1={a.y}
+                x2={containerWidth}
+                y2={a.y}
+                stroke="transparent"
+                strokeWidth={12}
+              />
+              <line
+                x1={0}
+                y1={a.y}
+                x2={containerWidth}
+                y2={a.y}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+                strokeDasharray="4 3"
+              />
+              <rect
+                x={containerWidth - 70}
+                y={a.y - 9}
+                width={64}
+                height={18}
+                fill={color}
+                opacity={0.85}
+              />
+              <text
+                x={containerWidth - 38}
+                y={a.y + 4}
+                fill="#fff"
+                fontSize={10}
+                fontFamily="var(--font-mono), monospace"
+                textAnchor="middle"
+              >
+                {d.at.price.toFixed(2)}
+              </text>
+              <DragHandle
+                cx={containerWidth / 2}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={containerWidth / 2 + 14}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- cross (1pt H+V dashed cross) ---
+        if (d.type === "cross") {
+          const a = toCoord(d.at.time, d.at.price);
+          if (!a) return null;
+          const color = d.color ?? TV_BLUE;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={0}
+                y1={a.y}
+                x2={containerWidth}
+                y2={a.y}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+                strokeDasharray="4 3"
+              />
+              <line
+                x1={a.x}
+                y1={0}
+                x2={a.x}
+                y2={containerHeight}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+                strokeDasharray="4 3"
+              />
+              <rect
+                x={containerWidth - 70}
+                y={a.y - 9}
+                width={64}
+                height={18}
+                fill={color}
+                opacity={0.85}
+              />
+              <text
+                x={containerWidth - 38}
+                y={a.y + 4}
+                fill="#fff"
+                fontSize={10}
+                fontFamily="var(--font-mono), monospace"
+                textAnchor="middle"
+              >
+                {d.at.price.toFixed(2)}
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x + 14}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- flag (1pt pin marker) ---
+        if (d.type === "flag") {
+          const a = toCoord(d.at.time, d.at.price);
+          if (!a) return null;
+          const color = d.color ?? TV_YELLOW;
+          const flagH = 18;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={a.x}
+                y2={a.y + flagH}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+              />
+              <polygon
+                points={`${a.x},${a.y} ${a.x + 12},${a.y + 4} ${a.x},${a.y + 8}`}
+                fill={color}
+              />
+              {d.text && (
+                <text
+                  x={a.x + 16}
+                  y={a.y + 6}
+                  fill={TV_TEXT}
+                  fontSize={10}
+                  fontFamily="var(--font-sans), Inter, sans-serif"
+                >
+                  {d.text}
+                </text>
+              )}
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={hideHandle}
+                small
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x + 14}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- plabel (1pt right-edge price badge) ---
+        if (d.type === "plabel") {
+          const a = toCoord(d.at.time, d.at.price);
+          if (!a) return null;
+          const color = d.color ?? TV_BLUE;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={containerWidth - 82}
+                y2={a.y}
+                stroke={color}
+                strokeWidth={0.75}
+                strokeDasharray="3 3"
+                opacity={0.5}
+              />
+              <rect
+                x={containerWidth - 82}
+                y={a.y - 10}
+                width={78}
+                height={20}
+                fill={color}
+                opacity={0.95}
+                rx={2}
+              />
+              <text
+                x={containerWidth - 43}
+                y={a.y + 4}
+                fill="#fff"
+                fontSize={11}
+                fontFamily="var(--font-mono), monospace"
+                fontWeight={500}
+                textAnchor="middle"
+              >
+                {d.text ?? d.at.price.toFixed(2)}
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={hideHandle}
+                small
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x + 14}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- ellipse (2pt diagonal corners) ---
+        if (d.type === "ellipse") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const cx = (a.x + b.x) / 2;
+          const cy = (a.y + b.y) / 2;
+          const rx = Math.abs(b.x - a.x) / 2;
+          const ry = Math.abs(b.y - a.y) / 2;
+          const color = d.color ?? (d.b.price >= d.a.price ? TV_GREEN : TV_RED);
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <ellipse
+                cx={cx}
+                cy={cy}
+                rx={rx}
+                ry={ry}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                fill={color}
+                fillOpacity={0.08}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={cx}
+                  y={Math.min(a.y, b.y) - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- trange (2pt vertical date band, full height) ---
+        if (d.type === "trange") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const xL = Math.min(a.x, b.x);
+          const xW = Math.abs(b.x - a.x);
+          const color = d.color ?? TV_BLUE;
+          // Estimate bars by guessing avg bar pixel width (rough)
+          const bars = Math.max(1, Math.round(xW / 6));
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <rect
+                x={xL}
+                y={0}
+                width={xW}
+                height={containerHeight}
+                fill={color}
+                fillOpacity={0.08}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+                strokeDasharray="4 3"
+              />
+              <text
+                x={xL + xW / 2}
+                y={16}
+                fill={color}
+                fontSize={11}
+                fontFamily="var(--font-mono), monospace"
+                textAnchor="middle"
+              >
+                ~{bars} bars
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={containerHeight / 2}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={containerHeight / 2}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={xL + xW / 2 + 30}
+                  y={20}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- forecast (2pt projection rect with Δ labels) ---
+        if (d.type === "forecast") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const isUp = d.b.price >= d.a.price;
+          const color = d.color ?? (isUp ? TV_GREEN : TV_RED);
+          const x = Math.min(a.x, b.x);
+          const y = Math.min(a.y, b.y);
+          const w = Math.abs(b.x - a.x);
+          const h = Math.abs(b.y - a.y);
+          const dp = d.b.price - d.a.price;
+          const dpct = d.a.price ? (dp / d.a.price) * 100 : 0;
+          const bars = Math.max(1, Math.round(w / 6));
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <rect
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill={color}
+                fillOpacity={0.1}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+              />
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={color}
+                strokeWidth={1.5}
+                strokeDasharray="4 3"
+              />
+              <text
+                x={x + w / 2}
+                y={y - 6}
+                fill={color}
+                fontSize={11}
+                fontFamily="var(--font-mono), monospace"
+                textAnchor="middle"
+              >
+                {dp >= 0 ? "+" : ""}
+                {dp.toFixed(2)} ({dpct >= 0 ? "+" : ""}
+                {dpct.toFixed(2)}%) · {bars}b
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={x + w / 2}
+                  y={y - 22}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- cycle (2pt repeating vlines at constant period) ---
+        if (d.type === "cycle") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          const period = Math.abs(b.x - a.x);
+          if (period < 4) return null;
+          const startX = Math.min(a.x, b.x);
+          const lines: number[] = [];
+          for (let x = startX; x < containerWidth; x += period) {
+            lines.push(x);
+          }
+          for (let x = startX - period; x > 0; x -= period) {
+            lines.push(x);
+          }
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              {lines.map((x, i) => (
+                <line
+                  key={i}
+                  x1={x}
+                  y1={0}
+                  x2={x}
+                  y2={containerHeight}
+                  stroke={color}
+                  strokeWidth={Math.abs(x - a.x) < 1 || Math.abs(x - b.x) < 1 ? 1.5 + selectedWidth : 1}
+                  strokeDasharray="3 3"
+                  opacity={
+                    Math.abs(x - a.x) < 1 || Math.abs(x - b.x) < 1 ? 0.9 : 0.5
+                  }
+                />
+              ))}
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={(a.x + b.x) / 2}
+                  y={(a.y + b.y) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- regression (2pt linear regression channel) ---
+        if (d.type === "regression") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          // Band offset perpendicular to the trend line — using a simple
+          // y-axis offset proportional to the y delta for a clean look.
+          const bandHalf = Math.max(8, Math.abs(b.y - a.y) * 0.25);
+          const ax = a.x;
+          const bx = b.x;
+          const ay = a.y;
+          const by = b.y;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <polygon
+                points={`${ax},${ay - bandHalf} ${bx},${by - bandHalf} ${bx},${by + bandHalf} ${ax},${ay + bandHalf}`}
+                fill={color}
+                fillOpacity={0.08}
+              />
+              <line
+                x1={ax}
+                y1={ay - bandHalf}
+                x2={bx}
+                y2={by - bandHalf}
+                stroke={color}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              <line
+                x1={ax}
+                y1={ay + bandHalf}
+                x2={bx}
+                y2={by + bandHalf}
+                stroke={color}
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              <line
+                x1={ax}
+                y1={ay}
+                x2={bx}
+                y2={by}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+              />
+              <DragHandle
+                cx={ax}
+                cy={ay}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={bx}
+                cy={by}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={(ax + bx) / 2}
+                  y={(ay + by) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- fibext (2pt Fibonacci extension; levels include >1.0) ---
+        if (d.type === "fibext") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const diff = d.b.price - d.a.price;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              {FIB_EXT_LEVELS.map(({ level, color }) => {
+                const levelPrice = d.a.price + diff * level;
+                const lp = toCoord(d.b.time, levelPrice);
+                if (!lp) return null;
+                const ly = lp.y;
+                return (
+                  <g key={level}>
+                    <line
+                      x1={Math.min(a.x, b.x)}
+                      y1={ly}
+                      x2={containerWidth}
+                      y2={ly}
+                      stroke={color}
+                      strokeWidth={1 + selectedWidth}
+                      strokeDasharray="3 3"
+                      opacity={0.7}
+                    />
+                    <rect
+                      x={containerWidth - 90}
+                      y={ly - 8}
+                      width={86}
+                      height={16}
+                      fill={color}
+                      opacity={0.18}
+                    />
+                    <text
+                      x={containerWidth - 48}
+                      y={ly + 4}
+                      fill={color}
+                      fontSize={10}
+                      fontFamily="var(--font-mono), monospace"
+                      textAnchor="middle"
+                    >
+                      {level.toFixed(3).replace(/\.?0+$/, "")} · {levelPrice.toFixed(2)}
+                    </text>
+                  </g>
+                );
+              })}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={TV_TEXT}
+                strokeWidth={1}
+                opacity={0.5}
+                strokeDasharray="2 4"
+              />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={(a.x + b.x) / 2}
+                  y={(a.y + b.y) / 2 - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- fibarc (2pt Fib semicircles centered at A, radius |AB|) ---
+        if (d.type === "fibarc") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          const r = Math.hypot(b.x - a.x, b.y - a.y);
+          if (r < 4) return null;
+          const ratios = [0.382, 0.5, 0.618, 1.0];
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              {ratios.map((ratio, i) => {
+                const rr = r * ratio;
+                // semicircle: a sweep arc from (a.x - rr, a.y) to (a.x + rr, a.y) going down
+                const path = `M ${a.x - rr} ${a.y} A ${rr} ${rr} 0 0 0 ${a.x + rr} ${a.y}`;
+                return (
+                  <path
+                    key={i}
+                    d={path}
+                    stroke={color}
+                    strokeWidth={1 + selectedWidth}
+                    strokeDasharray="3 3"
+                    fill="none"
+                    opacity={0.7}
+                  />
+                );
+              })}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={color}
+                strokeWidth={0.75}
+                strokeDasharray="2 4"
+                opacity={0.5}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x}
+                  y={a.y - r - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- fibfan (2pt Fib radiating lines from A through ratio-scaled B) ---
+        if (d.type === "fibfan") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const ratios = [0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              {ratios.map((r, i) => {
+                // Endpoint: extend far along ratio-scaled direction
+                const ex = a.x + dx * 20;
+                const ey = a.y + dy * r * 20;
+                return (
+                  <line
+                    key={i}
+                    x1={a.x}
+                    y1={a.y}
+                    x2={ex}
+                    y2={ey}
+                    stroke={color}
+                    strokeWidth={1 + selectedWidth}
+                    opacity={0.65}
+                  />
+                );
+              })}
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x}
+                  y={a.y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- gannbox (2pt rect with inner grid + diagonals) ---
+        if (d.type === "gannbox") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const color = d.color ?? TV_BLUE;
+          const x = Math.min(a.x, b.x);
+          const y = Math.min(a.y, b.y);
+          const w = Math.abs(b.x - a.x);
+          const h = Math.abs(b.y - a.y);
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <rect
+                x={x}
+                y={y}
+                width={w}
+                height={h}
+                fill={color}
+                fillOpacity={0.04}
+                stroke={color}
+                strokeWidth={1 + selectedWidth}
+              />
+              {GANN_DIVS.map((div, i) => (
+                <line
+                  key={`v${i}`}
+                  x1={x + w * div}
+                  y1={y}
+                  x2={x + w * div}
+                  y2={y + h}
+                  stroke={color}
+                  strokeWidth={0.5}
+                  opacity={0.4}
+                  strokeDasharray="2 3"
+                />
+              ))}
+              {GANN_DIVS.map((div, i) => (
+                <line
+                  key={`h${i}`}
+                  x1={x}
+                  y1={y + h * div}
+                  x2={x + w}
+                  y2={y + h * div}
+                  stroke={color}
+                  strokeWidth={0.5}
+                  opacity={0.4}
+                  strokeDasharray="2 3"
+                />
+              ))}
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={color}
+                strokeWidth={0.75}
+                opacity={0.6}
+              />
+              <line
+                x1={a.x}
+                y1={b.y}
+                x2={b.x}
+                y2={a.y}
+                stroke={color}
+                strokeWidth={0.75}
+                opacity={0.6}
+              />
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={x + w / 2}
+                  y={y - 14}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- trendangle (2pt trendline + reference horiz + angle arc + label) ---
+        if (d.type === "trendangle") {
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (!a || !b) return null;
+          const isUp = d.b.price >= d.a.price;
+          const color = d.color ?? (isUp ? TV_GREEN : TV_RED);
+          const dx = b.x - a.x;
+          const dy = b.y - a.y;
+          const angleDeg = (Math.atan2(-dy, dx) * 180) / Math.PI;
+          const pricePct = d.a.price
+            ? ((d.b.price - d.a.price) / d.a.price) * 100
+            : 0;
+          // Arc: 20px radius at A, from horizontal to the trend direction
+          const arcR = 20;
+          // Endpoint of arc (along the trend direction)
+          const len = Math.hypot(dx, dy) || 1;
+          const arcEndX = a.x + (dx / len) * arcR;
+          const arcEndY = a.y + (dy / len) * arcR;
+          const sweep = dy < 0 ? 0 : 1;
+          const arcPath = `M ${a.x + arcR} ${a.y} A ${arcR} ${arcR} 0 0 ${sweep} ${arcEndX} ${arcEndY}`;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              style={grStyle}
+            >
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke="transparent"
+                strokeWidth={12}
+              />
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={b.y}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+              />
+              <line
+                x1={a.x}
+                y1={a.y}
+                x2={b.x}
+                y2={a.y}
+                stroke={color}
+                strokeWidth={0.75}
+                strokeDasharray="3 3"
+                opacity={0.5}
+              />
+              <path d={arcPath} stroke={color} strokeWidth={1} fill="none" />
+              <text
+                x={a.x + arcR + 6}
+                y={a.y - 4}
+                fill={color}
+                fontSize={11}
+                fontFamily="var(--font-mono), monospace"
+              >
+                {angleDeg.toFixed(1)}° · {pricePct >= 0 ? "+" : ""}
+                {pricePct.toFixed(2)}%
+              </text>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "a")}
+                hidden={hideHandle}
+              />
+              <DragHandle
+                cx={b.x}
+                cy={b.y}
+                onDown={(e) => onHandleDown(e, d.id, "b")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={(a.x + b.x) / 2}
+                  y={(a.y + b.y) / 2 - 14}
                   onRemove={() => onRemove(d.id)}
                 />
               )}
