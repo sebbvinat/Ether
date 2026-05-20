@@ -49,7 +49,19 @@ export type DrawingTool =
   | "fibarc"
   | "fibfan"
   | "gannbox"
-  | "trendangle";
+  | "trendangle"
+  // Wave 6B
+  | "channel"
+  | "pitch"
+  | "triangle"
+  | "triangle3"
+  | "elliott3"
+  | "abcd"
+  | "xabcd"
+  | "elliott5"
+  | "hs"
+  | "gannfan"
+  | "callout";
 
 export type ChartStyle = "candles" | "heikin" | "line" | "area";
 
@@ -219,7 +231,19 @@ export type Drawing =
   | { id: string; symbol: string; type: "fibarc"; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { id: string; symbol: string; type: "fibfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { id: string; symbol: string; type: "gannbox"; a: DrawingPoint; b: DrawingPoint; color?: string }
-  | { id: string; symbol: string; type: "trendangle"; a: DrawingPoint; b: DrawingPoint; color?: string };
+  | { id: string; symbol: string; type: "trendangle"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  // Wave 6B — multi-point + 2-pt with text
+  | { id: string; symbol: string; type: "channel"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "pitch"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "triangle"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "triangle3"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "elliott3"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "abcd"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "xabcd"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "elliott5"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "hs"; points: DrawingPoint[]; color?: string }
+  | { id: string; symbol: string; type: "gannfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { id: string; symbol: string; type: "callout"; a: DrawingPoint; b: DrawingPoint; text: string; color?: string };
 
 export type DrawingInput =
   | {
@@ -262,7 +286,19 @@ export type DrawingInput =
   | { type: "fibarc"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { type: "fibfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { type: "gannbox"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
-  | { type: "trendangle"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string };
+  | { type: "trendangle"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  // Wave 6B
+  | { type: "channel"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "pitch"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "triangle"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "triangle3"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "elliott3"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "abcd"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "xabcd"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "elliott5"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "hs"; symbol: string; points: DrawingPoint[]; color?: string }
+  | { type: "gannfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
+  | { type: "callout"; symbol: string; a: DrawingPoint; b: DrawingPoint; text: string; color?: string };
 
 export function layoutSlotCount(l: LayoutType): number {
   switch (l) {
@@ -501,6 +537,8 @@ interface ChartState {
       c: DrawingPoint;
       at: DrawingPoint;
       text: string;
+      points: DrawingPoint[];
+      color: string;
     }>,
   ) => void;
   clearDrawings: (symbol?: string) => void;
