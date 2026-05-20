@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   useChartStore,
   type Drawing,
@@ -223,6 +223,10 @@ export function DrawingsLayer({
     | { id: string; handle: "points"; index: number; basePoints: DrawingPoint[] };
   const [hover, setHover] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
+  /** Ref al SVG raíz para calcular coords relativas durante el drag con
+   *  listeners a nivel window (evita race condition con pointer-events:none
+   *  en el SVG en el ratito entre pointerdown y el primer re-render). */
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   function handleClick(id: string) {
     if (lockDrawings) return; // locked — no select/erase
@@ -233,11 +237,6 @@ export function DrawingsLayer({
     }
   }
 
-  function svgRect(target: SVGElement): DOMRect {
-    const root = target.ownerSVGElement ?? (target as SVGSVGElement);
-    return root.getBoundingClientRect();
-  }
-
   function onHandleDown(
     e: React.PointerEvent<SVGCircleElement>,
     id: string,
@@ -245,14 +244,6 @@ export function DrawingsLayer({
   ) {
     e.stopPropagation();
     e.preventDefault();
-    const svg = e.currentTarget.ownerSVGElement;
-    if (svg) {
-      try {
-        svg.setPointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    }
     setDrag({ id, handle });
   }
 
@@ -266,57 +257,61 @@ export function DrawingsLayer({
   ) {
     e.stopPropagation();
     e.preventDefault();
-    const svg = e.currentTarget.ownerSVGElement;
-    if (svg) {
-      try {
-        svg.setPointerCapture(e.pointerId);
-      } catch {
-        // ignore
-      }
-    }
     setDrag({ id, handle: "points", index, basePoints });
   }
 
-  function onSvgPointerMove(e: React.PointerEvent<SVGSVGElement>) {
+  /** Listeners de drag a nivel window — disparados sólo cuando hay un drag
+   *  activo. Esto reemplaza al pointer-capture sobre el SVG, que perdía los
+   *  primeros pointer-moves porque el SVG tiene pointer-events:none hasta
+   *  que React re-rendere con drag !== null (race condition). Los listeners
+   *  de window se attachean sincrónicamente dentro del useEffect y reciben
+   *  TODOS los moves del puntero. */
+  useEffect(() => {
     if (!drag) return;
-    const rect = svgRect(e.currentTarget);
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const pt = fromCoord(x, y);
-    if (!pt) return;
-    if (drag.handle === "points") {
-      const next = drag.basePoints.slice();
-      next[drag.index] = pt;
-      onUpdate(drag.id, { points: next });
-    } else {
-      onUpdate(drag.id, { [drag.handle]: pt });
-    }
-  }
-
-  function onSvgPointerUp(e: React.PointerEvent<SVGSVGElement>) {
-    if (!drag) return;
-    try {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    setDrag(null);
-  }
+    const onMove = (e: PointerEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const pt = fromCoord(x, y);
+      if (!pt) return;
+      if (drag.handle === "points") {
+        const next = drag.basePoints.slice();
+        next[drag.index] = pt;
+        onUpdate(drag.id, { points: next });
+      } else {
+        onUpdate(drag.id, { [drag.handle]: pt });
+      }
+    };
+    const onUp = () => setDrag(null);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [drag, fromCoord, onUpdate]);
 
   // Wave 6C — hide everything when hideDrawings is on
   if (hideDrawings) return null;
 
   return (
     <svg
+      ref={svgRef}
       className="absolute inset-0 h-full w-full"
       style={{
         overflow: "hidden",
+        // Durante el drag mantenemos pointerEvents:auto para BLOQUEAR
+        // pan/zoom de la chart de abajo mientras arrastramos un handle.
+        // Cuando no hay drag → "none" deja pasar los eventos a la chart.
+        // Los moves del drag se procesan vía listeners de window (más
+        // arriba, useEffect dependiente de `drag`), no vía handlers del SVG.
         pointerEvents: drag ? "auto" : "none",
         zIndex: 5,
       }}
-      onPointerMove={onSvgPointerMove}
-      onPointerUp={onSvgPointerUp}
-      onPointerCancel={onSvgPointerUp}
     >
       {drawings.map((d) => {
         const isPreview = d.id.startsWith("__");
