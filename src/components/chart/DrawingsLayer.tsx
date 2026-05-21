@@ -75,6 +75,9 @@ interface Props {
   hideDrawings?: boolean;
   /** Wave 6C — lock all drawings (no selection, no drag, no eraser) */
   lockDrawings?: boolean;
+  /** True si hay una herramienta de dibujo activa (tool !== "cursor"). Cuando
+   *  es true los dibujos dejan pasar el click para poder dibujar encima. */
+  toolActive?: boolean;
   containerWidth: number;
   containerHeight: number;
 }
@@ -92,6 +95,7 @@ export function DrawingsLayer({
   eraserActive,
   hideDrawings,
   lockDrawings,
+  toolActive,
   containerWidth,
   containerHeight,
 }: Props) {
@@ -452,15 +456,23 @@ export function DrawingsLayer({
         // helper: stroke width final aplicando style + selected bump
         const sw = (base: number) =>
           (styleWidth ?? base) + selectedWidth;
+        // Opacidad del dibujo (style.opacity 0-100 → 0-1).
+        const drawOpacity = ds?.opacity != null ? ds.opacity / 100 : 1;
         const grStyle: React.CSSProperties = isPreview
           ? { pointerEvents: "none", opacity: 0.7 }
           : {
-              pointerEvents: "auto",
+              // toolActive → "none": el click pasa de largo y permite
+              //   dibujar ENCIMA de dibujos ya existentes.
+              // si no → "visibleStroke": sólo el trazo/borde captura el
+              //   puntero; el RELLENO de los shapes (rect, caja long/short,
+              //   canal, etc.) deja pasar el click a lo que está debajo.
+              pointerEvents: toolActive ? "none" : "visibleStroke",
               cursor: eraserActive
                 ? "crosshair"
                 : lockDrawings
                   ? "pointer"
                   : "move",
+              opacity: drawOpacity,
             };
         if (d.type === "trendline" || d.type === "arrow") {
           const a = toCoord(d.a.time, d.a.price);
