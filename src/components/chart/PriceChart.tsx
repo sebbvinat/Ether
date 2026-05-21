@@ -131,6 +131,7 @@ interface PaneOffset {
 
 export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
@@ -1379,6 +1380,23 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedDrawingId, removeDrawing, selectDrawing]);
 
+  // Doble click sobre el fondo del chart → toggle focus mode.
+  // Listener nativo en capture phase: corre antes que cualquier handler de
+  // lightweight-charts, así no importa si LWC frena la propagación. Si el
+  // doble click fue sobre un dibujo (dentro del SVG de DrawingsLayer) se
+  // ignora — el dialog de propiedades de Wave 7 ya se encarga de eso.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    const onDbl = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (t && t.closest("svg")) return;
+      window.dispatchEvent(new CustomEvent("ether:focus-toggle"));
+    };
+    el.addEventListener("dblclick", onDbl, true);
+    return () => el.removeEventListener("dblclick", onDbl, true);
+  }, []);
+
   // Capture chart as PNG — triggered by Header via custom event.
   // Compone el canvas de lightweight-charts + el SVG de DrawingsLayer
   // (dibujos: trendlines, long/short, fib, etc.) en un solo PNG. Sin esto
@@ -2322,17 +2340,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const countdownIsUp = lastPrice ? lastPrice.pct >= 0 : true;
 
   return (
-    <div
-      className="relative h-full w-full"
-      onDoubleClick={(e) => {
-        // Doble click sobre el fondo del chart → toggle focus mode.
-        // Si el target es un dibujo, el onDoubleClick del <g> ya lo
-        // interceptó con stopPropagation (Wave 7) y no llega acá.
-        if (e.target === e.currentTarget || e.target instanceof HTMLDivElement) {
-          window.dispatchEvent(new CustomEvent("ether:focus-toggle"));
-        }
-      }}
-    >
+    <div ref={wrapperRef} className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
       {countdownY !== null && (
