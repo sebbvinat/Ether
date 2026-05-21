@@ -150,6 +150,8 @@ export interface DrawingPoint {
  *  discriminated union de Drawing con ~17 campos opcionales por variante. */
 export interface DrawingStyle {
   color?: string;
+  /** Opacidad del dibujo, 0-100. Undefined → 100 (opaco). */
+  opacity?: number;
   lineStyle?: "solid" | "dashed" | "dotted";
   lineWidth?: number;
   extend?: "none" | "right" | "left" | "both";

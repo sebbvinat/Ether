@@ -54,10 +54,17 @@ const TYPE_LABELS: Partial<Record<DrawingTool, string>> = {
   brush: "Pincel",
 };
 
-const PALETTE = [
-  "#26a69a", "#ef5350", "#2962ff", "#ab47bc", "#ffb74d",
-  "#ff7043", "#26c6da", "#9ccc65", "#ec407a", "#d1d4dc",
-  "#787b86", "#000000", "#ffffff",
+// Paleta estilo TradingView — fila de grises + matriz tono × brillo.
+const GRAYS = [
+  "#ffffff", "#e0e3eb", "#c1c4cf", "#a3a6af", "#868993",
+  "#6a6d78", "#4f525c", "#363a45", "#22262f", "#0c0e15",
+];
+const HUES = [0, 22, 45, 90, 142, 168, 200, 232, 270, 318];
+const LIGHTS = [80, 66, 53, 41, 29];
+/** Filas de color: grises + matriz HSL (10 columnas × 5 brillos). */
+const COLOR_ROWS: string[][] = [
+  GRAYS,
+  ...LIGHTS.map((l) => HUES.map((h) => `hsl(${h} 72% ${l}%)`)),
 ];
 
 const TFS = ["1m", "5m", "15m", "1H", "4H", "1D", "1W"];
@@ -202,10 +209,10 @@ export function DrawingPropertiesDialog() {
         <div className="flex shrink-0 items-center gap-1 border-b border-tv-border px-3 py-1.5">
           {(
             [
-              ["style", "Style"],
-              ["text", "Text"],
-              ["coordinates", "Coordinates"],
-              ["visibility", "Visibility"],
+              ["style", "Estilo"],
+              ["text", "Texto"],
+              ["coordinates", "Coordenadas"],
+              ["visibility", "Visibilidad"],
             ] as [Tab, string][]
           ).map(([id, label]) => (
             <button
@@ -272,13 +279,13 @@ export function DrawingPropertiesDialog() {
               onClick={close}
               className="rounded border border-tv-border bg-tv-panel-hover px-4 py-1.5 text-xs hover:bg-tv-bg"
             >
-              Cancel
+              Cancelar
             </button>
             <button
               onClick={commit}
               className="rounded bg-tv-text px-4 py-1.5 text-xs font-semibold text-tv-bg hover:opacity-90"
             >
-              Ok
+              Aceptar
             </button>
           </div>
         </div>
@@ -310,12 +317,14 @@ function StyleTab({
 }) {
   return (
     <div className="space-y-4">
-      <Row label="Line">
+      <Row label="Línea">
         <ColorSwatch
           color={draft.color ?? "#26a69a"}
           onChange={(c) => setDraft({ ...draft, color: c })}
           open={pickerOpen}
           setOpen={setPickerOpen}
+          opacity={draft.opacity ?? 100}
+          onOpacity={(v) => setDraft({ ...draft, opacity: v })}
         />
         <SegLineStyle
           value={draft.lineStyle ?? "solid"}
@@ -336,7 +345,7 @@ function StyleTab({
         </select>
       </Row>
 
-      <Row label="Extend">
+      <Row label="Extensión">
         <select
           value={draft.extend ?? "none"}
           onChange={(e) =>
@@ -347,23 +356,23 @@ function StyleTab({
           }
           className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
         >
-          <option value="none">Don&apos;t extend</option>
-          <option value="right">Extend right</option>
-          <option value="left">Extend left</option>
-          <option value="both">Extend both</option>
+          <option value="none">Sin extender</option>
+          <option value="right">Extender derecha</option>
+          <option value="left">Extender izquierda</option>
+          <option value="both">Extender ambos lados</option>
         </select>
       </Row>
 
       {show2pt && (
         <Checkbox
-          label="Middle point"
+          label="Punto medio"
           value={!!draft.showMiddlePoint}
           onChange={(v) => setDraft({ ...draft, showMiddlePoint: v })}
         />
       )}
       {showPriceLabels && (
         <Checkbox
-          label="Price labels"
+          label="Etiquetas de precio"
           value={!!draft.showPriceLabels}
           onChange={(v) => setDraft({ ...draft, showPriceLabels: v })}
         />
@@ -374,7 +383,7 @@ function StyleTab({
           <div className="pt-1 text-[10px] font-semibold uppercase tracking-wider text-tv-text-muted">
             Info
           </div>
-          <Row label="Stats">
+          <Row label="Estadísticas">
             <select
               value={draft.stats ?? "hidden"}
               onChange={(e) =>
@@ -385,12 +394,12 @@ function StyleTab({
               }
               className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
             >
-              <option value="hidden">Hidden</option>
+              <option value="hidden">Ocultas</option>
               <option value="info">Info</option>
-              <option value="extended">Extended</option>
+              <option value="extended">Extendidas</option>
             </select>
           </Row>
-          <Row label="Stats position">
+          <Row label="Posición">
             <select
               value={draft.statsPosition ?? "right"}
               onChange={(e) =>
@@ -401,12 +410,12 @@ function StyleTab({
               }
               className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
             >
-              <option value="right">Right</option>
-              <option value="left">Left</option>
+              <option value="right">Derecha</option>
+              <option value="left">Izquierda</option>
             </select>
           </Row>
           <Checkbox
-            label="Always show stats"
+            label="Mostrar estadísticas siempre"
             value={!!draft.alwaysShowStats}
             onChange={(v) => setDraft({ ...draft, alwaysShowStats: v })}
           />
@@ -480,12 +489,12 @@ function TextTab({
       <textarea
         value={draft.text ?? ""}
         onChange={(e) => setDraft({ ...draft, text: e.target.value })}
-        placeholder="Add text"
+        placeholder="Agregar texto"
         rows={4}
         className="w-full rounded border-2 border-tv-blue bg-tv-bg px-2 py-1.5 text-xs outline-none placeholder:text-tv-text-muted"
       />
 
-      <Row label="Text alignment">
+      <Row label="Alineación">
         <select
           value={draft.textVAlign ?? "top"}
           onChange={(e) =>
@@ -496,9 +505,9 @@ function TextTab({
           }
           className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
         >
-          <option value="top">Top</option>
-          <option value="middle">Middle</option>
-          <option value="bottom">Bottom</option>
+          <option value="top">Arriba</option>
+          <option value="middle">Centro</option>
+          <option value="bottom">Abajo</option>
         </select>
         <select
           value={draft.textHAlign ?? "center"}
@@ -510,9 +519,9 @@ function TextTab({
           }
           className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
         >
-          <option value="left">Left</option>
-          <option value="center">Center</option>
-          <option value="right">Right</option>
+          <option value="left">Izquierda</option>
+          <option value="center">Centro</option>
+          <option value="right">Derecha</option>
         </select>
       </Row>
     </div>
@@ -825,43 +834,94 @@ function ColorSwatch({
   onChange,
   open,
   setOpen,
+  opacity,
+  onOpacity,
 }: {
   color: string;
   onChange: (c: string) => void;
   open: boolean;
   setOpen: (v: boolean) => void;
+  /** 0-100. Si se pasa, muestra el slider de opacidad. */
+  opacity?: number;
+  onOpacity?: (v: number) => void;
 }) {
+  const op = opacity ?? 100;
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
         className="h-7 w-12 rounded border border-tv-border"
-        style={{ background: color }}
+        style={{
+          background: color,
+          opacity: onOpacity ? Math.max(0.15, op / 100) : 1,
+        }}
         aria-label="Color"
       />
       {open && (
         <div
-          className="absolute left-0 top-full z-10 mt-1 grid grid-cols-7 gap-1 rounded border border-tv-border bg-tv-panel p-2 shadow-lg"
+          className="absolute left-0 top-full z-20 mt-1 w-[232px] rounded-md border border-tv-border bg-tv-panel p-2.5 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
         >
-          {PALETTE.map((c) => (
-            <button
-              key={c}
-              onClick={() => {
-                onChange(c);
-                setOpen(false);
-              }}
-              className="h-5 w-5 rounded border border-tv-border"
-              style={{ background: c }}
-              aria-label={c}
+          {/* Matriz de colores */}
+          <div className="flex flex-col gap-1">
+            {COLOR_ROWS.map((row, ri) => (
+              <div key={ri} className="flex gap-1">
+                {row.map((c) => {
+                  const selected =
+                    c.toLowerCase() === color.toLowerCase();
+                  return (
+                    <button
+                      key={c}
+                      onClick={() => {
+                        onChange(c);
+                        setOpen(false);
+                      }}
+                      className={cn(
+                        "h-[18px] w-[18px] rounded-sm",
+                        selected
+                          ? "ring-2 ring-tv-blue ring-offset-1 ring-offset-tv-panel"
+                          : "ring-1 ring-inset ring-black/20 hover:ring-tv-text",
+                      )}
+                      style={{ background: c }}
+                      aria-label={c}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+
+          {/* Color custom */}
+          <div className="mt-2.5 flex items-center gap-2 border-t border-tv-border pt-2.5">
+            <span className="text-[11px] text-tv-text-muted">
+              Personalizado
+            </span>
+            <input
+              type="color"
+              value={/^#/.test(color) ? color : "#26a69a"}
+              onChange={(e) => onChange(e.target.value)}
+              className="h-7 w-9 cursor-pointer rounded border border-tv-border bg-tv-bg"
+              aria-label="Color personalizado"
             />
-          ))}
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => onChange(e.target.value)}
-            className="col-span-7 h-7 w-full rounded border border-tv-border bg-tv-bg"
-          />
+          </div>
+
+          {/* Opacidad */}
+          {onOpacity && (
+            <div className="mt-2.5 border-t border-tv-border pt-2.5">
+              <div className="mb-1 flex items-center justify-between text-[11px] text-tv-text-muted">
+                <span>Opacidad</span>
+                <span className="tabular-nums text-tv-text">{op}%</span>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={op}
+                onChange={(e) => onOpacity(Number(e.target.value))}
+                className="w-full accent-tv-blue"
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -901,7 +961,7 @@ function TemplateDropdown({
         onClick={() => setOpen(!open)}
         className="flex items-center gap-1 rounded border border-tv-border bg-tv-panel-hover px-3 py-1.5 text-xs text-tv-text hover:bg-tv-bg"
       >
-        Template
+        Plantilla
         <ChevronDown className="h-3 w-3" />
       </button>
       {open && (
