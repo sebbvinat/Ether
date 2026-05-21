@@ -220,7 +220,21 @@ export function DrawingsLayer({
   }
   type DragState =
     | { id: string; handle: HandleKey }
-    | { id: string; handle: "points"; index: number; basePoints: DrawingPoint[] };
+    | { id: string; handle: "points"; index: number; basePoints: DrawingPoint[] }
+    | {
+        id: string;
+        mode: "move";
+        /** posición del cursor (px relativos al SVG) al iniciar el move */
+        cursorStart: Coord;
+        /** snapshot en píxeles de cada anchor del drawing al iniciar */
+        anchorsPx: {
+          a?: Coord;
+          b?: Coord;
+          c?: Coord;
+          at?: Coord;
+          points?: Coord[];
+        };
+      };
   const [hover, setHover] = useState<string | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
   /** Ref al SVG raíz para calcular coords relativas durante el drag con
@@ -260,6 +274,67 @@ export function DrawingsLayer({
     setDrag({ id, handle: "points", index, basePoints });
   }
 
+  /** Pointerdown sobre el CUERPO de un dibujo (no un handle — los handles
+   *  hacen stopPropagation) → inicia un drag de "mover todo el dibujo".
+   *  Snapshotea la posición en píxeles de cada anchor; el move handler
+   *  traslada todos por el mismo delta de cursor. */
+  function onBodyDown(e: React.PointerEvent<SVGGElement>, d: Drawing) {
+    if (lockDrawings || eraserActive) return;
+    if (d.id.startsWith("__")) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    e.stopPropagation();
+    const rect = svg.getBoundingClientRect();
+    const cursorStart: Coord = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    const dd = d as Drawing & {
+      a?: DrawingPoint;
+      b?: DrawingPoint;
+      c?: DrawingPoint;
+      at?: DrawingPoint;
+      points?: DrawingPoint[];
+    };
+    const anchorsPx: {
+      a?: Coord;
+      b?: Coord;
+      c?: Coord;
+      at?: Coord;
+      points?: Coord[];
+    } = {};
+    if (dd.a) {
+      const c = toCoord(dd.a.time, dd.a.price);
+      if (c) anchorsPx.a = c;
+    }
+    if (dd.b) {
+      const c = toCoord(dd.b.time, dd.b.price);
+      if (c) anchorsPx.b = c;
+    }
+    if (dd.c) {
+      const c = toCoord(dd.c.time, dd.c.price);
+      if (c) anchorsPx.c = c;
+    }
+    if (dd.at) {
+      const c = toCoord(dd.at.time, dd.at.price);
+      if (c) anchorsPx.at = c;
+    }
+    if (dd.points) {
+      const arr: Coord[] = [];
+      let ok = true;
+      for (const p of dd.points) {
+        const c = toCoord(p.time, p.price);
+        if (!c) {
+          ok = false;
+          break;
+        }
+        arr.push(c);
+      }
+      if (ok) anchorsPx.points = arr;
+    }
+    setDrag({ id: d.id, mode: "move", cursorStart, anchorsPx });
+  }
+
   /** Listeners de drag a nivel window — disparados sólo cuando hay un drag
    *  activo. Esto reemplaza al pointer-capture sobre el SVG, que perdía los
    *  primeros pointer-moves porque el SVG tiene pointer-events:none hasta
@@ -274,6 +349,52 @@ export function DrawingsLayer({
       const rect = svg.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const y = e.clientY - rect.top;
+      // Mover el dibujo entero: trasladar todos los anchors por el delta
+      // de cursor, reconvirtiendo cada uno con fromCoord (maneja bien la
+      // no-linealidad del eje precio/tiempo).
+      if ("mode" in drag) {
+        const dx = x - drag.cursorStart.x;
+        const dy = y - drag.cursorStart.y;
+        const ap = drag.anchorsPx;
+        const patch: Partial<{
+          a: DrawingPoint;
+          b: DrawingPoint;
+          c: DrawingPoint;
+          at: DrawingPoint;
+          points: DrawingPoint[];
+        }> = {};
+        if (ap.a) {
+          const p = fromCoord(ap.a.x + dx, ap.a.y + dy);
+          if (p) patch.a = p;
+        }
+        if (ap.b) {
+          const p = fromCoord(ap.b.x + dx, ap.b.y + dy);
+          if (p) patch.b = p;
+        }
+        if (ap.c) {
+          const p = fromCoord(ap.c.x + dx, ap.c.y + dy);
+          if (p) patch.c = p;
+        }
+        if (ap.at) {
+          const p = fromCoord(ap.at.x + dx, ap.at.y + dy);
+          if (p) patch.at = p;
+        }
+        if (ap.points) {
+          const arr: DrawingPoint[] = [];
+          let ok = true;
+          for (const c of ap.points) {
+            const p = fromCoord(c.x + dx, c.y + dy);
+            if (!p) {
+              ok = false;
+              break;
+            }
+            arr.push(p);
+          }
+          if (ok) patch.points = arr;
+        }
+        if (Object.keys(patch).length > 0) onUpdate(drag.id, patch);
+        return;
+      }
       const pt = fromCoord(x, y);
       if (!pt) return;
       if (drag.handle === "points") {
@@ -335,7 +456,11 @@ export function DrawingsLayer({
           ? { pointerEvents: "none", opacity: 0.7 }
           : {
               pointerEvents: "auto",
-              cursor: eraserActive ? "crosshair" : "pointer",
+              cursor: eraserActive
+                ? "crosshair"
+                : lockDrawings
+                  ? "pointer"
+                  : "move",
             };
         if (d.type === "trendline" || d.type === "arrow") {
           const a = toCoord(d.a.time, d.a.price);
@@ -399,6 +524,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {/* invisible hit area for easier click */}
@@ -480,6 +606,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <rect
@@ -556,6 +683,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {FIB_LEVELS.map(({ level, color }) => {
@@ -625,6 +753,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <rect
@@ -685,6 +814,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -736,6 +866,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -782,6 +913,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -849,8 +981,12 @@ export function DrawingsLayer({
             : Math.max(a.x + 60, Math.max(b.x, c.x));
           // Show a thin full-width dashed guide line ONLY while the user is dragging the SL or TP handle
           const dragForThis = drag && drag.id === d.id ? drag : null;
-          const showSLGuide = !isPreview && dragForThis?.handle === "b";
-          const showTPGuide = !isPreview && dragForThis?.handle === "c";
+          const dragHandle =
+            dragForThis && "handle" in dragForThis
+              ? dragForThis.handle
+              : null;
+          const showSLGuide = !isPreview && dragHandle === "b";
+          const showTPGuide = !isPreview && dragHandle === "c";
           // Stop zone (red) and Target zone (green)
           const stopY1 = Math.min(a.y, b.y);
           const stopY2 = Math.max(a.y, b.y);
@@ -863,6 +999,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {/* Stop zone (red translucent) */}
@@ -990,6 +1127,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <text
@@ -1036,6 +1174,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -1102,6 +1241,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -1170,6 +1310,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -1225,6 +1366,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -1292,6 +1434,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <ellipse
@@ -1344,6 +1487,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <rect
@@ -1411,6 +1555,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <rect
@@ -1490,6 +1635,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {lines.map((x, i) => (
@@ -1550,6 +1696,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <polygon
@@ -1619,6 +1766,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {FIB_EXT_LEVELS.map(({ level, color }) => {
@@ -1708,6 +1856,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {ratios.map((ratio, i) => {
@@ -1775,6 +1924,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {ratios.map((r, i) => {
@@ -1834,6 +1984,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <rect
@@ -1941,6 +2092,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
@@ -2027,6 +2179,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(dd.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, dd.id)}
+              onPointerDown={(e) => onBodyDown(e, dd)}
               style={grStyle}
             >
               {renderShape(coords)}
@@ -2379,6 +2532,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               {ratios.map(([n, dd2], i) => {
@@ -2436,6 +2590,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <polyline
@@ -2482,6 +2637,7 @@ export function DrawingsLayer({
               onMouseLeave={() => setHover(null)}
               onClick={() => handleClick(d.id)}
               onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
               style={grStyle}
             >
               <line
