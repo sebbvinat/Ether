@@ -6,6 +6,7 @@ import {
   CandlestickSeries,
   LineSeries,
   AreaSeries,
+  BaselineSeries,
   HistogramSeries,
   CrosshairMode,
   PriceScaleMode,
@@ -192,7 +193,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const ichiChikouRef = useRef<ISeriesApi<"Line"> | null>(null);
   const pivotLinesRef = useRef<IPriceLine[]>([]);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
-  const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
+  const overlaySeriesRef = useRef<
+    ISeriesApi<"Line"> | ISeriesApi<"Area"> | ISeriesApi<"Baseline"> | null
+  >(null);
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
   const rsiRef = useRef<ISeriesApi<"Line"> | null>(null);
   const rsi30Ref = useRef<ISeriesApi<"Line"> | null>(null);
@@ -243,7 +246,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const replay = useChartStore((s) => s.replay);
   const replayActiveForThis = replay.active && replay.slotId === slotId;
   const chartStyle = useChartStore((s) => s.chartStyle);
-  const logScale = useChartStore((s) => s.logScale);
+  const priceScaleMode = useChartStore((s) => s.priceScaleMode);
   const syncCharts = useChartStore((s) => s.syncCharts);
   const syncChartsRef = useRef(syncCharts);
   syncChartsRef.current = syncCharts;
@@ -2683,17 +2686,23 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     return () => el.removeEventListener("dblclick", handler);
   }, []);
 
-  // Log scale toggle
+  // Modo de escala de precio: normal / log / percent / indexed
   useEffect(() => {
     if (!chartRef.current) return;
+    const modeMap = {
+      normal: PriceScaleMode.Normal,
+      log: PriceScaleMode.Logarithmic,
+      percent: PriceScaleMode.Percentage,
+      indexed: PriceScaleMode.IndexedTo100,
+    } as const;
     try {
       chartRef.current.priceScale("right").applyOptions({
-        mode: logScale ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal,
+        mode: modeMap[priceScaleMode] ?? PriceScaleMode.Normal,
       });
     } catch (e) {
-      console.warn("logScale apply failed:", e);
+      console.warn("priceScaleMode apply failed:", e);
     }
-  }, [logScale]);
+  }, [priceScaleMode]);
 
   // Chart style — toggle candles/heikin vs line/area overlay
   useEffect(() => {
@@ -2721,27 +2730,51 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       return;
     }
     candleSeriesRef.current?.applyOptions({ visible: false });
-    const ser =
-      chartStyle === "line"
-        ? chart.addSeries(LineSeries, {
-            color: TV_COLORS.blue,
-            lineWidth: 2,
-            priceLineColor: TV_COLORS.textMuted,
-            priceLineStyle: 2,
-          })
-        : chart.addSeries(AreaSeries, {
-            lineColor: TV_COLORS.blue,
-            topColor: "rgba(41,98,255,0.35)",
-            bottomColor: "rgba(41,98,255,0)",
-            lineWidth: 2,
-            priceLineColor: TV_COLORS.textMuted,
-            priceLineStyle: 2,
-          });
+    let ser:
+      | ISeriesApi<"Line">
+      | ISeriesApi<"Area">
+      | ISeriesApi<"Baseline">;
+    if (chartStyle === "line") {
+      ser = chart.addSeries(LineSeries, {
+        color: TV_COLORS.blue,
+        lineWidth: 2,
+        priceLineColor: TV_COLORS.textMuted,
+        priceLineStyle: 2,
+      });
+    } else if (chartStyle === "baseline") {
+      ser = chart.addSeries(BaselineSeries, {
+        topLineColor: TV_COLORS.green,
+        topFillColor1: "rgba(38,166,154,0.28)",
+        topFillColor2: "rgba(38,166,154,0.04)",
+        bottomLineColor: TV_COLORS.red,
+        bottomFillColor1: "rgba(239,83,80,0.04)",
+        bottomFillColor2: "rgba(239,83,80,0.28)",
+        lineWidth: 2,
+        priceLineColor: TV_COLORS.textMuted,
+        priceLineStyle: 2,
+      });
+    } else {
+      ser = chart.addSeries(AreaSeries, {
+        lineColor: TV_COLORS.blue,
+        topColor: "rgba(41,98,255,0.35)",
+        bottomColor: "rgba(41,98,255,0)",
+        lineWidth: 2,
+        priceLineColor: TV_COLORS.textMuted,
+        priceLineStyle: 2,
+      });
+    }
     overlaySeriesRef.current = ser;
     const view = getViewCandles();
     ser.setData(
       view.map((c) => ({ time: c.time as UTCTimestamp, value: c.close })),
     );
+    // Baseline: anclar la línea base al primer valor visible (sin esto el
+    // baseline cae en precio 0 y todo el chart queda del mismo color).
+    if (chartStyle === "baseline" && view.length > 0) {
+      (ser as ISeriesApi<"Baseline">).applyOptions({
+        baseValue: { type: "price", price: view[0].close },
+      });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chartStyle]);
 

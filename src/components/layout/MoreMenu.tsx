@@ -159,7 +159,16 @@ export function MoreMenu() {
                 subRight={
                   <select
                     value={chartStyle}
-                    onChange={(e) => setChartStyle(e.target.value as "candles" | "heikin" | "line" | "area")}
+                    onChange={(e) =>
+                      setChartStyle(
+                        e.target.value as
+                          | "candles"
+                          | "heikin"
+                          | "line"
+                          | "area"
+                          | "baseline",
+                      )
+                    }
                     onClick={(e) => e.stopPropagation()}
                     className="rounded bg-tv-bg px-1 py-0.5 text-[11px] text-tv-text"
                   >
@@ -167,6 +176,7 @@ export function MoreMenu() {
                     <option value="heikin">Heikin Ashi</option>
                     <option value="line">Línea</option>
                     <option value="area">Área</option>
+                    <option value="baseline">Baseline</option>
                   </select>
                 }
               />
