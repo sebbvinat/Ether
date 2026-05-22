@@ -70,6 +70,9 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   donchian: "Donchian Channels",
   keltner: "Keltner Channels",
   supertrend: "Supertrend",
+  psar: "Parabolic SAR",
+  pivots: "Pivot Points",
+  ichimoku: "Ichimoku Cloud",
 };
 
 export function ObjectTreeDialog({ open, onOpenChange }: Props) {

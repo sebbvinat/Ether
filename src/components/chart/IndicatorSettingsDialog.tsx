@@ -38,6 +38,9 @@ const TITLES: Record<IndicatorKey, string> = {
   donchian: "Donchian Channels",
   keltner: "Keltner Channels",
   supertrend: "Supertrend",
+  psar: "Parabolic SAR",
+  pivots: "Pivot Points",
+  ichimoku: "Ichimoku Cloud",
 };
 
 export function IndicatorSettingsDialog() {
@@ -141,6 +144,18 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         supertrendAtr: clamp(draft.supertrendAtr, 2, 100),
         supertrendMult: clamp(draft.supertrendMult, 1, 20),
       });
+    else if (target === "psar")
+      onSave({
+        psarStep: clamp(draft.psarStep, 0.001, 0.5),
+        psarMax: clamp(draft.psarMax, 0.05, 1),
+      });
+    else if (target === "ichimoku")
+      onSave({
+        ichimokuTenkan: clamp(draft.ichimokuTenkan, 2, 100),
+        ichimokuKijun: clamp(draft.ichimokuKijun, 2, 200),
+        ichimokuSenkouB: clamp(draft.ichimokuSenkouB, 2, 300),
+      });
+    else if (target === "pivots") onSave({});
     else if (target === "macd")
       onSave({
         macdFast: clamp(draft.macdFast, 2, 100),
@@ -274,6 +289,41 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           />
         </div>
       )}
+      {target === "psar" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="Step"
+            float
+            value={draft.psarStep}
+            onChange={(n) => setDraft((d) => ({ ...d, psarStep: n }))}
+          />
+          <Field
+            label="Máximo"
+            float
+            value={draft.psarMax}
+            onChange={(n) => setDraft((d) => ({ ...d, psarMax: n }))}
+          />
+        </div>
+      )}
+      {target === "ichimoku" && (
+        <div className="grid grid-cols-3 gap-2">
+          <Field
+            label="Tenkan"
+            value={draft.ichimokuTenkan}
+            onChange={(n) => setDraft((d) => ({ ...d, ichimokuTenkan: n }))}
+          />
+          <Field
+            label="Kijun"
+            value={draft.ichimokuKijun}
+            onChange={(n) => setDraft((d) => ({ ...d, ichimokuKijun: n }))}
+          />
+          <Field
+            label="Senkou B"
+            value={draft.ichimokuSenkouB}
+            onChange={(n) => setDraft((d) => ({ ...d, ichimokuSenkouB: n }))}
+          />
+        </div>
+      )}
       {target === "stoch" && (
         <div className="grid grid-cols-2 gap-2">
           <Field
@@ -307,7 +357,10 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           />
         </div>
       )}
-      {(target === "volume" || target === "vwap" || target === "obv") && (
+      {(target === "volume" ||
+        target === "vwap" ||
+        target === "obv" ||
+        target === "pivots") && (
         <p className="text-xs text-tv-text-muted">
           Este indicador no tiene parámetros configurables.
         </p>
@@ -334,10 +387,13 @@ function Field({
   label,
   value,
   onChange,
+  float,
 }: {
   label: string;
   value: number;
   onChange: (n: number) => void;
+  /** Si es true, acepta decimales (ej. step de Parabolic SAR). */
+  float?: boolean;
 }) {
   return (
     <label className="flex flex-col gap-1">
@@ -346,11 +402,14 @@ function Field({
       </span>
       <Input
         type="number"
-        min={2}
-        max={500}
+        min={float ? 0 : 2}
+        max={float ? 1 : 500}
+        step={float ? 0.01 : 1}
         value={value}
         onChange={(e) => {
-          const n = parseInt(e.target.value, 10);
+          const n = float
+            ? parseFloat(e.target.value)
+            : parseInt(e.target.value, 10);
           if (!isNaN(n)) onChange(n);
         }}
         className="bg-tv-bg tabular-nums"
