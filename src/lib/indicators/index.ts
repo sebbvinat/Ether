@@ -301,3 +301,211 @@ export function heikinAshi(candles: Candle[]): Candle[] {
   }
   return out;
 }
+
+// =========================================================================
+// Biblioteca extendida — Batch 1: osciladores de sub-panel
+// =========================================================================
+
+/** CCI — Commodity Channel Index. */
+export function cci(candles: Candle[], period = 20): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length < period) return out;
+  const tp = candles.map((c) => (c.high + c.low + c.close) / 3);
+  for (let i = period - 1; i < candles.length; i++) {
+    let sum = 0;
+    for (let j = i - period + 1; j <= i; j++) sum += tp[j];
+    const mean = sum / period;
+    let dev = 0;
+    for (let j = i - period + 1; j <= i; j++) dev += Math.abs(tp[j] - mean);
+    const meanDev = dev / period;
+    const value = meanDev === 0 ? 0 : (tp[i] - mean) / (0.015 * meanDev);
+    out.push({ time: candles[i].time, value });
+  }
+  return out;
+}
+
+/** Williams %R — rango -100..0. */
+export function williamsR(candles: Candle[], period = 14): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length < period) return out;
+  for (let i = period - 1; i < candles.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (candles[j].high > hh) hh = candles[j].high;
+      if (candles[j].low < ll) ll = candles[j].low;
+    }
+    const range = hh - ll;
+    const value =
+      range === 0 ? -50 : (-100 * (hh - candles[i].close)) / range;
+    out.push({ time: candles[i].time, value });
+  }
+  return out;
+}
+
+/** MFI — Money Flow Index (RSI ponderado por volumen). */
+export function mfi(candles: Candle[], period = 14): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length < period + 1) return out;
+  const tp = candles.map((c) => (c.high + c.low + c.close) / 3);
+  const posMF: number[] = [0];
+  const negMF: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const rmf = tp[i] * candles[i].volume;
+    if (tp[i] > tp[i - 1]) {
+      posMF.push(rmf);
+      negMF.push(0);
+    } else if (tp[i] < tp[i - 1]) {
+      posMF.push(0);
+      negMF.push(rmf);
+    } else {
+      posMF.push(0);
+      negMF.push(0);
+    }
+  }
+  for (let i = period; i < candles.length; i++) {
+    let pos = 0;
+    let neg = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      pos += posMF[j];
+      neg += negMF[j];
+    }
+    const value = neg === 0 ? 100 : 100 - 100 / (1 + pos / neg);
+    out.push({ time: candles[i].time, value });
+  }
+  return out;
+}
+
+export interface ADXPoint {
+  time: number;
+  adx: number;
+  plusDI: number;
+  minusDI: number;
+}
+
+/** ADX/DMI — suavizado Wilder, igual que TradingView. */
+export function adx(candles: Candle[], period = 14): ADXPoint[] {
+  const out: ADXPoint[] = [];
+  if (candles.length < period * 2 + 1) return out;
+  const tr: number[] = [0];
+  const plusDM: number[] = [0];
+  const minusDM: number[] = [0];
+  for (let i = 1; i < candles.length; i++) {
+    const up = candles[i].high - candles[i - 1].high;
+    const down = candles[i - 1].low - candles[i].low;
+    plusDM.push(up > down && up > 0 ? up : 0);
+    minusDM.push(down > up && down > 0 ? down : 0);
+    const pc = candles[i - 1].close;
+    tr.push(
+      Math.max(
+        candles[i].high - candles[i].low,
+        Math.abs(candles[i].high - pc),
+        Math.abs(candles[i].low - pc),
+      ),
+    );
+  }
+  let trS = 0;
+  let pdmS = 0;
+  let mdmS = 0;
+  for (let i = 1; i <= period; i++) {
+    trS += tr[i];
+    pdmS += plusDM[i];
+    mdmS += minusDM[i];
+  }
+  const dxArr: { time: number; dx: number; pdi: number; mdi: number }[] = [];
+  for (let i = period + 1; i < candles.length; i++) {
+    trS = trS - trS / period + tr[i];
+    pdmS = pdmS - pdmS / period + plusDM[i];
+    mdmS = mdmS - mdmS / period + minusDM[i];
+    const pdi = trS === 0 ? 0 : (100 * pdmS) / trS;
+    const mdi = trS === 0 ? 0 : (100 * mdmS) / trS;
+    const sum = pdi + mdi;
+    const dx = sum === 0 ? 0 : (100 * Math.abs(pdi - mdi)) / sum;
+    dxArr.push({ time: candles[i].time, dx, pdi, mdi });
+  }
+  if (dxArr.length < period) return out;
+  let adxVal = 0;
+  for (let i = 0; i < period; i++) adxVal += dxArr[i].dx;
+  adxVal /= period;
+  out.push({
+    time: dxArr[period - 1].time,
+    adx: adxVal,
+    plusDI: dxArr[period - 1].pdi,
+    minusDI: dxArr[period - 1].mdi,
+  });
+  for (let i = period; i < dxArr.length; i++) {
+    adxVal = (adxVal * (period - 1) + dxArr[i].dx) / period;
+    out.push({
+      time: dxArr[i].time,
+      adx: adxVal,
+      plusDI: dxArr[i].pdi,
+      minusDI: dxArr[i].mdi,
+    });
+  }
+  return out;
+}
+
+export interface StochRsiPoint {
+  time: number;
+  k: number;
+  d: number;
+}
+
+/** Stochastic RSI — estocástico aplicado sobre la serie de RSI. */
+export function stochRsi(
+  candles: Candle[],
+  rsiPeriod = 14,
+  stochPeriod = 14,
+  kSmooth = 3,
+  dSmooth = 3,
+): StochRsiPoint[] {
+  const rsiArr = rsi(candles, rsiPeriod);
+  if (rsiArr.length < stochPeriod) return [];
+  const raw: { time: number; value: number }[] = [];
+  for (let i = stochPeriod - 1; i < rsiArr.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - stochPeriod + 1; j <= i; j++) {
+      if (rsiArr[j].value > hh) hh = rsiArr[j].value;
+      if (rsiArr[j].value < ll) ll = rsiArr[j].value;
+    }
+    const range = hh - ll;
+    raw.push({
+      time: rsiArr[i].time,
+      value: range === 0 ? 0 : ((rsiArr[i].value - ll) / range) * 100,
+    });
+  }
+  const kArr: { time: number; value: number }[] = [];
+  for (let i = kSmooth - 1; i < raw.length; i++) {
+    let s = 0;
+    for (let j = i - kSmooth + 1; j <= i; j++) s += raw[j].value;
+    kArr.push({ time: raw[i].time, value: s / kSmooth });
+  }
+  const out: StochRsiPoint[] = [];
+  for (let i = dSmooth - 1; i < kArr.length; i++) {
+    let s = 0;
+    for (let j = i - dSmooth + 1; j <= i; j++) s += kArr[j].value;
+    out.push({ time: kArr[i].time, k: kArr[i].value, d: s / dSmooth });
+  }
+  return out;
+}
+
+/** Awesome Oscillator — SMA(median,5) − SMA(median,34). */
+export function awesomeOscillator(
+  candles: Candle[],
+  fast = 5,
+  slow = 34,
+): IndicatorPoint[] {
+  const out: IndicatorPoint[] = [];
+  if (candles.length < slow) return out;
+  const median = candles.map((c) => (c.high + c.low) / 2);
+  const smaAt = (p: number, idx: number) => {
+    let s = 0;
+    for (let j = idx - p + 1; j <= idx; j++) s += median[j];
+    return s / p;
+  };
+  for (let i = slow - 1; i < candles.length; i++) {
+    out.push({ time: candles[i].time, value: smaAt(fast, i) - smaAt(slow, i) });
+  }
+  return out;
+}

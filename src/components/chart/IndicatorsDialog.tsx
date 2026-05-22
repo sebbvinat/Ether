@@ -51,6 +51,24 @@ const ENTRIES: Entry[] = [
     group: "Osciladores",
     label: (c) => `Estocástico (${c.stochK}, ${c.stochD})`,
   },
+  { key: "cci", group: "Osciladores", label: (c) => `CCI (${c.cci})` },
+  {
+    key: "williamsR",
+    group: "Osciladores",
+    label: (c) => `Williams %R (${c.williamsR})`,
+  },
+  { key: "mfi", group: "Osciladores", label: (c) => `MFI (${c.mfi})` },
+  { key: "adx", group: "Osciladores", label: (c) => `ADX / DMI (${c.adx})` },
+  {
+    key: "stochRsi",
+    group: "Osciladores",
+    label: (c) => `Stoch RSI (${c.stochRsiRsi})`,
+  },
+  {
+    key: "ao",
+    group: "Osciladores",
+    label: (c) => `Awesome Oscillator (${c.aoFast}, ${c.aoSlow})`,
+  },
 ];
 
 interface Props {
