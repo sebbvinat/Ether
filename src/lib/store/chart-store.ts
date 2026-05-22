@@ -82,7 +82,15 @@ export type DrawingTool =
   // Wave 6C
   | "brush";
 
-export type ChartStyle = "candles" | "heikin" | "line" | "area";
+export type ChartStyle =
+  | "candles"
+  | "heikin"
+  | "line"
+  | "area"
+  | "baseline";
+
+/** Modo de la escala de precio. */
+export type PriceScaleModeKey = "normal" | "log" | "percent" | "indexed";
 
 export interface WatchlistSection {
   id: string;
@@ -528,8 +536,10 @@ interface ChartState {
   config: IndicatorConfig;
   /** Visual style of the main price series */
   chartStyle: ChartStyle;
-  /** Use logarithmic price scale */
+  /** Use logarithmic price scale (legacy — espejado desde priceScaleMode) */
   logScale: boolean;
+  /** Modo de escala de precio: normal / log / percent / indexed */
+  priceScaleMode: PriceScaleModeKey;
   /** When true, panning/zoom in one slot syncs the visible time range to others */
   syncCharts: boolean;
   /** Per-slot compare overlays — extra symbols to plot as line on the same chart */
@@ -615,6 +625,7 @@ interface ChartState {
   setConfig: (patch: Partial<IndicatorConfig>) => void;
   setChartStyle: (s: ChartStyle) => void;
   setLogScale: (v: boolean) => void;
+  setPriceScaleMode: (m: PriceScaleModeKey) => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -765,6 +776,7 @@ export const useChartStore = create<ChartState>()(
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,
       logScale: false,
+      priceScaleMode: "normal" as PriceScaleModeKey,
       syncCharts: false,
       compares: {},
       theme: "dark" as "dark" | "light",
@@ -888,7 +900,10 @@ export const useChartStore = create<ChartState>()(
       setConfig: (patch) =>
         set((s) => ({ config: { ...s.config, ...patch } })),
       setChartStyle: (chartStyle) => set({ chartStyle }),
-      setLogScale: (logScale) => set({ logScale }),
+      setLogScale: (logScale) =>
+        set({ logScale, priceScaleMode: logScale ? "log" : "normal" }),
+      setPriceScaleMode: (priceScaleMode) =>
+        set({ priceScaleMode, logScale: priceScaleMode === "log" }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
@@ -1404,6 +1419,7 @@ export const useChartStore = create<ChartState>()(
         activeWatchlistId: s.activeWatchlistId,
         chartStyle: s.chartStyle,
         logScale: s.logScale,
+        priceScaleMode: s.priceScaleMode,
         syncCharts: s.syncCharts,
         compares: s.compares,
         workspaces: s.workspaces,
