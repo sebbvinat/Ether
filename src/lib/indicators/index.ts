@@ -792,3 +792,90 @@ export function ichimoku(
   }
   return out;
 }
+
+// =========================================================================
+// Volume Profile — histograma de volumen por nivel de precio
+// =========================================================================
+
+export interface VolumeProfileBin {
+  low: number;
+  high: number;
+  volume: number;
+}
+
+export interface VolumeProfileResult {
+  bins: VolumeProfileBin[];
+  /** Precio del Point of Control (bin de mayor volumen). */
+  poc: number;
+  /** Límites del Value Area (~70% del volumen alrededor del POC). */
+  vaHigh: number;
+  vaLow: number;
+  maxVolume: number;
+  totalVolume: number;
+}
+
+/**
+ * Volume Profile — reparte el volumen de cada vela entre los bins de precio
+ * que abarca su rango [low, high]. Devuelve POC y Value Area.
+ */
+export function volumeProfile(
+  candles: Candle[],
+  binCount = 24,
+): VolumeProfileResult | null {
+  if (candles.length === 0 || binCount < 2) return null;
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const c of candles) {
+    if (c.low < lo) lo = c.low;
+    if (c.high > hi) hi = c.high;
+  }
+  if (!isFinite(lo) || !isFinite(hi) || hi <= lo) return null;
+  const binSize = (hi - lo) / binCount;
+  const bins: VolumeProfileBin[] = [];
+  for (let i = 0; i < binCount; i++) {
+    bins.push({ low: lo + i * binSize, high: lo + (i + 1) * binSize, volume: 0 });
+  }
+  for (const c of candles) {
+    const firstBin = Math.max(0, Math.floor((c.low - lo) / binSize));
+    const lastBin = Math.min(
+      binCount - 1,
+      Math.floor((c.high - lo) / binSize),
+    );
+    const nBins = lastBin - firstBin + 1;
+    const volPerBin = c.volume / nBins;
+    for (let b = firstBin; b <= lastBin; b++) bins[b].volume += volPerBin;
+  }
+  let pocIdx = 0;
+  let maxVolume = 0;
+  for (let i = 0; i < bins.length; i++) {
+    if (bins[i].volume > maxVolume) {
+      maxVolume = bins[i].volume;
+      pocIdx = i;
+    }
+  }
+  const totalVolume = bins.reduce((s, b) => s + b.volume, 0);
+  // Value Area: expandir desde el POC hasta cubrir ~70% del volumen.
+  let vaVol = bins[pocIdx].volume;
+  let loIdx = pocIdx;
+  let hiIdx = pocIdx;
+  const target = totalVolume * 0.7;
+  while (vaVol < target && (loIdx > 0 || hiIdx < bins.length - 1)) {
+    const belowVol = loIdx > 0 ? bins[loIdx - 1].volume : -1;
+    const aboveVol = hiIdx < bins.length - 1 ? bins[hiIdx + 1].volume : -1;
+    if (aboveVol >= belowVol) {
+      hiIdx++;
+      vaVol += bins[hiIdx].volume;
+    } else {
+      loIdx--;
+      vaVol += bins[loIdx].volume;
+    }
+  }
+  return {
+    bins,
+    poc: (bins[pocIdx].low + bins[pocIdx].high) / 2,
+    vaHigh: bins[hiIdx].high,
+    vaLow: bins[loIdx].low,
+    maxVolume,
+    totalVolume,
+  };
+}

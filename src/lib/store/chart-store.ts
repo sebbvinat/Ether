@@ -33,7 +33,9 @@ export type IndicatorKey =
   // Batch 3 — PSAR / Pivots / Ichimoku
   | "psar"
   | "pivots"
-  | "ichimoku";
+  | "ichimoku"
+  // Wave 8 — Volume Profile
+  | "vp";
 
 export type DrawingTool =
   | "cursor"
@@ -416,6 +418,8 @@ export interface IndicatorConfig {
   ichimokuTenkan: number;
   ichimokuKijun: number;
   ichimokuSenkouB: number;
+  // Wave 8
+  vpBins: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -452,6 +456,7 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   ichimokuTenkan: 9,
   ichimokuKijun: 26,
   ichimokuSenkouB: 52,
+  vpBins: 24,
 };
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
@@ -480,6 +485,7 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   psar: "#d1d4dc",
   pivots: "#ffb74d",
   ichimoku: "#2962ff",
+  vp: "#5b8def",
 };
 
 export type LayoutType = "single" | "2h" | "2v" | "grid4";
@@ -726,6 +732,7 @@ export const useChartStore = create<ChartState>()(
         psar: false,
         pivots: false,
         ichimoku: false,
+        vp: false,
       },
       hidden: {
         ema20: false,
@@ -753,6 +760,7 @@ export const useChartStore = create<ChartState>()(
         psar: false,
         pivots: false,
         ichimoku: false,
+        vp: false,
       },
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,

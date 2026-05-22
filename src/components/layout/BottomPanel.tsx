@@ -104,6 +104,11 @@ const CATALOG: CatalogEntry[] = [
     label: (c) =>
       `Ichimoku (${c.ichimokuTenkan}, ${c.ichimokuKijun}, ${c.ichimokuSenkouB})`,
   },
+  {
+    key: "vp",
+    category: "Volumen",
+    label: (c) => `Volume Profile (${c.vpBins})`,
+  },
 ];
 
 const CATEGORIES = [

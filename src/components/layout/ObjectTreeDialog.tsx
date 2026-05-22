@@ -73,6 +73,7 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   psar: "Parabolic SAR",
   pivots: "Pivot Points",
   ichimoku: "Ichimoku Cloud",
+  vp: "Volume Profile",
 };
 
 export function ObjectTreeDialog({ open, onOpenChange }: Props) {

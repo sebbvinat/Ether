@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChart,
   CandlestickSeries,
@@ -39,6 +39,7 @@ import {
   parabolicSar,
   pivotPoints,
   ichimoku,
+  volumeProfile,
 } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
@@ -50,6 +51,7 @@ import { formatPrice, formatVolume } from "@/lib/format";
 import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
+import { VolumeProfileLayer } from "./VolumeProfileLayer";
 import { Countdown } from "./Countdown";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
@@ -2894,6 +2896,26 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       );
     }
   }
+  // Volume Profile (Visible Range) — recomputado en cada renderTick (pan/zoom).
+  const vpResult = useMemo(() => {
+    if (!indicators.vp || hidden.vp) return null;
+    const chart = chartRef.current;
+    if (!chart) return null;
+    const all = getViewCandles();
+    if (all.length === 0) return null;
+    let visible = all;
+    try {
+      const vr = chart.timeScale().getVisibleRange();
+      if (vr) {
+        const from = Number(vr.from);
+        const to = Number(vr.to);
+        visible = all.filter((c) => c.time >= from && c.time <= to);
+      }
+    } catch {}
+    return volumeProfile(visible.length > 0 ? visible : all, config.vpBins);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indicators.vp, hidden.vp, config.vpBins, renderTick, symbol, timeframe]);
+
   // Coord converter for the drawings layer (only valid for the main pane)
   const symbolDrawings = drawings.filter((d) => d.symbol === symbol);
   let draftAsDrawing: Drawing | null = null;
@@ -3006,6 +3028,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   return (
     <div ref={wrapperRef} className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      {indicators.vp && !hidden.vp && (
+        <VolumeProfileLayer
+          result={vpResult}
+          priceToY={(price) =>
+            candleSeriesRef.current?.priceToCoordinate(price) ?? null
+          }
+          width={containerSize.width}
+          color={INDICATOR_COLORS.vp}
+        />
+      )}
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
       {countdownY !== null && (
         <div
@@ -3315,6 +3347,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onToggleHide={() => toggleHidden("ichimoku")}
               onSettings={() => setSettingsTarget("ichimoku")}
               onRemove={() => removeIndicator("ichimoku")}
+            />
+          )}
+          {indicators.vp && (
+            <IndicatorPill
+              name={`Volume Profile ${config.vpBins}`}
+              value={
+                vpResult ? `POC ${formatPrice(vpResult.poc)}` : undefined
+              }
+              color={INDICATOR_COLORS.vp}
+              hidden={hidden.vp}
+              onToggleHide={() => toggleHidden("vp")}
+              onSettings={() => setSettingsTarget("vp")}
+              onRemove={() => removeIndicator("vp")}
             />
           )}
           {indicators.volume && (
