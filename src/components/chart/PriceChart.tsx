@@ -247,6 +247,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const replayActiveForThis = replay.active && replay.slotId === slotId;
   const chartStyle = useChartStore((s) => s.chartStyle);
   const priceScaleMode = useChartStore((s) => s.priceScaleMode);
+  const chartAppearance = useChartStore((s) => s.chartAppearance);
   const syncCharts = useChartStore((s) => s.syncCharts);
   const syncChartsRef = useRef(syncCharts);
   syncChartsRef.current = syncCharts;
@@ -1468,20 +1469,30 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tool]);
 
-  // Re-theme the chart canvas (lightweight-charts ignores CSS variables)
+  // Re-theme the chart canvas (lightweight-charts ignores CSS variables).
+  // Aplica el tema base (oscuro/claro) y por encima los overrides de
+  // chartAppearance (colores de velas/fondo/grilla configurables).
   useEffect(() => {
     const chart = chartRef.current;
     if (!chart) return;
     const c = theme === "light" ? LIGHT_CHART : TV_COLORS;
+    const a = chartAppearance;
+    const bg = a.background || c.bg;
+    const gridColor = a.gridColor || c.grid;
+    const showGrid = a.showGrid !== false;
+    const up = a.candleUp || c.green;
+    const down = a.candleDown || c.red;
+    const wickUp = a.wickUp || up;
+    const wickDown = a.wickDown || down;
     chart.applyOptions({
       layout: {
-        background: { color: c.bg },
+        background: { color: bg },
         textColor: c.textMuted,
         panes: { separatorColor: c.border, separatorHoverColor: c.border },
       },
       grid: {
-        vertLines: { color: c.grid },
-        horzLines: { color: c.grid },
+        vertLines: { color: gridColor, visible: showGrid },
+        horzLines: { color: gridColor, visible: showGrid },
       },
       crosshair: {
         vertLine: { color: c.textMuted, labelBackgroundColor: c.panel },
@@ -1491,15 +1502,17 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       timeScale: { borderColor: c.border },
     });
     candleSeriesRef.current?.applyOptions({
-      upColor: c.green,
-      downColor: c.red,
-      borderUpColor: c.green,
-      borderDownColor: c.red,
-      wickUpColor: c.green,
-      wickDownColor: c.red,
+      // Velas huecas: cuerpo alcista transparente, sólo borde.
+      upColor: a.hollow ? "rgba(0,0,0,0)" : up,
+      downColor: down,
+      borderUpColor: up,
+      borderDownColor: down,
+      borderVisible: true,
+      wickUpColor: wickUp,
+      wickDownColor: wickDown,
       priceLineColor: c.textMuted,
     });
-  }, [theme]);
+  }, [theme, chartAppearance]);
 
   // Recompute indicators when config changes (periods)
   useEffect(() => {

@@ -18,6 +18,7 @@ import {
   Upload,
   Code2,
   LineChart,
+  Settings2,
 } from "lucide-react";
 import { useChartStore } from "@/lib/store/chart-store";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
@@ -26,6 +27,7 @@ import { WorkspacesDialog } from "@/components/layout/WorkspacesDialog";
 import { JournalDialog } from "@/components/journal/JournalDialog";
 import { ObjectTreeDialog } from "@/components/layout/ObjectTreeDialog";
 import { IndicatorsDialog } from "@/components/chart/IndicatorsDialog";
+import { ChartSettingsDialog } from "@/components/chart/ChartSettingsDialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -40,6 +42,7 @@ export function MoreMenu() {
   const [journalOpen, setJournalOpen] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const activeSlotId = useChartStore((s) => s.activeSlotId);
@@ -207,6 +210,14 @@ export function MoreMenu() {
                 value={syncCharts}
                 onChange={setSyncCharts}
               />
+              <Row
+                icon={<Settings2 className="h-4 w-4" />}
+                label="Configuración del gráfico"
+                onClick={() => {
+                  setOpen(false);
+                  setChartSettingsOpen(true);
+                }}
+              />
             </Section>
 
             <Section label="Acciones">
@@ -349,6 +360,10 @@ export function MoreMenu() {
       <JournalDialog open={journalOpen} onOpenChange={setJournalOpen} />
       <ObjectTreeDialog open={layersOpen} onOpenChange={setLayersOpen} />
       <IndicatorsDialog open={indicatorsOpen} onOpenChange={setIndicatorsOpen} />
+      <ChartSettingsDialog
+        open={chartSettingsOpen}
+        onOpenChange={setChartSettingsOpen}
+      />
     </>
   );
 }
