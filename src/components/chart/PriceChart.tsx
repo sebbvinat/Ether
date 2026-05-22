@@ -2393,9 +2393,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }}
         onSelect={selectDrawing}
         eraserActive={tool === "eraser"}
+        toolActive={tool !== "cursor"}
         hideDrawings={storeHideDrawings}
         lockDrawings={storeLockDrawings}
-        toolActive={tool !== "cursor"}
         containerWidth={containerSize.width}
         containerHeight={containerSize.height}
       />
