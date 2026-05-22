@@ -55,6 +55,28 @@ const CATALOG: CatalogEntry[] = [
     category: "Osciladores",
     label: (c) => `Estocástico (${c.stochK}, ${c.stochD})`,
   },
+  { key: "cci", category: "Osciladores", label: (c) => `CCI (${c.cci})` },
+  {
+    key: "williamsR",
+    category: "Osciladores",
+    label: (c) => `Williams %R (${c.williamsR})`,
+  },
+  { key: "mfi", category: "Osciladores", label: (c) => `MFI (${c.mfi})` },
+  {
+    key: "adx",
+    category: "Osciladores",
+    label: (c) => `ADX / DMI (${c.adx})`,
+  },
+  {
+    key: "stochRsi",
+    category: "Osciladores",
+    label: (c) => `Stoch RSI (${c.stochRsiRsi})`,
+  },
+  {
+    key: "ao",
+    category: "Osciladores",
+    label: (c) => `Awesome Oscillator (${c.aoFast}, ${c.aoSlow})`,
+  },
 ];
 
 const CATEGORIES = ["Todos", "Medias móviles", "Volatilidad", "Volumen", "Osciladores"];

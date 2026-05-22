@@ -29,6 +29,12 @@ const TITLES: Record<IndicatorKey, string> = {
   obv: "OBV",
   stoch: "Estocástico",
   volume: "Volumen",
+  cci: "CCI",
+  williamsR: "Williams %R",
+  mfi: "MFI",
+  adx: "ADX / DMI",
+  stochRsi: "Stochastic RSI",
+  ao: "Awesome Oscillator",
 };
 
 export function IndicatorSettingsDialog() {
@@ -104,6 +110,21 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         stochD: clamp(draft.stochD, 1, 50),
       });
     else if (target === "rsi") onSave({ rsi: clamp(draft.rsi, 2, 100) });
+    else if (target === "cci") onSave({ cci: clamp(draft.cci, 2, 200) });
+    else if (target === "williamsR")
+      onSave({ williamsR: clamp(draft.williamsR, 2, 200) });
+    else if (target === "mfi") onSave({ mfi: clamp(draft.mfi, 2, 200) });
+    else if (target === "adx") onSave({ adx: clamp(draft.adx, 2, 100) });
+    else if (target === "stochRsi")
+      onSave({
+        stochRsiRsi: clamp(draft.stochRsiRsi, 2, 100),
+        stochRsiStoch: clamp(draft.stochRsiStoch, 2, 100),
+      });
+    else if (target === "ao")
+      onSave({
+        aoFast: clamp(draft.aoFast, 2, 100),
+        aoSlow: clamp(draft.aoSlow, 3, 200),
+      });
     else if (target === "macd")
       onSave({
         macdFast: clamp(draft.macdFast, 2, 100),
@@ -158,6 +179,44 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
           value={draft.atr}
           onChange={(n) => setDraft((d) => ({ ...d, atr: n }))}
         />
+      )}
+      {(target === "cci" ||
+        target === "williamsR" ||
+        target === "mfi" ||
+        target === "adx") && (
+        <Field
+          label="Período"
+          value={draft[target]}
+          onChange={(n) => setDraft((d) => ({ ...d, [target]: n }))}
+        />
+      )}
+      {target === "stochRsi" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="RSI"
+            value={draft.stochRsiRsi}
+            onChange={(n) => setDraft((d) => ({ ...d, stochRsiRsi: n }))}
+          />
+          <Field
+            label="Estocástico"
+            value={draft.stochRsiStoch}
+            onChange={(n) => setDraft((d) => ({ ...d, stochRsiStoch: n }))}
+          />
+        </div>
+      )}
+      {target === "ao" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="Rápida"
+            value={draft.aoFast}
+            onChange={(n) => setDraft((d) => ({ ...d, aoFast: n }))}
+          />
+          <Field
+            label="Lenta"
+            value={draft.aoSlow}
+            onChange={(n) => setDraft((d) => ({ ...d, aoSlow: n }))}
+          />
+        </div>
       )}
       {target === "stoch" && (
         <div className="grid grid-cols-2 gap-2">

@@ -18,7 +18,14 @@ export type IndicatorKey =
   | "atr"
   | "obv"
   | "stoch"
-  | "volume";
+  | "volume"
+  // Batch 1 — osciladores de sub-panel
+  | "cci"
+  | "williamsR"
+  | "mfi"
+  | "adx"
+  | "stochRsi"
+  | "ao";
 
 export type DrawingTool =
   | "cursor"
@@ -379,6 +386,15 @@ export interface IndicatorConfig {
   atr: number;
   stochK: number;
   stochD: number;
+  // Batch 1
+  cci: number;
+  williamsR: number;
+  mfi: number;
+  adx: number;
+  stochRsiRsi: number;
+  stochRsiStoch: number;
+  aoFast: number;
+  aoSlow: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -396,6 +412,14 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   atr: 14,
   stochK: 14,
   stochD: 3,
+  cci: 20,
+  williamsR: 14,
+  mfi: 14,
+  adx: 14,
+  stochRsiRsi: 14,
+  stochRsiStoch: 14,
+  aoFast: 5,
+  aoSlow: 34,
 };
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
@@ -412,6 +436,12 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   obv: "#26c6da",
   stoch: "#ab47bc",
   volume: "#787b86",
+  cci: "#26c6da",
+  williamsR: "#ffb74d",
+  mfi: "#9ccc65",
+  adx: "#2962ff",
+  stochRsi: "#ab47bc",
+  ao: "#787b86",
 };
 
 export type LayoutType = "single" | "2h" | "2v" | "grid4";
@@ -646,6 +676,12 @@ export const useChartStore = create<ChartState>()(
         obv: false,
         stoch: false,
         volume: true,
+        cci: false,
+        williamsR: false,
+        mfi: false,
+        adx: false,
+        stochRsi: false,
+        ao: false,
       },
       hidden: {
         ema20: false,
@@ -661,6 +697,12 @@ export const useChartStore = create<ChartState>()(
         obv: false,
         stoch: false,
         volume: false,
+        cci: false,
+        williamsR: false,
+        mfi: false,
+        adx: false,
+        stochRsi: false,
+        ao: false,
       },
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,

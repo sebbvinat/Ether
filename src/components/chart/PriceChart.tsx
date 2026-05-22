@@ -27,6 +27,12 @@ import {
   stochastic,
   vwap,
   heikinAshi,
+  cci,
+  williamsR,
+  mfi,
+  adx,
+  stochRsi,
+  awesomeOscillator,
 } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
@@ -122,6 +128,15 @@ interface LastValues {
   stochK?: number;
   stochD?: number;
   volume?: number;
+  cci?: number;
+  williamsR?: number;
+  mfi?: number;
+  adx?: number;
+  adxPlus?: number;
+  adxMinus?: number;
+  stochRsiK?: number;
+  stochRsiD?: number;
+  ao?: number;
 }
 
 interface PaneOffset {
@@ -156,6 +171,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const obvRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stochKRef = useRef<ISeriesApi<"Line"> | null>(null);
   const stochDRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Batch 1 — osciladores de sub-panel
+  const cciRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const williamsRRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const mfiRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const adxRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const adxPlusRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const adxMinusRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochRsiKRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const stochRsiDRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const aoRef = useRef<ISeriesApi<"Histogram"> | null>(null);
   const candlesRef = useRef<Candle[]>([]);
   const priceLinesMapRef = useRef<Map<string, IPriceLine>>(new Map());
 
@@ -835,9 +860,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           time: Number(param.time),
           pct: o === 0 ? 0 : ((c - o) / o) * 100,
         });
-        const lineVal = (
-          ref: { current: ISeriesApi<"Line"> | null },
-        ): number | undefined => {
+        const lineVal = (ref: {
+          current: ISeriesApi<"Line"> | ISeriesApi<"Histogram"> | null;
+        }): number | undefined => {
           const r = ref.current;
           if (!r) return undefined;
           const d = param.seriesData.get(r);
@@ -860,6 +885,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           obv: lineVal(obvRef),
           stochK: lineVal(stochKRef),
           stochD: lineVal(stochDRef),
+          cci: lineVal(cciRef),
+          williamsR: lineVal(williamsRRef),
+          mfi: lineVal(mfiRef),
+          adx: lineVal(adxRef),
+          adxPlus: lineVal(adxPlusRef),
+          adxMinus: lineVal(adxMinusRef),
+          stochRsiK: lineVal(stochRsiKRef),
+          stochRsiD: lineVal(stochRsiDRef),
+          ao: lineVal(aoRef),
           volume: v,
         });
       }
@@ -917,6 +951,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       obvRef.current = null;
       stochKRef.current = null;
       stochDRef.current = null;
+      cciRef.current = null;
+      williamsRRef.current = null;
+      mfiRef.current = null;
+      adxRef.current = null;
+      adxPlusRef.current = null;
+      adxMinusRef.current = null;
+      stochRsiKRef.current = null;
+      stochRsiDRef.current = null;
+      aoRef.current = null;
     };
   }, []);
 
@@ -968,6 +1011,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       obvRef,
       stochKRef,
       stochDRef,
+      cciRef,
+      williamsRRef,
+      mfiRef,
+      adxRef,
+      adxPlusRef,
+      adxMinusRef,
+      stochRsiKRef,
+      stochRsiDRef,
+      aoRef,
     ];
     for (const ref of subRefs) {
       if (ref.current) {
@@ -978,7 +1030,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       }
     }
 
-    const order: IndicatorKey[] = ["rsi", "macd", "atr", "obv", "stoch"];
+    const order: IndicatorKey[] = [
+      "rsi",
+      "macd",
+      "atr",
+      "obv",
+      "stoch",
+      "cci",
+      "williamsR",
+      "mfi",
+      "adx",
+      "stochRsi",
+      "ao",
+    ];
     const active = order.filter((k) => indicators[k]);
     const dim = { priceLineVisible: false, lastValueVisible: false } as const;
 
@@ -1039,6 +1103,57 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           { color: TV_COLORS.yellow, lineWidth: 1, ...dim },
           pane,
         );
+      } else if (key === "cci") {
+        cciRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.cci, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "williamsR") {
+        williamsRRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.williamsR, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "mfi") {
+        mfiRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.mfi, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "adx") {
+        adxRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.adx, lineWidth: 2, ...dim },
+          pane,
+        );
+        adxPlusRef.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.green, lineWidth: 1, ...dim },
+          pane,
+        );
+        adxMinusRef.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.red, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "stochRsi") {
+        stochRsiKRef.current = chart.addSeries(
+          LineSeries,
+          { color: INDICATOR_COLORS.stochRsi, lineWidth: 1, ...dim },
+          pane,
+        );
+        stochRsiDRef.current = chart.addSeries(
+          LineSeries,
+          { color: TV_COLORS.yellow, lineWidth: 1, ...dim },
+          pane,
+        );
+      } else if (key === "ao") {
+        aoRef.current = chart.addSeries(
+          HistogramSeries,
+          { ...dim },
+          pane,
+        );
       }
     });
 
@@ -1056,6 +1171,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     updateATR();
     updateOBV();
     updateStoch();
+    updateCCI();
+    updateWilliamsR();
+    updateMFI();
+    updateADX();
+    updateStochRsi();
+    updateAO();
     requestAnimationFrame(() => recomputePaneOffsets());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -1064,6 +1185,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     indicators.atr,
     indicators.obv,
     indicators.stoch,
+    indicators.cci,
+    indicators.williamsR,
+    indicators.mfi,
+    indicators.adx,
+    indicators.stochRsi,
+    indicators.ao,
   ]);
 
   // Visibility — eye toggle (hidden state) + enabled state combined
@@ -1089,6 +1216,20 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     if (obvRef.current) obvRef.current.applyOptions({ visible: v("obv") });
     if (stochKRef.current) stochKRef.current.applyOptions({ visible: v("stoch") });
     if (stochDRef.current) stochDRef.current.applyOptions({ visible: v("stoch") });
+    if (cciRef.current) cciRef.current.applyOptions({ visible: v("cci") });
+    if (williamsRRef.current)
+      williamsRRef.current.applyOptions({ visible: v("williamsR") });
+    if (mfiRef.current) mfiRef.current.applyOptions({ visible: v("mfi") });
+    if (adxRef.current) adxRef.current.applyOptions({ visible: v("adx") });
+    if (adxPlusRef.current)
+      adxPlusRef.current.applyOptions({ visible: v("adx") });
+    if (adxMinusRef.current)
+      adxMinusRef.current.applyOptions({ visible: v("adx") });
+    if (stochRsiKRef.current)
+      stochRsiKRef.current.applyOptions({ visible: v("stochRsi") });
+    if (stochRsiDRef.current)
+      stochRsiDRef.current.applyOptions({ visible: v("stochRsi") });
+    if (aoRef.current) aoRef.current.applyOptions({ visible: v("ao") });
     if (volumeSeriesRef.current) volumeSeriesRef.current.applyOptions({ visible: v("volume") });
   }, [indicators, hidden]);
 
@@ -1232,6 +1373,30 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   useEffect(() => {
     updateStoch();
   }, [config.stochK, config.stochD]);
+
+  useEffect(() => {
+    updateCCI();
+  }, [config.cci]);
+
+  useEffect(() => {
+    updateWilliamsR();
+  }, [config.williamsR]);
+
+  useEffect(() => {
+    updateMFI();
+  }, [config.mfi]);
+
+  useEffect(() => {
+    updateADX();
+  }, [config.adx]);
+
+  useEffect(() => {
+    updateStochRsi();
+  }, [config.stochRsiRsi, config.stochRsiStoch]);
+
+  useEffect(() => {
+    updateAO();
+  }, [config.aoFast, config.aoSlow]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -1553,6 +1718,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             updateATR();
             updateOBV();
             updateStoch();
+            updateCCI();
+            updateWilliamsR();
+            updateMFI();
+            updateADX();
+            updateStochRsi();
+            updateAO();
           })
           .catch((e) => console.error("loadOlder", e))
           .finally(() => {
@@ -1801,6 +1972,95 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     }));
   }
 
+  function updateCCI() {
+    const c = getViewCandles();
+    if (c.length === 0 || !cciRef.current) return;
+    const data = cci(c, configRef.current.cci);
+    cciRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, cci: data.at(-1)?.value }));
+  }
+
+  function updateWilliamsR() {
+    const c = getViewCandles();
+    if (c.length === 0 || !williamsRRef.current) return;
+    const data = williamsR(c, configRef.current.williamsR);
+    williamsRRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, williamsR: data.at(-1)?.value }));
+  }
+
+  function updateMFI() {
+    const c = getViewCandles();
+    if (c.length === 0 || !mfiRef.current) return;
+    const data = mfi(c, configRef.current.mfi);
+    mfiRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, mfi: data.at(-1)?.value }));
+  }
+
+  function updateADX() {
+    const c = getViewCandles();
+    if (c.length === 0 || !adxRef.current) return;
+    const data = adx(c, configRef.current.adx);
+    adxRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.adx })),
+    );
+    adxPlusRef.current?.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.plusDI })),
+    );
+    adxMinusRef.current?.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.minusDI })),
+    );
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      adx: last?.adx,
+      adxPlus: last?.plusDI,
+      adxMinus: last?.minusDI,
+    }));
+  }
+
+  function updateStochRsi() {
+    const c = getViewCandles();
+    if (c.length === 0 || !stochRsiKRef.current) return;
+    const cfg = configRef.current;
+    const data = stochRsi(c, cfg.stochRsiRsi, cfg.stochRsiStoch);
+    stochRsiKRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })),
+    );
+    stochRsiDRef.current?.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })),
+    );
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      stochRsiK: last?.k,
+      stochRsiD: last?.d,
+    }));
+  }
+
+  function updateAO() {
+    const c = getViewCandles();
+    if (c.length === 0 || !aoRef.current) return;
+    const cfg = configRef.current;
+    const data = awesomeOscillator(c, cfg.aoFast, cfg.aoSlow);
+    aoRef.current.setData(
+      data.map((p, i) => ({
+        time: p.time as UTCTimestamp,
+        value: p.value,
+        color:
+          i > 0 && p.value >= data[i - 1].value
+            ? `${TV_COLORS.green}cc`
+            : `${TV_COLORS.red}cc`,
+      })),
+    );
+    setLastValues((prev) => ({ ...prev, ao: data.at(-1)?.value }));
+  }
+
   // Load historical data + subscribe live
   useEffect(() => {
     const unsub = subscribeMarket(symbol, timeframe, {
@@ -1843,6 +2103,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateATR();
         updateOBV();
         updateStoch();
+        updateCCI();
+        updateWilliamsR();
+        updateMFI();
+        updateADX();
+        updateStochRsi();
+        updateAO();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -1901,6 +2167,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateATR();
         updateOBV();
         updateStoch();
+        updateCCI();
+        updateWilliamsR();
+        updateMFI();
+        updateADX();
+        updateStochRsi();
+        updateAO();
         const prev = arr[arr.length - 2] ?? lastCandle;
         setLastPrice({
           value: k.close,
@@ -2149,6 +2421,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     updateATR();
     updateOBV();
     updateStoch();
+    updateCCI();
+    updateWilliamsR();
+    updateMFI();
+    updateADX();
+    updateStochRsi();
+    updateAO();
     const last = view[view.length - 1];
     const prev = view[view.length - 2] ?? last;
     setLastPrice({
@@ -2177,7 +2455,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   // Determine which pane each indicator lives in (based on current layout)
   // Subpane index = position in the fixed order among active subpanes (+1 for
   // the price pane). Mirrors the unified subpane manager.
-  const subPaneOrder: IndicatorKey[] = ["rsi", "macd", "atr", "obv", "stoch"];
+  const subPaneOrder: IndicatorKey[] = [
+    "rsi",
+    "macd",
+    "atr",
+    "obv",
+    "stoch",
+    "cci",
+    "williamsR",
+    "mfi",
+    "adx",
+    "stochRsi",
+    "ao",
+  ];
   const activeSubPanes = subPaneOrder.filter((k) => indicators[k]);
   const subPaneIdx = (k: IndicatorKey) => activeSubPanes.indexOf(k) + 1;
   const rsiPaneIdx = subPaneIdx("rsi");
@@ -2185,6 +2475,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const atrPaneIdx = subPaneIdx("atr");
   const obvPaneIdx = subPaneIdx("obv");
   const stochPaneIdx = subPaneIdx("stoch");
+  const cciPaneIdx = subPaneIdx("cci");
+  const williamsRPaneIdx = subPaneIdx("williamsR");
+  const mfiPaneIdx = subPaneIdx("mfi");
+  const adxPaneIdx = subPaneIdx("adx");
+  const stochRsiPaneIdx = subPaneIdx("stochRsi");
+  const aoPaneIdx = subPaneIdx("ao");
 
   let measureRender: React.ReactNode = null;
   if (
@@ -2680,6 +2976,126 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             onToggleHide={() => toggleHidden("stoch")}
             onSettings={() => setSettingsTarget("stoch")}
             onRemove={() => removeIndicator("stoch")}
+          />
+        </div>
+      )}
+
+      {/* CCI pane label */}
+      {indicators.cci && paneOffsets[cciPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[cciPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`CCI ${config.cci}`}
+            value={pv("cci") !== undefined ? pv("cci")!.toFixed(1) : undefined}
+            color={INDICATOR_COLORS.cci}
+            hidden={hidden.cci}
+            onToggleHide={() => toggleHidden("cci")}
+            onSettings={() => setSettingsTarget("cci")}
+            onRemove={() => removeIndicator("cci")}
+          />
+        </div>
+      )}
+
+      {/* Williams %R pane label */}
+      {indicators.williamsR && paneOffsets[williamsRPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[williamsRPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`W%R ${config.williamsR}`}
+            value={
+              pv("williamsR") !== undefined
+                ? pv("williamsR")!.toFixed(1)
+                : undefined
+            }
+            color={INDICATOR_COLORS.williamsR}
+            hidden={hidden.williamsR}
+            onToggleHide={() => toggleHidden("williamsR")}
+            onSettings={() => setSettingsTarget("williamsR")}
+            onRemove={() => removeIndicator("williamsR")}
+          />
+        </div>
+      )}
+
+      {/* MFI pane label */}
+      {indicators.mfi && paneOffsets[mfiPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[mfiPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`MFI ${config.mfi}`}
+            value={pv("mfi") !== undefined ? pv("mfi")!.toFixed(1) : undefined}
+            color={INDICATOR_COLORS.mfi}
+            hidden={hidden.mfi}
+            onToggleHide={() => toggleHidden("mfi")}
+            onSettings={() => setSettingsTarget("mfi")}
+            onRemove={() => removeIndicator("mfi")}
+          />
+        </div>
+      )}
+
+      {/* ADX/DMI pane label */}
+      {indicators.adx && paneOffsets[adxPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[adxPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name={`ADX ${config.adx}`}
+            value={
+              pv("adx") !== undefined
+                ? `${pv("adx")!.toFixed(1)}  +DI ${(pv("adxPlus") ?? 0).toFixed(1)}  −DI ${(pv("adxMinus") ?? 0).toFixed(1)}`
+                : undefined
+            }
+            color={INDICATOR_COLORS.adx}
+            hidden={hidden.adx}
+            onToggleHide={() => toggleHidden("adx")}
+            onSettings={() => setSettingsTarget("adx")}
+            onRemove={() => removeIndicator("adx")}
+          />
+        </div>
+      )}
+
+      {/* Stochastic RSI pane label */}
+      {indicators.stochRsi && paneOffsets[stochRsiPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[stochRsiPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name="Stoch RSI"
+            value={
+              pv("stochRsiK") !== undefined
+                ? `${pv("stochRsiK")!.toFixed(1)} / ${(pv("stochRsiD") ?? 0).toFixed(1)}`
+                : undefined
+            }
+            color={INDICATOR_COLORS.stochRsi}
+            hidden={hidden.stochRsi}
+            onToggleHide={() => toggleHidden("stochRsi")}
+            onSettings={() => setSettingsTarget("stochRsi")}
+            onRemove={() => removeIndicator("stochRsi")}
+          />
+        </div>
+      )}
+
+      {/* Awesome Oscillator pane label */}
+      {indicators.ao && paneOffsets[aoPaneIdx] && !pillsCollapsed && !legendHidden && (
+        <div
+          style={{ top: paneOffsets[aoPaneIdx].top + 6, left: 12 }}
+          className="pointer-events-none absolute z-10"
+        >
+          <IndicatorPill
+            name="Awesome Oscillator"
+            value={pv("ao") !== undefined ? pv("ao")!.toFixed(2) : undefined}
+            color={INDICATOR_COLORS.ao}
+            hidden={hidden.ao}
+            onToggleHide={() => toggleHidden("ao")}
+            onSettings={() => setSettingsTarget("ao")}
+            onRemove={() => removeIndicator("ao")}
           />
         </div>
       )}

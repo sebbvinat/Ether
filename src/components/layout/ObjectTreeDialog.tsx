@@ -61,6 +61,12 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   obv: "OBV",
   stoch: "Estocástico",
   volume: "Volume",
+  cci: "CCI",
+  williamsR: "Williams %R",
+  mfi: "MFI",
+  adx: "ADX / DMI",
+  stochRsi: "Stochastic RSI",
+  ao: "Awesome Oscillator",
 };
 
 export function ObjectTreeDialog({ open, onOpenChange }: Props) {
