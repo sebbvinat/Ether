@@ -29,7 +29,11 @@ export type IndicatorKey =
   // Batch 2 — overlays de canal / tendencia
   | "donchian"
   | "keltner"
-  | "supertrend";
+  | "supertrend"
+  // Batch 3 — PSAR / Pivots / Ichimoku
+  | "psar"
+  | "pivots"
+  | "ichimoku";
 
 export type DrawingTool =
   | "cursor"
@@ -406,6 +410,12 @@ export interface IndicatorConfig {
   keltnerMult: number;
   supertrendAtr: number;
   supertrendMult: number;
+  // Batch 3
+  psarStep: number;
+  psarMax: number;
+  ichimokuTenkan: number;
+  ichimokuKijun: number;
+  ichimokuSenkouB: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -437,6 +447,11 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   keltnerMult: 2,
   supertrendAtr: 10,
   supertrendMult: 3,
+  psarStep: 0.02,
+  psarMax: 0.2,
+  ichimokuTenkan: 9,
+  ichimokuKijun: 26,
+  ichimokuSenkouB: 52,
 };
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
@@ -462,6 +477,9 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   donchian: "#26c6da",
   keltner: "#ab47bc",
   supertrend: "#26a69a",
+  psar: "#d1d4dc",
+  pivots: "#ffb74d",
+  ichimoku: "#2962ff",
 };
 
 export type LayoutType = "single" | "2h" | "2v" | "grid4";
@@ -705,6 +723,9 @@ export const useChartStore = create<ChartState>()(
         donchian: false,
         keltner: false,
         supertrend: false,
+        psar: false,
+        pivots: false,
+        ichimoku: false,
       },
       hidden: {
         ema20: false,
@@ -729,6 +750,9 @@ export const useChartStore = create<ChartState>()(
         donchian: false,
         keltner: false,
         supertrend: false,
+        psar: false,
+        pivots: false,
+        ichimoku: false,
       },
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,

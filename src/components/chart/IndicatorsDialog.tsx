@@ -84,6 +84,18 @@ const ENTRIES: Entry[] = [
     group: "Volatilidad",
     label: (c) => `Supertrend (${c.supertrendAtr}, ${c.supertrendMult})`,
   },
+  {
+    key: "psar",
+    group: "Tendencia",
+    label: (c) => `Parabolic SAR (${c.psarStep}, ${c.psarMax})`,
+  },
+  { key: "pivots", group: "Tendencia", label: () => "Pivot Points" },
+  {
+    key: "ichimoku",
+    group: "Tendencia",
+    label: (c) =>
+      `Ichimoku (${c.ichimokuTenkan}, ${c.ichimokuKijun}, ${c.ichimokuSenkouB})`,
+  },
 ];
 
 interface Props {

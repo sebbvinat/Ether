@@ -92,9 +92,28 @@ const CATALOG: CatalogEntry[] = [
     category: "Volatilidad",
     label: (c) => `Supertrend (${c.supertrendAtr}, ${c.supertrendMult})`,
   },
+  {
+    key: "psar",
+    category: "Tendencia",
+    label: (c) => `Parabolic SAR (${c.psarStep}, ${c.psarMax})`,
+  },
+  { key: "pivots", category: "Tendencia", label: () => "Pivot Points" },
+  {
+    key: "ichimoku",
+    category: "Tendencia",
+    label: (c) =>
+      `Ichimoku (${c.ichimokuTenkan}, ${c.ichimokuKijun}, ${c.ichimokuSenkouB})`,
+  },
 ];
 
-const CATEGORIES = ["Todos", "Medias móviles", "Volatilidad", "Volumen", "Osciladores"];
+const CATEGORIES = [
+  "Todos",
+  "Medias móviles",
+  "Volatilidad",
+  "Volumen",
+  "Osciladores",
+  "Tendencia",
+];
 
 export function BottomPanel() {
   const symbol = useChartStore((s) => s.symbol);

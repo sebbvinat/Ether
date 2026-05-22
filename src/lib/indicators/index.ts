@@ -621,3 +621,174 @@ export function supertrend(
   }
   return out;
 }
+
+// =========================================================================
+// Biblioteca extendida — Batch 3: PSAR / Pivots / Ichimoku
+// =========================================================================
+
+/** Parabolic SAR — algoritmo de Wilder. Devuelve un punto por vela (dots). */
+export function parabolicSar(
+  candles: Candle[],
+  step = 0.02,
+  max = 0.2,
+): IndicatorPoint[] {
+  if (candles.length < 2) return [];
+  const out: IndicatorPoint[] = [];
+  let trendUp = candles[1].close >= candles[0].close;
+  let af = step;
+  let ep = trendUp ? candles[0].high : candles[0].low;
+  let sar = trendUp ? candles[0].low : candles[0].high;
+  out.push({ time: candles[0].time, value: sar });
+  for (let i = 1; i < candles.length; i++) {
+    const h = candles[i].high;
+    const l = candles[i].low;
+    let newSar = sar + af * (ep - sar);
+    const prevLow1 = candles[i - 1].low;
+    const prevLow2 = candles[Math.max(0, i - 2)].low;
+    const prevHigh1 = candles[i - 1].high;
+    const prevHigh2 = candles[Math.max(0, i - 2)].high;
+    if (trendUp) {
+      newSar = Math.min(newSar, prevLow1, prevLow2);
+      if (l < newSar) {
+        trendUp = false;
+        newSar = ep;
+        ep = l;
+        af = step;
+      } else if (h > ep) {
+        ep = h;
+        af = Math.min(af + step, max);
+      }
+    } else {
+      newSar = Math.max(newSar, prevHigh1, prevHigh2);
+      if (h > newSar) {
+        trendUp = true;
+        newSar = ep;
+        ep = h;
+        af = step;
+      } else if (l < ep) {
+        ep = l;
+        af = Math.min(af + step, max);
+      }
+    }
+    sar = newSar;
+    out.push({ time: candles[i].time, value: sar });
+  }
+  return out;
+}
+
+export interface PivotLevels {
+  p: number;
+  r1: number;
+  r2: number;
+  r3: number;
+  s1: number;
+  s2: number;
+  s3: number;
+}
+
+/** Pivot Points Standard — calculados de la HLC del último día completo. */
+export function pivotPoints(candles: Candle[]): PivotLevels | null {
+  if (candles.length < 2) return null;
+  const dayKey = (t: number) =>
+    new Date(t * 1000).toISOString().slice(0, 10);
+  const lastDay = dayKey(candles[candles.length - 1].time);
+  let targetDay: string | null = null;
+  for (let i = candles.length - 1; i >= 0; i--) {
+    const d = dayKey(candles[i].time);
+    if (d !== lastDay) {
+      targetDay = d;
+      break;
+    }
+  }
+  if (!targetDay) return null;
+  let h = -Infinity;
+  let l = Infinity;
+  let c = 0;
+  let found = false;
+  for (const cd of candles) {
+    if (dayKey(cd.time) === targetDay) {
+      h = Math.max(h, cd.high);
+      l = Math.min(l, cd.low);
+      c = cd.close;
+      found = true;
+    }
+  }
+  if (!found) return null;
+  const p = (h + l + c) / 3;
+  return {
+    p,
+    r1: 2 * p - l,
+    s1: 2 * p - h,
+    r2: p + (h - l),
+    s2: p - (h - l),
+    r3: h + 2 * (p - l),
+    s3: l - 2 * (h - p),
+  };
+}
+
+export interface IchimokuPoint {
+  time: number;
+  tenkan: number | null;
+  kijun: number | null;
+  senkouA: number | null;
+  senkouB: number | null;
+  chikou: number | null;
+}
+
+/** Ichimoku Kinko Hyo — 5 líneas con desplazamiento (cloud no rellenada). */
+export function ichimoku(
+  candles: Candle[],
+  tenkanP = 9,
+  kijunP = 26,
+  senkouBP = 52,
+  displacement = 26,
+): IchimokuPoint[] {
+  const hh = (p: number, i: number) => {
+    let m = -Infinity;
+    for (let j = i - p + 1; j <= i; j++) m = Math.max(m, candles[j].high);
+    return m;
+  };
+  const ll = (p: number, i: number) => {
+    let m = Infinity;
+    for (let j = i - p + 1; j <= i; j++) m = Math.min(m, candles[j].low);
+    return m;
+  };
+  const tenkan: (number | null)[] = [];
+  const kijun: (number | null)[] = [];
+  const senkB: (number | null)[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    tenkan.push(
+      i >= tenkanP - 1 ? (hh(tenkanP, i) + ll(tenkanP, i)) / 2 : null,
+    );
+    kijun.push(i >= kijunP - 1 ? (hh(kijunP, i) + ll(kijunP, i)) / 2 : null);
+    senkB.push(
+      i >= senkouBP - 1 ? (hh(senkouBP, i) + ll(senkouBP, i)) / 2 : null,
+    );
+  }
+  const senkA: (number | null)[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    senkA.push(
+      tenkan[i] != null && kijun[i] != null
+        ? (tenkan[i]! + kijun[i]!) / 2
+        : null,
+    );
+  }
+  const out: IchimokuPoint[] = [];
+  for (let i = 0; i < candles.length; i++) {
+    out.push({
+      time: candles[i].time,
+      tenkan: tenkan[i],
+      kijun: kijun[i],
+      // Senkou se proyecta +displacement: en el índice i mostramos el valor
+      // calculado displacement velas atrás (lo que normalmente caería acá).
+      senkouA: i >= displacement ? senkA[i - displacement] : null,
+      senkouB: i >= displacement ? senkB[i - displacement] : null,
+      // Chikou = close desplazado -displacement.
+      chikou:
+        i + displacement < candles.length
+          ? candles[i + displacement].close
+          : null,
+    });
+  }
+  return out;
+}

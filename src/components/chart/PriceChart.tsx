@@ -36,6 +36,9 @@ import {
   donchian,
   keltner,
   supertrend,
+  parabolicSar,
+  pivotPoints,
+  ichimoku,
 } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
@@ -145,6 +148,9 @@ interface LastValues {
   keltnerUpper?: number;
   keltnerLower?: number;
   supertrend?: number;
+  psar?: number;
+  ichiTenkan?: number;
+  ichiKijun?: number;
 }
 
 interface PaneOffset {
@@ -175,6 +181,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const keltnerLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
   const supertrendUpRef = useRef<ISeriesApi<"Line"> | null>(null);
   const supertrendDownRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Batch 3 — PSAR / Pivots / Ichimoku
+  const psarRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichiTenkanRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichiKijunRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichiSenkouARef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichiSenkouBRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const ichiChikouRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const pivotLinesRef = useRef<IPriceLine[]>([]);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
@@ -521,6 +535,41 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     supertrendDownRef.current = chart.addSeries(LineSeries, {
       color: TV_COLORS.red,
       lineWidth: 2,
+      ...dim2,
+    });
+    // Batch 3 — PSAR (dots: línea invisible + point markers)
+    psarRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.psar,
+      lineVisible: false,
+      pointMarkersVisible: true,
+      pointMarkersRadius: 1.6,
+      ...dim2,
+    });
+    // Ichimoku — 5 líneas
+    ichiTenkanRef.current = chart.addSeries(LineSeries, {
+      color: "#2962ff",
+      lineWidth: 1,
+      ...dim2,
+    });
+    ichiKijunRef.current = chart.addSeries(LineSeries, {
+      color: "#ef5350",
+      lineWidth: 1,
+      ...dim2,
+    });
+    ichiSenkouARef.current = chart.addSeries(LineSeries, {
+      color: "#26a69a",
+      lineWidth: 1,
+      ...dim2,
+    });
+    ichiSenkouBRef.current = chart.addSeries(LineSeries, {
+      color: "#ab47bc",
+      lineWidth: 1,
+      ...dim2,
+    });
+    ichiChikouRef.current = chart.addSeries(LineSeries, {
+      color: "#ffb74d",
+      lineWidth: 1,
+      lineStyle: 2,
       ...dim2,
     });
 
@@ -965,6 +1014,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           keltnerLower: lineVal(keltnerLowerRef),
           supertrend:
             lineVal(supertrendUpRef) ?? lineVal(supertrendDownRef),
+          psar: lineVal(psarRef),
+          ichiTenkan: lineVal(ichiTenkanRef),
+          ichiKijun: lineVal(ichiKijunRef),
           volume: v,
         });
       }
@@ -1019,6 +1071,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       keltnerLowerRef.current = null;
       supertrendUpRef.current = null;
       supertrendDownRef.current = null;
+      psarRef.current = null;
+      ichiTenkanRef.current = null;
+      ichiKijunRef.current = null;
+      ichiSenkouARef.current = null;
+      ichiSenkouBRef.current = null;
+      ichiChikouRef.current = null;
+      pivotLinesRef.current = [];
       vwapRef.current = null;
       rsiRef.current = null;
       rsi30Ref.current = null;
@@ -1292,6 +1351,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     keltnerLowerRef.current?.applyOptions({ visible: v("keltner") });
     supertrendUpRef.current?.applyOptions({ visible: v("supertrend") });
     supertrendDownRef.current?.applyOptions({ visible: v("supertrend") });
+    psarRef.current?.applyOptions({ visible: v("psar") });
+    ichiTenkanRef.current?.applyOptions({ visible: v("ichimoku") });
+    ichiKijunRef.current?.applyOptions({ visible: v("ichimoku") });
+    ichiSenkouARef.current?.applyOptions({ visible: v("ichimoku") });
+    ichiSenkouBRef.current?.applyOptions({ visible: v("ichimoku") });
+    ichiChikouRef.current?.applyOptions({ visible: v("ichimoku") });
     vwapRef.current?.applyOptions({ visible: v("vwap") });
     if (rsiRef.current) rsiRef.current.applyOptions({ visible: v("rsi") });
     if (rsi30Ref.current) rsi30Ref.current.applyOptions({ visible: v("rsi") });
@@ -1496,6 +1561,19 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   useEffect(() => {
     updateSupertrend();
   }, [config.supertrendAtr, config.supertrendMult]);
+
+  useEffect(() => {
+    updatePSAR();
+  }, [config.psarStep, config.psarMax]);
+
+  useEffect(() => {
+    updateIchimoku();
+  }, [config.ichimokuTenkan, config.ichimokuKijun, config.ichimokuSenkouB]);
+
+  // Pivots: alta/baja de las price lines según el toggle.
+  useEffect(() => {
+    updatePivots();
+  }, [indicators.pivots, hidden.pivots]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -1826,6 +1904,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             updateDonchian();
             updateKeltner();
             updateSupertrend();
+            updatePSAR();
+            updateIchimoku();
+            updatePivots();
           })
           .catch((e) => console.error("loadOlder", e))
           .finally(() => {
@@ -2246,6 +2327,90 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     setLastValues((prev) => ({ ...prev, supertrend: data.at(-1)?.value }));
   }
 
+  function updatePSAR() {
+    const c = getViewCandles();
+    if (c.length === 0 || !psarRef.current) return;
+    const cfg = configRef.current;
+    const data = parabolicSar(c, cfg.psarStep, cfg.psarMax);
+    psarRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })),
+    );
+    setLastValues((prev) => ({ ...prev, psar: data.at(-1)?.value }));
+  }
+
+  function updateIchimoku() {
+    const c = getViewCandles();
+    if (
+      c.length === 0 ||
+      !ichiTenkanRef.current ||
+      !ichiKijunRef.current ||
+      !ichiSenkouARef.current ||
+      !ichiSenkouBRef.current ||
+      !ichiChikouRef.current
+    )
+      return;
+    const cfg = configRef.current;
+    const data = ichimoku(
+      c,
+      cfg.ichimokuTenkan,
+      cfg.ichimokuKijun,
+      cfg.ichimokuSenkouB,
+    );
+    const series = (sel: (p: (typeof data)[number]) => number | null) =>
+      data
+        .filter((p) => sel(p) != null)
+        .map((p) => ({ time: p.time as UTCTimestamp, value: sel(p)! }));
+    ichiTenkanRef.current.setData(series((p) => p.tenkan));
+    ichiKijunRef.current.setData(series((p) => p.kijun));
+    ichiSenkouARef.current.setData(series((p) => p.senkouA));
+    ichiSenkouBRef.current.setData(series((p) => p.senkouB));
+    ichiChikouRef.current.setData(series((p) => p.chikou));
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      ichiTenkan: last?.tenkan ?? undefined,
+      ichiKijun: last?.kijun ?? undefined,
+    }));
+  }
+
+  function updatePivots() {
+    const series = candleSeriesRef.current;
+    if (!series) return;
+    // Limpiar líneas anteriores
+    for (const pl of pivotLinesRef.current) {
+      try {
+        series.removePriceLine(pl);
+      } catch {}
+    }
+    pivotLinesRef.current = [];
+    const st = useChartStore.getState();
+    if (!st.indicators.pivots || st.hidden.pivots) return;
+    const c = getViewCandles();
+    if (c.length === 0) return;
+    const lv = pivotPoints(c);
+    if (!lv) return;
+    const levels: { price: number; title: string; color: string }[] = [
+      { price: lv.r3, title: "R3", color: `${TV_COLORS.red}` },
+      { price: lv.r2, title: "R2", color: `${TV_COLORS.red}` },
+      { price: lv.r1, title: "R1", color: `${TV_COLORS.red}` },
+      { price: lv.p, title: "P", color: INDICATOR_COLORS.pivots },
+      { price: lv.s1, title: "S1", color: `${TV_COLORS.green}` },
+      { price: lv.s2, title: "S2", color: `${TV_COLORS.green}` },
+      { price: lv.s3, title: "S3", color: `${TV_COLORS.green}` },
+    ];
+    for (const lvl of levels) {
+      const pl = series.createPriceLine({
+        price: lvl.price,
+        color: lvl.color,
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: lvl.title,
+      });
+      pivotLinesRef.current.push(pl);
+    }
+  }
+
   // Load historical data + subscribe live
   useEffect(() => {
     const unsub = subscribeMarket(symbol, timeframe, {
@@ -2297,6 +2462,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateDonchian();
         updateKeltner();
         updateSupertrend();
+        updatePSAR();
+        updateIchimoku();
+        updatePivots();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -2364,6 +2532,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateDonchian();
         updateKeltner();
         updateSupertrend();
+        updatePSAR();
+        updateIchimoku();
+        updatePivots();
         const prev = arr[arr.length - 2] ?? lastCandle;
         setLastPrice({
           value: k.close,
@@ -2621,6 +2792,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     updateDonchian();
     updateKeltner();
     updateSupertrend();
+    updatePSAR();
+    updateIchimoku();
+    updatePivots();
     const last = view[view.length - 1];
     const prev = view[view.length - 2] ?? last;
     setLastPrice({
@@ -3103,6 +3277,44 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onToggleHide={() => toggleHidden("supertrend")}
               onSettings={() => setSettingsTarget("supertrend")}
               onRemove={() => removeIndicator("supertrend")}
+            />
+          )}
+          {indicators.psar && (
+            <IndicatorPill
+              name="Parabolic SAR"
+              value={
+                pv("psar") !== undefined ? formatPrice(pv("psar")!) : undefined
+              }
+              color={INDICATOR_COLORS.psar}
+              hidden={hidden.psar}
+              onToggleHide={() => toggleHidden("psar")}
+              onSettings={() => setSettingsTarget("psar")}
+              onRemove={() => removeIndicator("psar")}
+            />
+          )}
+          {indicators.pivots && (
+            <IndicatorPill
+              name="Pivot Points"
+              color={INDICATOR_COLORS.pivots}
+              hidden={hidden.pivots}
+              onToggleHide={() => toggleHidden("pivots")}
+              onSettings={() => setSettingsTarget("pivots")}
+              onRemove={() => removeIndicator("pivots")}
+            />
+          )}
+          {indicators.ichimoku && (
+            <IndicatorPill
+              name={`Ichimoku ${config.ichimokuTenkan}, ${config.ichimokuKijun}, ${config.ichimokuSenkouB}`}
+              value={
+                pv("ichiTenkan") !== undefined
+                  ? `T ${formatPrice(pv("ichiTenkan")!)}  K ${formatPrice(pv("ichiKijun") ?? 0)}`
+                  : undefined
+              }
+              color={INDICATOR_COLORS.ichimoku}
+              hidden={hidden.ichimoku}
+              onToggleHide={() => toggleHidden("ichimoku")}
+              onSettings={() => setSettingsTarget("ichimoku")}
+              onRemove={() => removeIndicator("ichimoku")}
             />
           )}
           {indicators.volume && (
