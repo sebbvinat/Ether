@@ -961,6 +961,21 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       if (!param.time || !candleSeriesRef.current) {
         setHover(null);
         setHoverValues({});
+        // Sin hover → el Data Window muestra la última vela.
+        const lastC = candlesRef.current.at(-1);
+        if (lastC) {
+          useChartStore.getState().setDataWindow({
+            o: lastC.open,
+            h: lastC.high,
+            l: lastC.low,
+            c: lastC.close,
+            v: lastC.volume,
+            changePct:
+              lastC.open === 0
+                ? 0
+                : ((lastC.close - lastC.open) / lastC.open) * 100,
+          });
+        }
         return;
       }
       const data = param.seriesData.get(candleSeriesRef.current);
@@ -971,6 +986,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         const o = data.open as number;
         const c = data.close as number;
         const v = vol && "value" in vol ? (vol.value as number) : 0;
+        const hPct = o === 0 ? 0 : ((c - o) / o) * 100;
         setHover({
           o,
           h: data.high as number,
@@ -978,7 +994,16 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           c,
           v,
           time: Number(param.time),
-          pct: o === 0 ? 0 : ((c - o) / o) * 100,
+          pct: hPct,
+        });
+        // Alimentar el Data Window con la vela bajo el cursor.
+        useChartStore.getState().setDataWindow({
+          o,
+          h: data.high as number,
+          l: data.low as number,
+          c,
+          v,
+          changePct: hPct,
         });
         const lineVal = (ref: {
           current: ISeriesApi<"Line"> | ISeriesApi<"Histogram"> | null;

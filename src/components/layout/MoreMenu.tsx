@@ -57,6 +57,8 @@ export function MoreMenu() {
   const setLogScale = useChartStore((s) => s.setLogScale);
   const syncCharts = useChartStore((s) => s.syncCharts);
   const setSyncCharts = useChartStore((s) => s.setSyncCharts);
+  const dataWindowOpen = useChartStore((s) => s.dataWindowOpen);
+  const setDataWindowOpen = useChartStore((s) => s.setDataWindowOpen);
   const binanceMarket = useChartStore((s) => s.binanceMarket);
   const setBinanceMarket = useChartStore((s) => s.setBinanceMarket);
 
@@ -209,6 +211,11 @@ export function MoreMenu() {
                 label="Sync zoom entre slots"
                 value={syncCharts}
                 onChange={setSyncCharts}
+              />
+              <Toggle
+                label="Data Window (OHLCV)"
+                value={dataWindowOpen}
+                onChange={setDataWindowOpen}
               />
               <Row
                 icon={<Settings2 className="h-4 w-4" />}
