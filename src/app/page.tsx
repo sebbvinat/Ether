@@ -15,6 +15,7 @@ import { InstallBanner } from "@/components/layout/InstallBanner";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { PineEditor } from "@/components/pine/PineEditor";
 import { BacktestDialog } from "@/components/backtest/BacktestDialog";
+import { DataWindow } from "@/components/chart/DataWindow";
 import { DrawingPropertiesDialog } from "@/components/chart/DrawingPropertiesDialog";
 import { useChartStore } from "@/lib/store/chart-store";
 
@@ -139,6 +140,7 @@ export default function HomePage() {
           <div className="min-h-0 flex-1">
             <ChartGrid />
           </div>
+          <DataWindow />
           {(focusMode || cleanMode) && (
             <button
               onClick={() => {

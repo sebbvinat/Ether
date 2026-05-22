@@ -559,6 +559,17 @@ interface ChartState {
   priceScaleMode: PriceScaleModeKey;
   /** Overrides de apariencia del gráfico (colores velas/fondo/grilla). */
   chartAppearance: ChartAppearance;
+  /** Data Window — panel OHLCV de la vela bajo el cursor. */
+  dataWindowOpen: boolean;
+  /** Snapshot que alimenta el Data Window (ephemeral, lo escribe PriceChart). */
+  dataWindow: {
+    o: number;
+    h: number;
+    l: number;
+    c: number;
+    v: number;
+    changePct: number;
+  } | null;
   /** When true, panning/zoom in one slot syncs the visible time range to others */
   syncCharts: boolean;
   /** Per-slot compare overlays — extra symbols to plot as line on the same chart */
@@ -647,6 +658,8 @@ interface ChartState {
   setPriceScaleMode: (m: PriceScaleModeKey) => void;
   setChartAppearance: (patch: Partial<ChartAppearance>) => void;
   resetChartAppearance: () => void;
+  setDataWindowOpen: (v: boolean) => void;
+  setDataWindow: (d: ChartState["dataWindow"]) => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -799,6 +812,8 @@ export const useChartStore = create<ChartState>()(
       logScale: false,
       priceScaleMode: "normal" as PriceScaleModeKey,
       chartAppearance: {} as ChartAppearance,
+      dataWindowOpen: false,
+      dataWindow: null,
       syncCharts: false,
       compares: {},
       theme: "dark" as "dark" | "light",
@@ -929,6 +944,8 @@ export const useChartStore = create<ChartState>()(
       setChartAppearance: (patch) =>
         set((s) => ({ chartAppearance: { ...s.chartAppearance, ...patch } })),
       resetChartAppearance: () => set({ chartAppearance: {} }),
+      setDataWindowOpen: (dataWindowOpen) => set({ dataWindowOpen }),
+      setDataWindow: (dataWindow) => set({ dataWindow }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
@@ -1446,6 +1463,7 @@ export const useChartStore = create<ChartState>()(
         logScale: s.logScale,
         priceScaleMode: s.priceScaleMode,
         chartAppearance: s.chartAppearance,
+        dataWindowOpen: s.dataWindowOpen,
         syncCharts: s.syncCharts,
         compares: s.compares,
         workspaces: s.workspaces,
