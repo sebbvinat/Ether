@@ -25,7 +25,11 @@ export type IndicatorKey =
   | "mfi"
   | "adx"
   | "stochRsi"
-  | "ao";
+  | "ao"
+  // Batch 2 — overlays de canal / tendencia
+  | "donchian"
+  | "keltner"
+  | "supertrend";
 
 export type DrawingTool =
   | "cursor"
@@ -395,6 +399,13 @@ export interface IndicatorConfig {
   stochRsiStoch: number;
   aoFast: number;
   aoSlow: number;
+  // Batch 2
+  donchianPeriod: number;
+  keltnerEma: number;
+  keltnerAtr: number;
+  keltnerMult: number;
+  supertrendAtr: number;
+  supertrendMult: number;
 }
 
 export const DEFAULT_CONFIG: IndicatorConfig = {
@@ -420,6 +431,12 @@ export const DEFAULT_CONFIG: IndicatorConfig = {
   stochRsiStoch: 14,
   aoFast: 5,
   aoSlow: 34,
+  donchianPeriod: 20,
+  keltnerEma: 20,
+  keltnerAtr: 10,
+  keltnerMult: 2,
+  supertrendAtr: 10,
+  supertrendMult: 3,
 };
 
 export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
@@ -442,6 +459,9 @@ export const INDICATOR_COLORS: Record<IndicatorKey, string> = {
   adx: "#2962ff",
   stochRsi: "#ab47bc",
   ao: "#787b86",
+  donchian: "#26c6da",
+  keltner: "#ab47bc",
+  supertrend: "#26a69a",
 };
 
 export type LayoutType = "single" | "2h" | "2v" | "grid4";
@@ -682,6 +702,9 @@ export const useChartStore = create<ChartState>()(
         adx: false,
         stochRsi: false,
         ao: false,
+        donchian: false,
+        keltner: false,
+        supertrend: false,
       },
       hidden: {
         ema20: false,
@@ -703,6 +726,9 @@ export const useChartStore = create<ChartState>()(
         adx: false,
         stochRsi: false,
         ao: false,
+        donchian: false,
+        keltner: false,
+        supertrend: false,
       },
       config: { ...DEFAULT_CONFIG },
       chartStyle: "candles" as ChartStyle,

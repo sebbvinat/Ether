@@ -35,6 +35,9 @@ const TITLES: Record<IndicatorKey, string> = {
   adx: "ADX / DMI",
   stochRsi: "Stochastic RSI",
   ao: "Awesome Oscillator",
+  donchian: "Donchian Channels",
+  keltner: "Keltner Channels",
+  supertrend: "Supertrend",
 };
 
 export function IndicatorSettingsDialog() {
@@ -124,6 +127,19 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
       onSave({
         aoFast: clamp(draft.aoFast, 2, 100),
         aoSlow: clamp(draft.aoSlow, 3, 200),
+      });
+    else if (target === "donchian")
+      onSave({ donchianPeriod: clamp(draft.donchianPeriod, 2, 500) });
+    else if (target === "keltner")
+      onSave({
+        keltnerEma: clamp(draft.keltnerEma, 2, 200),
+        keltnerAtr: clamp(draft.keltnerAtr, 2, 100),
+        keltnerMult: clamp(draft.keltnerMult, 1, 10),
+      });
+    else if (target === "supertrend")
+      onSave({
+        supertrendAtr: clamp(draft.supertrendAtr, 2, 100),
+        supertrendMult: clamp(draft.supertrendMult, 1, 20),
       });
     else if (target === "macd")
       onSave({
@@ -215,6 +231,46 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
             label="Lenta"
             value={draft.aoSlow}
             onChange={(n) => setDraft((d) => ({ ...d, aoSlow: n }))}
+          />
+        </div>
+      )}
+      {target === "donchian" && (
+        <Field
+          label="Período"
+          value={draft.donchianPeriod}
+          onChange={(n) => setDraft((d) => ({ ...d, donchianPeriod: n }))}
+        />
+      )}
+      {target === "keltner" && (
+        <div className="grid grid-cols-3 gap-2">
+          <Field
+            label="EMA"
+            value={draft.keltnerEma}
+            onChange={(n) => setDraft((d) => ({ ...d, keltnerEma: n }))}
+          />
+          <Field
+            label="ATR"
+            value={draft.keltnerAtr}
+            onChange={(n) => setDraft((d) => ({ ...d, keltnerAtr: n }))}
+          />
+          <Field
+            label="Mult."
+            value={draft.keltnerMult}
+            onChange={(n) => setDraft((d) => ({ ...d, keltnerMult: n }))}
+          />
+        </div>
+      )}
+      {target === "supertrend" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field
+            label="ATR"
+            value={draft.supertrendAtr}
+            onChange={(n) => setDraft((d) => ({ ...d, supertrendAtr: n }))}
+          />
+          <Field
+            label="Multiplicador"
+            value={draft.supertrendMult}
+            onChange={(n) => setDraft((d) => ({ ...d, supertrendMult: n }))}
           />
         </div>
       )}

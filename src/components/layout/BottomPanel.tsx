@@ -77,6 +77,21 @@ const CATALOG: CatalogEntry[] = [
     category: "Osciladores",
     label: (c) => `Awesome Oscillator (${c.aoFast}, ${c.aoSlow})`,
   },
+  {
+    key: "donchian",
+    category: "Volatilidad",
+    label: (c) => `Donchian (${c.donchianPeriod})`,
+  },
+  {
+    key: "keltner",
+    category: "Volatilidad",
+    label: (c) => `Keltner (${c.keltnerEma}, ${c.keltnerMult})`,
+  },
+  {
+    key: "supertrend",
+    category: "Volatilidad",
+    label: (c) => `Supertrend (${c.supertrendAtr}, ${c.supertrendMult})`,
+  },
 ];
 
 const CATEGORIES = ["Todos", "Medias móviles", "Volatilidad", "Volumen", "Osciladores"];

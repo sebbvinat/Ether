@@ -509,3 +509,115 @@ export function awesomeOscillator(
   }
   return out;
 }
+
+// =========================================================================
+// Biblioteca extendida — Batch 2: overlays de canal / tendencia
+// =========================================================================
+
+export interface ChannelPoint {
+  time: number;
+  upper: number;
+  mid: number;
+  lower: number;
+}
+
+/** Donchian Channels — máximo/mínimo de N velas. */
+export function donchian(candles: Candle[], period = 20): ChannelPoint[] {
+  const out: ChannelPoint[] = [];
+  if (candles.length < period) return out;
+  for (let i = period - 1; i < candles.length; i++) {
+    let hh = -Infinity;
+    let ll = Infinity;
+    for (let j = i - period + 1; j <= i; j++) {
+      if (candles[j].high > hh) hh = candles[j].high;
+      if (candles[j].low < ll) ll = candles[j].low;
+    }
+    out.push({
+      time: candles[i].time,
+      upper: hh,
+      lower: ll,
+      mid: (hh + ll) / 2,
+    });
+  }
+  return out;
+}
+
+/** Keltner Channels — EMA ± multiplicador × ATR. */
+export function keltner(
+  candles: Candle[],
+  emaPeriod = 20,
+  atrPeriod = 10,
+  mult = 2,
+): ChannelPoint[] {
+  const emaArr = ema(candles, emaPeriod);
+  const atrArr = atr(candles, atrPeriod);
+  const atrMap = new Map(atrArr.map((p) => [p.time, p.value]));
+  const out: ChannelPoint[] = [];
+  for (const e of emaArr) {
+    const a = atrMap.get(e.time);
+    if (a === undefined) continue;
+    out.push({
+      time: e.time,
+      mid: e.value,
+      upper: e.value + mult * a,
+      lower: e.value - mult * a,
+    });
+  }
+  return out;
+}
+
+export interface SupertrendPoint {
+  time: number;
+  value: number;
+  trend: "up" | "down";
+}
+
+/** Supertrend — banda ATR con "trabado", algoritmo canónico. */
+export function supertrend(
+  candles: Candle[],
+  atrPeriod = 10,
+  mult = 3,
+): SupertrendPoint[] {
+  const atrArr = atr(candles, atrPeriod);
+  if (atrArr.length === 0) return [];
+  const atrMap = new Map(atrArr.map((p) => [p.time, p.value]));
+  const out: SupertrendPoint[] = [];
+  let prevFU = 0;
+  let prevFL = 0;
+  let prevST = 0;
+  let prevClose = 0;
+  let started = false;
+  for (let i = 0; i < candles.length; i++) {
+    const a = atrMap.get(candles[i].time);
+    if (a === undefined) continue;
+    const hl2 = (candles[i].high + candles[i].low) / 2;
+    const basicUpper = hl2 + mult * a;
+    const basicLower = hl2 - mult * a;
+    if (!started) {
+      out.push({ time: candles[i].time, value: basicLower, trend: "up" });
+      prevFU = basicUpper;
+      prevFL = basicLower;
+      prevST = basicLower;
+      prevClose = candles[i].close;
+      started = true;
+      continue;
+    }
+    const fu =
+      basicUpper < prevFU || prevClose > prevFU ? basicUpper : prevFU;
+    const fl =
+      basicLower > prevFL || prevClose < prevFL ? basicLower : prevFL;
+    let st: number;
+    if (prevST === prevFU) {
+      st = candles[i].close <= fu ? fu : fl;
+    } else {
+      st = candles[i].close >= fl ? fl : fu;
+    }
+    const trend: "up" | "down" = st === fu ? "down" : "up";
+    out.push({ time: candles[i].time, value: st, trend });
+    prevFU = fu;
+    prevFL = fl;
+    prevST = st;
+    prevClose = candles[i].close;
+  }
+  return out;
+}

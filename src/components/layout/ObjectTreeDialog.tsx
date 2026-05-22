@@ -67,6 +67,9 @@ const INDICATOR_LABELS: Record<IndicatorKey, string> = {
   adx: "ADX / DMI",
   stochRsi: "Stochastic RSI",
   ao: "Awesome Oscillator",
+  donchian: "Donchian Channels",
+  keltner: "Keltner Channels",
+  supertrend: "Supertrend",
 };
 
 export function ObjectTreeDialog({ open, onOpenChange }: Props) {
