@@ -33,6 +33,9 @@ import {
   adx,
   stochRsi,
   awesomeOscillator,
+  donchian,
+  keltner,
+  supertrend,
 } from "@/lib/indicators";
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import {
@@ -137,6 +140,11 @@ interface LastValues {
   stochRsiK?: number;
   stochRsiD?: number;
   ao?: number;
+  donchianUpper?: number;
+  donchianLower?: number;
+  keltnerUpper?: number;
+  keltnerLower?: number;
+  supertrend?: number;
 }
 
 interface PaneOffset {
@@ -158,6 +166,15 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const bbUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbBasisRef = useRef<ISeriesApi<"Line"> | null>(null);
   const bbLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  // Batch 2 — overlays de canal / tendencia
+  const donchianUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const donchianMidRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const donchianLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const keltnerUpperRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const keltnerMidRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const keltnerLowerRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const supertrendUpRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const supertrendDownRef = useRef<ISeriesApi<"Line"> | null>(null);
   const vwapRef = useRef<ISeriesApi<"Line"> | null>(null);
   const overlaySeriesRef = useRef<ISeriesApi<"Line"> | ISeriesApi<"Area"> | null>(null);
   const compareSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
@@ -457,6 +474,54 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       priceLineVisible: false,
       lastValueVisible: false,
       crosshairMarkerVisible: false,
+    });
+    // Batch 2 — Donchian / Keltner / Supertrend
+    const dim2 = {
+      priceLineVisible: false,
+      lastValueVisible: false,
+      crosshairMarkerVisible: false,
+    } as const;
+    donchianUpperRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.donchian,
+      lineWidth: 1,
+      ...dim2,
+    });
+    donchianMidRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.donchian,
+      lineWidth: 1,
+      lineStyle: 2,
+      ...dim2,
+    });
+    donchianLowerRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.donchian,
+      lineWidth: 1,
+      ...dim2,
+    });
+    keltnerUpperRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.keltner,
+      lineWidth: 1,
+      ...dim2,
+    });
+    keltnerMidRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.keltner,
+      lineWidth: 1,
+      lineStyle: 2,
+      ...dim2,
+    });
+    keltnerLowerRef.current = chart.addSeries(LineSeries, {
+      color: INDICATOR_COLORS.keltner,
+      lineWidth: 1,
+      ...dim2,
+    });
+    supertrendUpRef.current = chart.addSeries(LineSeries, {
+      color: TV_COLORS.green,
+      lineWidth: 2,
+      ...dim2,
+    });
+    supertrendDownRef.current = chart.addSeries(LineSeries, {
+      color: TV_COLORS.red,
+      lineWidth: 2,
+      ...dim2,
     });
 
     chartRef.current = chart;
@@ -894,6 +959,12 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           stochRsiK: lineVal(stochRsiKRef),
           stochRsiD: lineVal(stochRsiDRef),
           ao: lineVal(aoRef),
+          donchianUpper: lineVal(donchianUpperRef),
+          donchianLower: lineVal(donchianLowerRef),
+          keltnerUpper: lineVal(keltnerUpperRef),
+          keltnerLower: lineVal(keltnerLowerRef),
+          supertrend:
+            lineVal(supertrendUpRef) ?? lineVal(supertrendDownRef),
           volume: v,
         });
       }
@@ -940,6 +1011,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       bbUpperRef.current = null;
       bbBasisRef.current = null;
       bbLowerRef.current = null;
+      donchianUpperRef.current = null;
+      donchianMidRef.current = null;
+      donchianLowerRef.current = null;
+      keltnerUpperRef.current = null;
+      keltnerMidRef.current = null;
+      keltnerLowerRef.current = null;
+      supertrendUpRef.current = null;
+      supertrendDownRef.current = null;
       vwapRef.current = null;
       rsiRef.current = null;
       rsi30Ref.current = null;
@@ -1205,6 +1284,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     bbUpperRef.current?.applyOptions({ visible: v("bb") });
     bbBasisRef.current?.applyOptions({ visible: v("bb") });
     bbLowerRef.current?.applyOptions({ visible: v("bb") });
+    donchianUpperRef.current?.applyOptions({ visible: v("donchian") });
+    donchianMidRef.current?.applyOptions({ visible: v("donchian") });
+    donchianLowerRef.current?.applyOptions({ visible: v("donchian") });
+    keltnerUpperRef.current?.applyOptions({ visible: v("keltner") });
+    keltnerMidRef.current?.applyOptions({ visible: v("keltner") });
+    keltnerLowerRef.current?.applyOptions({ visible: v("keltner") });
+    supertrendUpRef.current?.applyOptions({ visible: v("supertrend") });
+    supertrendDownRef.current?.applyOptions({ visible: v("supertrend") });
     vwapRef.current?.applyOptions({ visible: v("vwap") });
     if (rsiRef.current) rsiRef.current.applyOptions({ visible: v("rsi") });
     if (rsi30Ref.current) rsi30Ref.current.applyOptions({ visible: v("rsi") });
@@ -1397,6 +1484,18 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   useEffect(() => {
     updateAO();
   }, [config.aoFast, config.aoSlow]);
+
+  useEffect(() => {
+    updateDonchian();
+  }, [config.donchianPeriod]);
+
+  useEffect(() => {
+    updateKeltner();
+  }, [config.keltnerEma, config.keltnerAtr, config.keltnerMult]);
+
+  useEffect(() => {
+    updateSupertrend();
+  }, [config.supertrendAtr, config.supertrendMult]);
 
   // Sync price lines from store to the candle series
   useEffect(() => {
@@ -1724,6 +1823,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
             updateADX();
             updateStochRsi();
             updateAO();
+            updateDonchian();
+            updateKeltner();
+            updateSupertrend();
           })
           .catch((e) => console.error("loadOlder", e))
           .finally(() => {
@@ -2061,6 +2163,89 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     setLastValues((prev) => ({ ...prev, ao: data.at(-1)?.value }));
   }
 
+  function updateDonchian() {
+    const c = getViewCandles();
+    if (
+      c.length === 0 ||
+      !donchianUpperRef.current ||
+      !donchianMidRef.current ||
+      !donchianLowerRef.current
+    )
+      return;
+    const data = donchian(c, configRef.current.donchianPeriod);
+    donchianUpperRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })),
+    );
+    donchianMidRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.mid })),
+    );
+    donchianLowerRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })),
+    );
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      donchianUpper: last?.upper,
+      donchianLower: last?.lower,
+    }));
+  }
+
+  function updateKeltner() {
+    const c = getViewCandles();
+    if (
+      c.length === 0 ||
+      !keltnerUpperRef.current ||
+      !keltnerMidRef.current ||
+      !keltnerLowerRef.current
+    )
+      return;
+    const cfg = configRef.current;
+    const data = keltner(c, cfg.keltnerEma, cfg.keltnerAtr, cfg.keltnerMult);
+    keltnerUpperRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })),
+    );
+    keltnerMidRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.mid })),
+    );
+    keltnerLowerRef.current.setData(
+      data.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })),
+    );
+    const last = data.at(-1);
+    setLastValues((prev) => ({
+      ...prev,
+      keltnerUpper: last?.upper,
+      keltnerLower: last?.lower,
+    }));
+  }
+
+  function updateSupertrend() {
+    const c = getViewCandles();
+    if (c.length === 0 || !supertrendUpRef.current || !supertrendDownRef.current)
+      return;
+    const cfg = configRef.current;
+    const data = supertrend(c, cfg.supertrendAtr, cfg.supertrendMult);
+    // 2 series (verde alcista / roja bajista) con whitespace donde no aplica.
+    // En el bar del flip se setea en AMBAS para que el segmento conecte.
+    type STItem = { time: UTCTimestamp; value: number } | { time: UTCTimestamp };
+    const upData: STItem[] = [];
+    const downData: STItem[] = [];
+    for (let i = 0; i < data.length; i++) {
+      const p = data[i];
+      const t = p.time as UTCTimestamp;
+      const flip = i > 0 && data[i - 1].trend !== p.trend;
+      if (p.trend === "up") {
+        upData.push({ time: t, value: p.value });
+        downData.push(flip ? { time: t, value: p.value } : { time: t });
+      } else {
+        downData.push({ time: t, value: p.value });
+        upData.push(flip ? { time: t, value: p.value } : { time: t });
+      }
+    }
+    supertrendUpRef.current.setData(upData);
+    supertrendDownRef.current.setData(downData);
+    setLastValues((prev) => ({ ...prev, supertrend: data.at(-1)?.value }));
+  }
+
   // Load historical data + subscribe live
   useEffect(() => {
     const unsub = subscribeMarket(symbol, timeframe, {
@@ -2109,6 +2294,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateADX();
         updateStochRsi();
         updateAO();
+        updateDonchian();
+        updateKeltner();
+        updateSupertrend();
         chartRef.current?.timeScale().fitContent();
         requestAnimationFrame(() => recomputePaneOffsets());
 
@@ -2173,6 +2361,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         updateADX();
         updateStochRsi();
         updateAO();
+        updateDonchian();
+        updateKeltner();
+        updateSupertrend();
         const prev = arr[arr.length - 2] ?? lastCandle;
         setLastPrice({
           value: k.close,
@@ -2427,6 +2618,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
     updateADX();
     updateStochRsi();
     updateAO();
+    updateDonchian();
+    updateKeltner();
+    updateSupertrend();
     const last = view[view.length - 1];
     const prev = view[view.length - 2] ?? last;
     setLastPrice({
@@ -2864,6 +3058,51 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               onToggleHide={() => toggleHidden("vwap")}
               onSettings={() => setSettingsTarget("vwap")}
               onRemove={() => removeIndicator("vwap")}
+            />
+          )}
+          {indicators.donchian && (
+            <IndicatorPill
+              name={`Donchian ${config.donchianPeriod}`}
+              value={
+                pv("donchianUpper") !== undefined
+                  ? `${formatPrice(pv("donchianUpper")!)} / ${formatPrice(pv("donchianLower") ?? 0)}`
+                  : undefined
+              }
+              color={INDICATOR_COLORS.donchian}
+              hidden={hidden.donchian}
+              onToggleHide={() => toggleHidden("donchian")}
+              onSettings={() => setSettingsTarget("donchian")}
+              onRemove={() => removeIndicator("donchian")}
+            />
+          )}
+          {indicators.keltner && (
+            <IndicatorPill
+              name={`Keltner ${config.keltnerEma}`}
+              value={
+                pv("keltnerUpper") !== undefined
+                  ? `${formatPrice(pv("keltnerUpper")!)} / ${formatPrice(pv("keltnerLower") ?? 0)}`
+                  : undefined
+              }
+              color={INDICATOR_COLORS.keltner}
+              hidden={hidden.keltner}
+              onToggleHide={() => toggleHidden("keltner")}
+              onSettings={() => setSettingsTarget("keltner")}
+              onRemove={() => removeIndicator("keltner")}
+            />
+          )}
+          {indicators.supertrend && (
+            <IndicatorPill
+              name={`Supertrend ${config.supertrendAtr}, ${config.supertrendMult}`}
+              value={
+                pv("supertrend") !== undefined
+                  ? formatPrice(pv("supertrend")!)
+                  : undefined
+              }
+              color={INDICATOR_COLORS.supertrend}
+              hidden={hidden.supertrend}
+              onToggleHide={() => toggleHidden("supertrend")}
+              onSettings={() => setSettingsTarget("supertrend")}
+              onRemove={() => removeIndicator("supertrend")}
             />
           )}
           {indicators.volume && (

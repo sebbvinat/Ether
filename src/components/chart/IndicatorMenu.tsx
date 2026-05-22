@@ -70,6 +70,21 @@ const ENTRIES: Entry[] = [
     group: "Osciladores",
     label: (c) => `Awesome Oscillator (${c.aoFast}, ${c.aoSlow})`,
   },
+  {
+    key: "donchian",
+    group: "Volatilidad",
+    label: (c) => `Donchian (${c.donchianPeriod})`,
+  },
+  {
+    key: "keltner",
+    group: "Volatilidad",
+    label: (c) => `Keltner (${c.keltnerEma}, ${c.keltnerMult})`,
+  },
+  {
+    key: "supertrend",
+    group: "Volatilidad",
+    label: (c) => `Supertrend (${c.supertrendAtr}, ${c.supertrendMult})`,
+  },
 ];
 
 export function IndicatorMenu() {
