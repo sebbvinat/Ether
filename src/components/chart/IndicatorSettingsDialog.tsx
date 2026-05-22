@@ -41,6 +41,7 @@ const TITLES: Record<IndicatorKey, string> = {
   psar: "Parabolic SAR",
   pivots: "Pivot Points",
   ichimoku: "Ichimoku Cloud",
+  vp: "Volume Profile",
 };
 
 export function IndicatorSettingsDialog() {
@@ -156,6 +157,8 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
         ichimokuSenkouB: clamp(draft.ichimokuSenkouB, 2, 300),
       });
     else if (target === "pivots") onSave({});
+    else if (target === "vp")
+      onSave({ vpBins: clamp(draft.vpBins, 6, 100) });
     else if (target === "macd")
       onSave({
         macdFast: clamp(draft.macdFast, 2, 100),
@@ -323,6 +326,13 @@ function SettingsForm({ target, config, onSave, onReset }: FormProps) {
             onChange={(n) => setDraft((d) => ({ ...d, ichimokuSenkouB: n }))}
           />
         </div>
+      )}
+      {target === "vp" && (
+        <Field
+          label="Bins (niveles de precio)"
+          value={draft.vpBins}
+          onChange={(n) => setDraft((d) => ({ ...d, vpBins: n }))}
+        />
       )}
       {target === "stoch" && (
         <div className="grid grid-cols-2 gap-2">

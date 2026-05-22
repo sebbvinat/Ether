@@ -96,6 +96,11 @@ const ENTRIES: Entry[] = [
     label: (c) =>
       `Ichimoku (${c.ichimokuTenkan}, ${c.ichimokuKijun}, ${c.ichimokuSenkouB})`,
   },
+  {
+    key: "vp",
+    group: "Volumen",
+    label: (c) => `Volume Profile (${c.vpBins})`,
+  },
 ];
 
 interface Props {
