@@ -52,6 +52,7 @@ const TYPE_LABELS: Partial<Record<DrawingTool, string>> = {
   gannfan: "Abanico Gann",
   callout: "Callout",
   brush: "Pincel",
+  anchoredVwap: "VWAP anclado",
 };
 
 // Paleta estilo TradingView — fila de grises + matriz tono × brillo.

@@ -80,7 +80,9 @@ export type DrawingTool =
   | "gannfan"
   | "callout"
   // Wave 6C
-  | "brush";
+  | "brush"
+  // Wave 12 — Anchored VWAP (1 click → ancla; la línea se computa de ahí en adelante)
+  | "anchoredVwap";
 
 export type ChartStyle =
   | "candles"
@@ -323,7 +325,9 @@ export type Drawing =
   | { id: string; symbol: string; type: "gannfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { id: string; symbol: string; type: "callout"; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
   // Wave 6C
-  | { id: string; symbol: string; type: "brush"; points: DrawingPoint[]; color?: string };
+  | { id: string; symbol: string; type: "brush"; points: DrawingPoint[]; color?: string }
+  // Wave 12 — Anchored VWAP: el ancla define desde qué vela se acumula el VWAP.
+  | { id: string; symbol: string; type: "anchoredVwap"; at: DrawingPoint; color?: string };
 
 export type DrawingInput =
   | {
@@ -380,7 +384,9 @@ export type DrawingInput =
   | { type: "gannfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { type: "callout"; symbol: string; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
   // Wave 6C
-  | { type: "brush"; symbol: string; points: DrawingPoint[]; color?: string };
+  | { type: "brush"; symbol: string; points: DrawingPoint[]; color?: string }
+  // Wave 12
+  | { type: "anchoredVwap"; symbol: string; at: DrawingPoint; color?: string };
 
 export function layoutSlotCount(l: LayoutType): number {
   switch (l) {

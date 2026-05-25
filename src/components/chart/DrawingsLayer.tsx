@@ -7,6 +7,7 @@ import {
   type DrawingPoint,
   type DrawingStyle,
 } from "@/lib/store/chart-store";
+import type { Candle } from "@/lib/binance/types";
 import { formatPrice } from "@/lib/format";
 
 const TV_GREEN = "#26a69a";
@@ -78,6 +79,9 @@ interface Props {
   /** True si hay una herramienta de dibujo activa (tool !== "cursor"). Cuando
    *  es true los dibujos dejan pasar el click para poder dibujar encima. */
   toolActive?: boolean;
+  /** Velas visibles — usadas por anchoredVwap para computar la curva. Opcional
+   *  porque el resto de los dibujos no las necesitan. */
+  candles?: Candle[];
   containerWidth: number;
   containerHeight: number;
 }
@@ -96,6 +100,7 @@ export function DrawingsLayer({
   hideDrawings,
   lockDrawings,
   toolActive,
+  candles,
   containerWidth,
   containerHeight,
 }: Props) {
@@ -2698,6 +2703,166 @@ export function DrawingsLayer({
                 <RemoveHandle
                   x={rx + w + 10}
                   y={ry}
+                  onRemove={() => onRemove(d.id)}
+                />
+              )}
+            </g>
+          );
+        }
+
+        // --- anchoredVwap (1pt anchor → polyline computed from candles[anchor..]) ---
+        if (d.type === "anchoredVwap") {
+          const a = toCoord(d.at.time, d.at.price);
+          if (!a) return null;
+          const color = ds?.color ?? d.color ?? "#ab47bc"; // morado tipo TV
+          // Buscar la vela más cercana al ancla (en tiempo)
+          const all = candles ?? [];
+          if (all.length === 0) return null;
+          let anchorIdx = -1;
+          let bestDiff = Infinity;
+          for (let i = 0; i < all.length; i++) {
+            const diff = Math.abs(all[i].time - d.at.time);
+            if (diff < bestDiff) {
+              bestDiff = diff;
+              anchorIdx = i;
+            }
+          }
+          if (anchorIdx < 0) return null;
+          // Computar VWAP acumulado: Σ(TP·V) / Σ(V), TP=(H+L+C)/3
+          const pts: Coord[] = [];
+          let cumPV = 0;
+          let cumV = 0;
+          for (let i = anchorIdx; i < all.length; i++) {
+            const c = all[i];
+            const tp = (c.high + c.low + c.close) / 3;
+            const v = c.volume > 0 ? c.volume : 1;
+            cumPV += tp * v;
+            cumV += v;
+            const vwap = cumPV / cumV;
+            const cd = toCoord(c.time, vwap);
+            if (cd) pts.push(cd);
+          }
+          if (pts.length < 2) {
+            // Sólo se ve el ancla — render del marker para que el usuario sepa que está
+            return (
+              <g
+                key={d.id}
+                onMouseEnter={() => setHover(d.id)}
+                onMouseLeave={() => setHover(null)}
+                onClick={() => handleClick(d.id)}
+                onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+                onPointerDown={(e) => onBodyDown(e, d)}
+                style={grStyle}
+              >
+                <circle cx={a.x} cy={a.y} r={4} fill={color} stroke="#fff" strokeWidth={1} />
+                <DragHandle
+                  cx={a.x}
+                  cy={a.y}
+                  onDown={(e) => onHandleDown(e, d.id, "at")}
+                  hidden={hideHandle}
+                />
+              </g>
+            );
+          }
+          const path = pts.map((p) => `${p.x},${p.y}`).join(" ");
+          const lastPt = pts[pts.length - 1];
+          // El último valor del VWAP (sólo cómputo, no coord): la mostramos como label
+          const lastVwap =
+            cumV > 0 ? cumPV / cumV : null;
+          return (
+            <g
+              key={d.id}
+              onMouseEnter={() => setHover(d.id)}
+              onMouseLeave={() => setHover(null)}
+              onClick={() => handleClick(d.id)}
+              onDoubleClick={(e) => onDrawingDblClick(e, d.id)}
+              onPointerDown={(e) => onBodyDown(e, d)}
+              style={grStyle}
+            >
+              {/* hit area gruesa transparente */}
+              <polyline
+                points={path}
+                stroke="transparent"
+                strokeWidth={10}
+                fill="none"
+              />
+              {/* curva del VWAP */}
+              <polyline
+                points={path}
+                stroke={color}
+                strokeWidth={1.5 + selectedWidth}
+                strokeDasharray={lineDash(ds)}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {/* marker del ancla */}
+              <line
+                x1={a.x}
+                y1={0}
+                x2={a.x}
+                y2={containerHeight}
+                stroke={color}
+                strokeWidth={0.75}
+                strokeDasharray="2 4"
+                opacity={0.5}
+              />
+              <circle cx={a.x} cy={a.y} r={4} fill={color} stroke="#fff" strokeWidth={1} />
+              {/* label de valor a la derecha */}
+              {lastVwap !== null && (
+                <>
+                  <rect
+                    x={containerWidth - 70}
+                    y={lastPt.y - 9}
+                    width={64}
+                    height={18}
+                    fill={color}
+                    opacity={0.85}
+                  />
+                  <text
+                    x={containerWidth - 38}
+                    y={lastPt.y + 4}
+                    fill="#fff"
+                    fontSize={10}
+                    fontFamily="var(--font-mono), monospace"
+                    textAnchor="middle"
+                  >
+                    {lastVwap.toFixed(2)}
+                  </text>
+                </>
+              )}
+              {/* mini-pill "AVWAP" cerca del ancla */}
+              <g transform={`translate(${a.x + 6}, ${a.y - 18})`} style={{ pointerEvents: "none" }}>
+                <rect
+                  width={42}
+                  height={14}
+                  fill="rgba(30,34,45,0.92)"
+                  stroke={color}
+                  strokeWidth={0.75}
+                  rx={2}
+                />
+                <text
+                  x={21}
+                  y={10}
+                  fill={color}
+                  fontSize={9}
+                  fontWeight={600}
+                  fontFamily="var(--font-mono), monospace"
+                  textAnchor="middle"
+                >
+                  AVWAP
+                </text>
+              </g>
+              <DragHandle
+                cx={a.x}
+                cy={a.y}
+                onDown={(e) => onHandleDown(e, d.id, "at")}
+                hidden={hideHandle}
+              />
+              {hover === d.id && (
+                <RemoveHandle
+                  x={a.x + 14}
+                  y={a.y - 14}
                   onRemove={() => onRemove(d.id)}
                 />
               )}

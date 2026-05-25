@@ -657,11 +657,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       }
 
       // Wave 6A — 1-point tools that commit immediately
+      // Wave 12 — anchoredVwap también es 1-clic (ancla la VWAP a esa vela)
       if (
         tool === "hline" ||
         tool === "cross" ||
         tool === "flag" ||
-        tool === "plabel"
+        tool === "plabel" ||
+        tool === "anchoredVwap"
       ) {
         if (!param.time) return;
         const time = Number(param.time);
@@ -1694,6 +1696,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "callout",
         // Wave 6C
         "brush",
+        // Wave 12
+        "anchoredVwap",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
         ? "crosshair"
@@ -3163,6 +3167,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         toolActive={tool !== "cursor"}
         hideDrawings={storeHideDrawings}
         lockDrawings={storeLockDrawings}
+        candles={getViewCandles()}
         containerWidth={containerSize.width}
         containerHeight={containerSize.height}
       />
