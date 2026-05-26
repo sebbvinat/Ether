@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Timeframe } from "@/lib/binance/types";
 import { setYahooSymbolsCache, type Instrument } from "@/lib/instruments";
+import { DEFAULT_SHORTCUTS } from "@/lib/shortcuts";
 
 export type IndicatorKey =
   | "ema20"
@@ -692,6 +693,8 @@ interface ChartState {
   drawingPropsTargetId: string | null;
   /** Wave 14 — alertas atadas a dibujos (key = drawing id). Persistido. */
   drawingAlerts: Record<string, DrawingAlert>;
+  /** Wave 15 — atajos de teclado configurables (acción → combo canónico). */
+  shortcuts: Record<string, string>;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -718,6 +721,9 @@ interface ChartState {
   markAlertTriggered: (drawingId: string) => void;
   rearmAlert: (drawingId: string) => void;
   clearAllDrawingAlerts: () => void;
+  /** Wave 15 — atajos de teclado. */
+  setShortcut: (action: string, combo: string) => void;
+  resetShortcuts: () => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -908,6 +914,7 @@ export const useChartStore = create<ChartState>()(
       drawingTemplates: [],
       drawingPropsTargetId: null,
       drawingAlerts: {},
+      shortcuts: { ...DEFAULT_SHORTCUTS },
       replay: {
         active: false,
         slotId: null,
@@ -1506,6 +1513,11 @@ export const useChartStore = create<ChartState>()(
           };
         }),
       clearAllDrawingAlerts: () => set({ drawingAlerts: {} }),
+      setShortcut: (action, combo) =>
+        set((state) => ({
+          shortcuts: { ...state.shortcuts, [action]: combo },
+        })),
+      resetShortcuts: () => set({ shortcuts: { ...DEFAULT_SHORTCUTS } }),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
@@ -1588,6 +1600,7 @@ export const useChartStore = create<ChartState>()(
         drawingStyles: s.drawingStyles,
         drawingTemplates: s.drawingTemplates,
         drawingAlerts: s.drawingAlerts,
+        shortcuts: s.shortcuts,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
@@ -1622,6 +1635,7 @@ export const useChartStore = create<ChartState>()(
           drawingStyles: p.drawingStyles ?? currentState.drawingStyles,
           drawingTemplates: p.drawingTemplates ?? currentState.drawingTemplates,
           drawingAlerts: p.drawingAlerts ?? currentState.drawingAlerts,
+          shortcuts: { ...currentState.shortcuts, ...(p.shortcuts ?? {}) },
           binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
           chartStyle: p.chartStyle ?? currentState.chartStyle,
           tabs: p.tabs ?? currentState.tabs,
