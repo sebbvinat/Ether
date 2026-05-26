@@ -90,7 +90,10 @@ export type ChartStyle =
   | "heikin"
   | "line"
   | "area"
-  | "baseline";
+  | "baseline"
+  // Wave 16 — chart types con eje de "bricks" en vez de tiempo continuo
+  | "renko"
+  | "lineBreak";
 
 /** Modo de la escala de precio. */
 export type PriceScaleModeKey = "normal" | "log" | "percent" | "indexed";

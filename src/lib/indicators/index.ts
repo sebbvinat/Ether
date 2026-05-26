@@ -302,6 +302,202 @@ export function heikinAshi(candles: Candle[]): Candle[] {
   return out;
 }
 
+/**
+ * Wave 16 — Renko chart.
+ *
+ * Cada brick es de tamaño `box` (en unidades de precio). Cuando el precio se
+ * mueve `box` unidades en una dirección desde el último brick, se forma un
+ * brick nuevo del mismo color. Para invertir hay que moverse `2*box` (anti-
+ * tendencia primero llena el gap).
+ *
+ * Devolvemos "candles" sintéticas — open/close son los extremos del brick;
+ * high/low duplican esos valores (los Renko no tienen mecha). El `time` se
+ * mapea al timestamp original de la candle que terminó el brick.
+ *
+ * Si `box` es 0 o negativo, devuelve [] (sin crash).
+ */
+export function renko(candles: Candle[], box: number): Candle[] {
+  if (candles.length === 0 || box <= 0) return [];
+  const out: Candle[] = [];
+  let lastClose = candles[0].close;
+  // dir: +1 alcista, -1 bajista, 0 sin tendencia (al inicio)
+  let dir: 0 | 1 | -1 = 0;
+  for (const c of candles) {
+    let price = c.close;
+    // Mientras el delta exceda `box` (o 2*box si invertimos), formamos bricks
+    while (true) {
+      if (dir === 0) {
+        const delta = price - lastClose;
+        if (delta >= box) {
+          out.push({
+            time: c.time,
+            open: lastClose,
+            high: lastClose + box,
+            low: lastClose,
+            close: lastClose + box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose += box;
+          dir = 1;
+        } else if (delta <= -box) {
+          out.push({
+            time: c.time,
+            open: lastClose,
+            high: lastClose,
+            low: lastClose - box,
+            close: lastClose - box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose -= box;
+          dir = -1;
+        } else {
+          break;
+        }
+      } else if (dir === 1) {
+        if (price >= lastClose + box) {
+          out.push({
+            time: c.time,
+            open: lastClose,
+            high: lastClose + box,
+            low: lastClose,
+            close: lastClose + box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose += box;
+        } else if (price <= lastClose - 2 * box) {
+          // Inversión: primero "salta" el brick alcista anterior y forma uno bajista
+          out.push({
+            time: c.time,
+            open: lastClose - box,
+            high: lastClose - box,
+            low: lastClose - 2 * box,
+            close: lastClose - 2 * box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose -= 2 * box;
+          dir = -1;
+        } else {
+          break;
+        }
+      } else {
+        // dir === -1
+        if (price <= lastClose - box) {
+          out.push({
+            time: c.time,
+            open: lastClose,
+            high: lastClose,
+            low: lastClose - box,
+            close: lastClose - box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose -= box;
+        } else if (price >= lastClose + 2 * box) {
+          out.push({
+            time: c.time,
+            open: lastClose + box,
+            high: lastClose + 2 * box,
+            low: lastClose + box,
+            close: lastClose + 2 * box,
+            volume: c.volume,
+            isFinal: c.isFinal,
+          });
+          lastClose += 2 * box;
+          dir = 1;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Wave 16 — Line Break chart (3-line break por defecto).
+ *
+ * Un brick nuevo se forma cuando:
+ *  - El precio supera el HIGH (close) de la última barra → brick alcista.
+ *  - El precio rompe el LOW (close) de las últimas N barras anti-tendencia →
+ *    brick bajista (reversal).
+ * En tendencia normal sólo hay que superar el extremo anterior; para revertir
+ * hay que romper el extremo de las N (3 por default) últimas barras.
+ */
+export function lineBreak(candles: Candle[], lines = 3): Candle[] {
+  if (candles.length === 0) return [];
+  const out: Candle[] = [];
+  // Seed: primer "brick" con el primer precio
+  out.push({
+    time: candles[0].time,
+    open: candles[0].open,
+    high: Math.max(candles[0].open, candles[0].close),
+    low: Math.min(candles[0].open, candles[0].close),
+    close: candles[0].close,
+    volume: candles[0].volume,
+  });
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i];
+    const last = out[out.length - 1];
+    const lastIsUp = last.close >= last.open;
+    // Para tendencia continuada: superar el extremo del último brick.
+    // Para revertir: superar el extremo opuesto de los últimos `lines` bricks.
+    const recent = out.slice(-lines);
+    const recentHigh = Math.max(...recent.map((r) => Math.max(r.open, r.close)));
+    const recentLow = Math.min(...recent.map((r) => Math.min(r.open, r.close)));
+    if (lastIsUp) {
+      if (c.close > last.close) {
+        // continúa alcista
+        out.push({
+          time: c.time,
+          open: last.close,
+          high: c.close,
+          low: last.close,
+          close: c.close,
+          volume: c.volume,
+        });
+      } else if (c.close < recentLow) {
+        // reversal bajista (cerrar bajo el mín de los últimos N bricks)
+        out.push({
+          time: c.time,
+          open: last.open,
+          high: last.open,
+          low: c.close,
+          close: c.close,
+          volume: c.volume,
+        });
+      }
+      // sino: no hay brick nuevo
+    } else {
+      if (c.close < last.close) {
+        // continúa bajista
+        out.push({
+          time: c.time,
+          open: last.close,
+          high: last.close,
+          low: c.close,
+          close: c.close,
+          volume: c.volume,
+        });
+      } else if (c.close > recentHigh) {
+        // reversal alcista
+        out.push({
+          time: c.time,
+          open: last.open,
+          high: c.close,
+          low: last.open,
+          close: c.close,
+          volume: c.volume,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 // =========================================================================
 // Biblioteca extendida — Batch 1: osciladores de sub-panel
 // =========================================================================

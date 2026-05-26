@@ -8,6 +8,8 @@ import {
   Flame,
   Activity,
   ChevronDown,
+  BarChart3,
+  Boxes,
 } from "lucide-react";
 import {
   useChartStore,
@@ -22,6 +24,8 @@ const STYLES: { key: ChartStyle; label: string; icon: typeof CandlestickChart }[
   { key: "line", label: "Línea", icon: LineChart },
   { key: "area", label: "Área", icon: AreaChart },
   { key: "baseline", label: "Baseline", icon: Activity },
+  { key: "renko", label: "Renko", icon: Boxes },
+  { key: "lineBreak", label: "Line Break", icon: BarChart3 },
 ];
 
 const SCALE_MODES: { key: PriceScaleModeKey; label: string }[] = [

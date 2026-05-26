@@ -28,6 +28,8 @@ import {
   stochastic,
   vwap,
   heikinAshi,
+  renko,
+  lineBreak,
   cci,
   williamsR,
   mfi,
@@ -301,7 +303,24 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
   function getDisplayCandles(): Candle[] {
     const view = getViewCandles();
-    if (chartStyleRef.current === "heikin") return heikinAshi(view);
+    const st = chartStyleRef.current;
+    if (st === "heikin") return heikinAshi(view);
+    if (st === "renko") {
+      // Box-size default: 0.5% del último close (clamp a >= 1e-8 para evitar 0)
+      const last = view[view.length - 1]?.close ?? 0;
+      const box = Math.max(last * 0.005, 1e-8);
+      // Reasignar tiempos secuenciales (1 segundo por brick) — lightweight-charts
+      // necesita tiempos estrictamente ascendentes. Cada brick reemplaza el tiempo
+      // por una secuencia desde el time del primer candle.
+      const bricks = renko(view, box);
+      const base = view[0]?.time ?? 0;
+      return bricks.map((b, i) => ({ ...b, time: base + i }));
+    }
+    if (st === "lineBreak") {
+      const bricks = lineBreak(view, 3);
+      const base = view[0]?.time ?? 0;
+      return bricks.map((b, i) => ({ ...b, time: base + i }));
+    }
     return view;
   }
 
@@ -2558,6 +2577,27 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }
         // During replay we keep ingesting data into the buffer but don't update the visible series
         if (replayActiveRef.current) return;
+        // Wave 16 — Renko/LineBreak no soportan .update() porque un nuevo candle
+        // puede formar 0, 1 o N bricks. En esos modos hacemos setData() completo.
+        const st = chartStyleRef.current;
+        if (st === "renko" || st === "lineBreak") {
+          const display = getDisplayCandles();
+          candleSeriesRef.current.setData(
+            display.map((b) => ({
+              time: b.time as UTCTimestamp,
+              open: b.open,
+              high: b.high,
+              low: b.low,
+              close: b.close,
+            })),
+          );
+          setLastPrice({
+            value: k.close,
+            pct: 0,
+          });
+          checkDrawingAlerts(k.time, k.close);
+          return;
+        }
         candleSeriesRef.current.update({
           time: k.time as UTCTimestamp,
           open: k.open,
@@ -2819,9 +2859,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       } catch {}
       overlaySeriesRef.current = null;
     }
-    if (chartStyle === "candles" || chartStyle === "heikin") {
+    if (
+      chartStyle === "candles" ||
+      chartStyle === "heikin" ||
+      chartStyle === "renko" ||
+      chartStyle === "lineBreak"
+    ) {
       candleSeriesRef.current?.applyOptions({ visible: true });
-      // Reapply data using transformed candles (HA or regular)
+      // Reapply data using transformed candles (HA / Renko / LineBreak / regular)
       const display = getDisplayCandles();
       candleSeriesRef.current?.setData(
         display.map((k) => ({
