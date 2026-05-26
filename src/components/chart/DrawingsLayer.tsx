@@ -105,6 +105,8 @@ export function DrawingsLayer({
   containerHeight,
 }: Props) {
   const openDrawingProps = useChartStore((s) => s.openDrawingProps);
+  // Wave 14 — alertas: leídas para renderizar un bell badge sobre el dibujo
+  const drawingAlerts = useChartStore((s) => s.drawingAlerts);
 
   /** dash array por estilo de línea (solid/dashed/dotted). */
   function lineDash(s: DrawingStyle | undefined): string | undefined {
@@ -2871,6 +2873,45 @@ export function DrawingsLayer({
         }
 
         return null;
+      })}
+
+      {/* Wave 14 — bell badge sobre dibujos con alerta activa */}
+      {drawings.map((d) => {
+        const alert = drawingAlerts[d.id];
+        if (!alert) return null;
+        // Buscar un ancla razonable para posicionar el badge
+        let anchor: Coord | null = null;
+        if ("at" in d) {
+          anchor = toCoord(d.at.time, d.at.price);
+        } else if ("a" in d && "b" in d) {
+          // En el centro del segmento (trendline) o del rango (hrange)
+          const a = toCoord(d.a.time, d.a.price);
+          const b = toCoord(d.b.time, d.b.price);
+          if (a && b) {
+            anchor = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+          }
+        }
+        if (!anchor) return null;
+        const triggered = alert.triggered;
+        const bg = triggered ? "#ef5350" : "#ffb74d";
+        return (
+          <g
+            key={`alert-${d.id}`}
+            transform={`translate(${anchor.x - 24}, ${anchor.y - 7})`}
+            style={{ pointerEvents: "none" }}
+          >
+            <circle cx={7} cy={7} r={7} fill={bg} opacity={0.95} />
+            {/* Bell glyph dibujado a mano para no depender de import */}
+            <path
+              d="M5.5 4.5 L5.5 7 Q5.5 8.5 4.5 9 L9.5 9 Q8.5 8.5 8.5 7 L8.5 4.5 Q8.5 3 7 3 Q5.5 3 5.5 4.5 Z M6 10 Q7 10.8 8 10"
+              fill="none"
+              stroke="#fff"
+              strokeWidth={1.1}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </g>
+        );
       })}
     </svg>
   );

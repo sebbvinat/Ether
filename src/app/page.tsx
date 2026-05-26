@@ -17,6 +17,7 @@ import { PineEditor } from "@/components/pine/PineEditor";
 import { BacktestDialog } from "@/components/backtest/BacktestDialog";
 import { DataWindow } from "@/components/chart/DataWindow";
 import { DrawingPropertiesDialog } from "@/components/chart/DrawingPropertiesDialog";
+import { DrawingAlertsToast } from "@/components/alerts/DrawingAlertsToast";
 import { useChartStore } from "@/lib/store/chart-store";
 
 export default function HomePage() {
@@ -181,6 +182,7 @@ export default function HomePage() {
         timeframe={timeframe}
       />
       <DrawingPropertiesDialog />
+      <DrawingAlertsToast />
     </div>
   );
 }

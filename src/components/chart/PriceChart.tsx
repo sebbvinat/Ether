@@ -54,6 +54,11 @@ import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
 import { VolumeProfileLayer } from "./VolumeProfileLayer";
 import { SessionsLayer } from "./SessionsLayer";
+import {
+  drawingLevelsAt,
+  supportsAlerts,
+  crossed,
+} from "@/lib/alerts/drawing-levels";
 import { Countdown } from "./Countdown";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
@@ -232,6 +237,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const addDrawing = useChartStore((s) => s.addDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
   const updateDrawing = useChartStore((s) => s.updateDrawing);
+  const drawingAlerts = useChartStore((s) => s.drawingAlerts);
+  const markAlertTriggered = useChartStore((s) => s.markAlertTriggered);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const selectDrawing = useChartStore((s) => s.selectDrawing);
   const panesCollapsed = useChartStore((s) => s.panesCollapsed);
@@ -271,6 +278,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  // Wave 14 — refs para alertas (el closure de onCandle se cierra una vez por
+  // symbol/timeframe; necesitamos refs para que vea cambios sin re-suscribir).
+  const drawingsRef = useRef(drawings);
+  drawingsRef.current = drawings;
+  const drawingAlertsRef = useRef(drawingAlerts);
+  drawingAlertsRef.current = drawingAlerts;
+  const lastClosePriceRef = useRef<number | null>(null);
   const replayActiveRef = useRef(replayActiveForThis);
   replayActiveRef.current = replayActiveForThis;
   const replayIndexRef = useRef(replay.index);
@@ -2593,9 +2607,55 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               ? ((k.close - prev.close) / prev.close) * 100
               : 0,
         });
+        // Wave 14 — chequear alertas sobre dibujos en cada tick
+        checkDrawingAlerts(k.time, k.close);
       },
       onError: (e) => console.error("Failed to load chart data:", e),
     });
+
+    // Wave 14 — escanea las alertas y dispara `ether:alert-fired` si hubo cruce
+    function checkDrawingAlerts(time: number, price: number) {
+      const prevPrice = lastClosePriceRef.current;
+      lastClosePriceRef.current = price;
+      if (prevPrice === null) return; // primer tick: aún no hay cruce posible
+      const alerts = drawingAlertsRef.current;
+      const allDrawings = drawingsRef.current;
+      const sym = symbol;
+      for (const d of allDrawings) {
+        if (d.symbol !== sym) continue;
+        if (!supportsAlerts(d.type)) continue;
+        const a = alerts[d.id];
+        if (!a || !a) continue;
+        if (a.triggered) continue;
+        const levels = drawingLevelsAt(d, time);
+        if (!levels) continue;
+        for (const level of levels) {
+          if (!Number.isFinite(level)) continue;
+          if (crossed(prevPrice, price, level, a.direction)) {
+            const direction =
+              a.direction === "both"
+                ? price >= level
+                  ? "above"
+                  : "below"
+                : a.direction;
+            window.dispatchEvent(
+              new CustomEvent("ether:alert-fired", {
+                detail: {
+                  drawingId: d.id,
+                  symbol: sym,
+                  level,
+                  price,
+                  direction,
+                  note: a.note,
+                },
+              }),
+            );
+            markAlertTriggered(d.id);
+            break; // un cruce por alerta por tick
+          }
+        }
+      }
+    }
 
     return () => unsub();
   }, [symbol, timeframe]);

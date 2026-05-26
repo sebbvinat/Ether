@@ -247,6 +247,20 @@ export interface DrawingTemplate {
   style: DrawingStyle;
 }
 
+/** Wave 14 — alerta client-side anclada a un dibujo (hline / trendline / ray /
+ *  hrange / hlineExt). Se dispara cuando el precio cruza el nivel del dibujo. */
+export interface DrawingAlert {
+  drawingId: string;
+  /** Dirección: "above" dispara cuando price cruza el nivel hacia arriba, "below"
+   *  hacia abajo, "both" dispara en cualquier cruce. */
+  direction: "above" | "below" | "both";
+  /** Una vez disparada se marca y no vuelve a sonar (a menos que se rearme). */
+  triggered: boolean;
+  triggeredAt?: number;
+  /** Mensaje opcional que se muestra en el toast. */
+  note?: string;
+}
+
 export type Drawing =
   | {
       id: string;
@@ -676,6 +690,8 @@ interface ChartState {
   drawingTemplates: DrawingTemplate[];
   /** Drawing cuyo dialog de propiedades está abierto (null = cerrado). Ephemeral. */
   drawingPropsTargetId: string | null;
+  /** Wave 14 — alertas atadas a dibujos (key = drawing id). Persistido. */
+  drawingAlerts: Record<string, DrawingAlert>;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -697,6 +713,11 @@ interface ChartState {
   toggleSession: (id: string) => void;
   setSessionColor: (id: string, color: string) => void;
   resetSessions: () => void;
+  /** Wave 14 — alertas sobre dibujos. */
+  setDrawingAlert: (drawingId: string, alert: DrawingAlert | null) => void;
+  markAlertTriggered: (drawingId: string) => void;
+  rearmAlert: (drawingId: string) => void;
+  clearAllDrawingAlerts: () => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -886,6 +907,7 @@ export const useChartStore = create<ChartState>()(
       drawingStyles: {},
       drawingTemplates: [],
       drawingPropsTargetId: null,
+      drawingAlerts: {},
       replay: {
         active: false,
         slotId: null,
@@ -1454,6 +1476,36 @@ export const useChartStore = create<ChartState>()(
             drawingStyles: { ...state.drawingStyles, [drawingId]: { ...t.style } },
           };
         }),
+      setDrawingAlert: (drawingId, alert) =>
+        set((state) => {
+          const next = { ...state.drawingAlerts };
+          if (alert === null) delete next[drawingId];
+          else next[drawingId] = alert;
+          return { drawingAlerts: next };
+        }),
+      markAlertTriggered: (drawingId) =>
+        set((state) => {
+          const a = state.drawingAlerts[drawingId];
+          if (!a) return {};
+          return {
+            drawingAlerts: {
+              ...state.drawingAlerts,
+              [drawingId]: { ...a, triggered: true, triggeredAt: Date.now() },
+            },
+          };
+        }),
+      rearmAlert: (drawingId) =>
+        set((state) => {
+          const a = state.drawingAlerts[drawingId];
+          if (!a) return {};
+          return {
+            drawingAlerts: {
+              ...state.drawingAlerts,
+              [drawingId]: { ...a, triggered: false, triggeredAt: undefined },
+            },
+          };
+        }),
+      clearAllDrawingAlerts: () => set({ drawingAlerts: {} }),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
@@ -1535,6 +1587,7 @@ export const useChartStore = create<ChartState>()(
         hideDrawings: s.hideDrawings,
         drawingStyles: s.drawingStyles,
         drawingTemplates: s.drawingTemplates,
+        drawingAlerts: s.drawingAlerts,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
@@ -1568,6 +1621,7 @@ export const useChartStore = create<ChartState>()(
           priceLines: p.priceLines ?? currentState.priceLines,
           drawingStyles: p.drawingStyles ?? currentState.drawingStyles,
           drawingTemplates: p.drawingTemplates ?? currentState.drawingTemplates,
+          drawingAlerts: p.drawingAlerts ?? currentState.drawingAlerts,
           binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
           chartStyle: p.chartStyle ?? currentState.chartStyle,
           tabs: p.tabs ?? currentState.tabs,
