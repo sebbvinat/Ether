@@ -19,6 +19,7 @@ import {
   Code2,
   LineChart,
   Settings2,
+  Clock,
 } from "lucide-react";
 import { useChartStore } from "@/lib/store/chart-store";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
@@ -28,6 +29,7 @@ import { JournalDialog } from "@/components/journal/JournalDialog";
 import { ObjectTreeDialog } from "@/components/layout/ObjectTreeDialog";
 import { IndicatorsDialog } from "@/components/chart/IndicatorsDialog";
 import { ChartSettingsDialog } from "@/components/chart/ChartSettingsDialog";
+import { SessionsDialog } from "@/components/chart/SessionsDialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -43,6 +45,7 @@ export function MoreMenu() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
+  const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const activeSlotId = useChartStore((s) => s.activeSlotId);
@@ -59,6 +62,8 @@ export function MoreMenu() {
   const setSyncCharts = useChartStore((s) => s.setSyncCharts);
   const dataWindowOpen = useChartStore((s) => s.dataWindowOpen);
   const setDataWindowOpen = useChartStore((s) => s.setDataWindowOpen);
+  const sessionsEnabled = useChartStore((s) => s.sessionsEnabled);
+  const setSessionsEnabled = useChartStore((s) => s.setSessionsEnabled);
   const binanceMarket = useChartStore((s) => s.binanceMarket);
   const setBinanceMarket = useChartStore((s) => s.setBinanceMarket);
 
@@ -217,6 +222,19 @@ export function MoreMenu() {
                 value={dataWindowOpen}
                 onChange={setDataWindowOpen}
               />
+              <Toggle
+                label="Resaltado de sesiones"
+                value={sessionsEnabled}
+                onChange={setSessionsEnabled}
+              />
+              <Row
+                icon={<Clock className="h-4 w-4" />}
+                label="Configurar sesiones…"
+                onClick={() => {
+                  setOpen(false);
+                  setSessionsDialogOpen(true);
+                }}
+              />
               <Row
                 icon={<Settings2 className="h-4 w-4" />}
                 label="Configuración del gráfico"
@@ -370,6 +388,10 @@ export function MoreMenu() {
       <ChartSettingsDialog
         open={chartSettingsOpen}
         onOpenChange={setChartSettingsOpen}
+      />
+      <SessionsDialog
+        open={sessionsDialogOpen}
+        onOpenChange={setSessionsDialogOpen}
       />
     </>
   );

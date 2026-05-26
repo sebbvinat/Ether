@@ -111,6 +111,30 @@ export interface ChartAppearance {
   showGrid?: boolean;
 }
 
+/** Wave 13 — definición de una sesión de mercado (Asia / Europa / NY / etc.).
+ *  start/end son minutos desde la medianoche UTC (0–1440). Si end < start,
+ *  cruza medianoche (no aplica para las 3 default, pero queda soportado). */
+export interface SessionDef {
+  id: string;
+  name: string;
+  /** Color base — el render usa esto con opacidad baja (~0.08). */
+  color: string;
+  /** Minutos desde 00:00 UTC. */
+  startMin: number;
+  endMin: number;
+  enabled: boolean;
+}
+
+/** Sesiones por defecto en UTC, sin DST porque sería un quilombo:
+ *  Asia: 00:00–09:00 (Tokio + HK + Sydney ya cerrada).
+ *  Europa: 07:00–16:00 (Londres + Frankfurt).
+ *  Nueva York: 12:30–21:00 (NYSE 09:30–16:00 ET aprox sin DST). */
+const DEFAULT_SESSIONS: SessionDef[] = [
+  { id: "asia", name: "Asia", color: "#7c4dff", startMin: 0, endMin: 540, enabled: true },
+  { id: "europe", name: "Europa", color: "#26a69a", startMin: 420, endMin: 960, enabled: true },
+  { id: "ny", name: "Nueva York", color: "#ffb74d", startMin: 750, endMin: 1260, enabled: true },
+];
+
 export interface WatchlistSection {
   id: string;
   name: string;
@@ -565,6 +589,9 @@ interface ChartState {
   priceScaleMode: PriceScaleModeKey;
   /** Overrides de apariencia del gráfico (colores velas/fondo/grilla). */
   chartAppearance: ChartAppearance;
+  /** Wave 13 — resaltado de sesiones (Asia / Europa / NY). */
+  sessionsEnabled: boolean;
+  sessions: SessionDef[];
   /** Data Window — panel OHLCV de la vela bajo el cursor. */
   dataWindowOpen: boolean;
   /** Snapshot que alimenta el Data Window (ephemeral, lo escribe PriceChart). */
@@ -666,6 +693,10 @@ interface ChartState {
   resetChartAppearance: () => void;
   setDataWindowOpen: (v: boolean) => void;
   setDataWindow: (d: ChartState["dataWindow"]) => void;
+  setSessionsEnabled: (v: boolean) => void;
+  toggleSession: (id: string) => void;
+  setSessionColor: (id: string, color: string) => void;
+  resetSessions: () => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -820,6 +851,8 @@ export const useChartStore = create<ChartState>()(
       chartAppearance: {} as ChartAppearance,
       dataWindowOpen: false,
       dataWindow: null,
+      sessionsEnabled: false,
+      sessions: DEFAULT_SESSIONS.map((s) => ({ ...s })),
       syncCharts: false,
       compares: {},
       theme: "dark" as "dark" | "light",
@@ -952,6 +985,20 @@ export const useChartStore = create<ChartState>()(
       resetChartAppearance: () => set({ chartAppearance: {} }),
       setDataWindowOpen: (dataWindowOpen) => set({ dataWindowOpen }),
       setDataWindow: (dataWindow) => set({ dataWindow }),
+      setSessionsEnabled: (sessionsEnabled) => set({ sessionsEnabled }),
+      toggleSession: (id) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === id ? { ...s, enabled: !s.enabled } : s,
+          ),
+        })),
+      setSessionColor: (id, color) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === id ? { ...s, color } : s,
+          ),
+        })),
+      resetSessions: () => set({ sessions: DEFAULT_SESSIONS.map((s) => ({ ...s })) }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
@@ -1470,6 +1517,8 @@ export const useChartStore = create<ChartState>()(
         priceScaleMode: s.priceScaleMode,
         chartAppearance: s.chartAppearance,
         dataWindowOpen: s.dataWindowOpen,
+        sessionsEnabled: s.sessionsEnabled,
+        sessions: s.sessions,
         syncCharts: s.syncCharts,
         compares: s.compares,
         workspaces: s.workspaces,

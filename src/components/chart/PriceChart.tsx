@@ -53,6 +53,7 @@ import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
 import { VolumeProfileLayer } from "./VolumeProfileLayer";
+import { SessionsLayer } from "./SessionsLayer";
 import { Countdown } from "./Countdown";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
@@ -239,6 +240,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const storeHideDrawings = useChartStore((s) => s.hideDrawings);
   const storeLockDrawings = useChartStore((s) => s.lockDrawings);
   const drawingStyles = useChartStore((s) => s.drawingStyles);
+  const sessionsEnabled = useChartStore((s) => s.sessionsEnabled);
+  const sessions = useChartStore((s) => s.sessions);
   const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
@@ -3111,6 +3114,21 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           }
           width={containerSize.width}
           color={INDICATOR_COLORS.vp}
+        />
+      )}
+      {sessionsEnabled && (
+        <SessionsLayer
+          sessions={sessions}
+          enabled={sessionsEnabled}
+          candles={getViewCandles()}
+          timeToX={(time) => {
+            const ts = chartRef.current?.timeScale();
+            if (!ts) return null;
+            const x = ts.timeToCoordinate(time as UTCTimestamp);
+            return x == null ? null : x;
+          }}
+          width={containerSize.width}
+          height={containerSize.height}
         />
       )}
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
