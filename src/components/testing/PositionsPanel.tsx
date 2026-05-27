@@ -10,13 +10,14 @@
  */
 
 import { useState } from "react";
-import { Bookmark, X } from "lucide-react";
+import { Bookmark, BookmarkCheck, X } from "lucide-react";
 import {
   useTestingStore,
   type Position,
   type Order,
   type Trade,
 } from "@/lib/store/testing-store";
+import { JournalDialog } from "./JournalDialog";
 import { cn } from "@/lib/utils";
 
 type Tab = "open" | "pending" | "closed";
@@ -31,10 +32,12 @@ export function PositionsPanel({ lastPrice }: Props) {
   const closePosition = useTestingStore((s) => s.closePositionManual);
   const cancelOrder = useTestingStore((s) => s.cancelOrderById);
   const [tab, setTab] = useState<Tab>("open");
+  const [journalTrade, setJournalTrade] = useState<Trade | null>(null);
 
   const positions = detail?.positions ?? [];
   const orders = (detail?.orders ?? []).filter((o) => o.status === "pending");
   const trades = detail?.trades ?? [];
+  const journals = detail?.journals ?? {};
 
   return (
     <div className="flex h-full flex-col bg-tv-panel/20">
@@ -49,8 +52,20 @@ export function PositionsPanel({ lastPrice }: Props) {
       <div className="flex-1 overflow-auto">
         {tab === "open" && <OpenTable positions={positions} lastPrice={lastPrice} onClose={closePosition} />}
         {tab === "pending" && <PendingTable orders={orders} onCancel={cancelOrder} />}
-        {tab === "closed" && <ClosedTable trades={trades} />}
+        {tab === "closed" && (
+          <ClosedTable
+            trades={trades}
+            hasJournal={(id) => Boolean(journals[id])}
+            onOpenJournal={(t) => setJournalTrade(t)}
+          />
+        )}
       </div>
+
+      <JournalDialog
+        open={journalTrade !== null}
+        onOpenChange={(v) => !v && setJournalTrade(null)}
+        trade={journalTrade}
+      />
     </div>
   );
 }
@@ -221,7 +236,15 @@ function PendingTable({
   );
 }
 
-function ClosedTable({ trades }: { trades: Trade[] }) {
+function ClosedTable({
+  trades,
+  hasJournal,
+  onOpenJournal,
+}: {
+  trades: Trade[];
+  hasJournal: (id: string) => boolean;
+  onOpenJournal: (t: Trade) => void;
+}) {
   if (trades.length === 0) {
     return <Empty msg="Todavía no cerraste ningún trade." />;
   }
@@ -302,10 +325,20 @@ function ClosedTable({ trades }: { trades: Trade[] }) {
               <Td muted>{t.tags.length > 0 ? t.tags.join(", ") : "—"}</Td>
               <Td>
                 <button
-                  className="flex items-center gap-0.5 rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
-                  title="Journal (Wave 21)"
+                  onClick={() => onOpenJournal(t)}
+                  className={cn(
+                    "flex items-center gap-0.5 rounded border px-2 py-0.5 text-[10px]",
+                    hasJournal(t.id)
+                      ? "border-tv-blue/40 bg-tv-blue/10 text-tv-blue hover:bg-tv-blue/20"
+                      : "border-tv-border text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+                  )}
+                  title={hasJournal(t.id) ? "Editar journal" : "Crear journal"}
                 >
-                  <Bookmark className="h-2.5 w-2.5" />
+                  {hasJournal(t.id) ? (
+                    <BookmarkCheck className="h-2.5 w-2.5" />
+                  ) : (
+                    <Bookmark className="h-2.5 w-2.5" />
+                  )}
                   Journal
                 </button>
               </Td>

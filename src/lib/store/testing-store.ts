@@ -178,6 +178,8 @@ export interface SessionDetail {
   indicators: Record<IndicatorKey, boolean>;
   hidden: Record<IndicatorKey, boolean>;
   config: IndicatorConfig;
+  /** Wave 21 — journal entries keyed by tradeId. */
+  journals?: Record<string, JournalEntry>;
 }
 
 // ─── store ────────────────────────────────────────────────────────────────────
@@ -218,6 +220,9 @@ interface TestingState {
   /** Aplica un snapshot del engine al detail activo + persiste a IDB.
    *  Usado por TestingChart al avanzar el replay (después de stepEngine). */
   applyEngineState: (next: { orders: Order[]; positions: Position[]; trades: Trade[]; realizedPnL: number }) => Promise<void>;
+  /** Wave 21 — upsert journal entry para un trade. */
+  upsertJournal: (tradeId: string, entry: Omit<JournalEntry, "createdAt" | "updatedAt" | "tradeId" | "sessionId" | "id"> & Partial<Pick<JournalEntry, "id">>) => Promise<void>;
+  deleteJournal: (tradeId: string) => Promise<void>;
 }
 
 // ─── defaults ─────────────────────────────────────────────────────────────────
@@ -534,6 +539,54 @@ export const useTestingStore = create<TestingState>()(
           ...detail,
           positions: detail.positions.map((p) =>
             p.id === positionId ? { ...p, ...patch } : p,
+          ),
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      upsertJournal: async (tradeId, entry) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const now = Date.now();
+        const journals = detail.journals ?? {};
+        const existing = journals[tradeId];
+        const fresh: JournalEntry = {
+          id: existing?.id ?? entry.id ?? uid(),
+          tradeId,
+          sessionId: active,
+          notes: entry.notes ?? existing?.notes ?? "",
+          tags: entry.tags ?? existing?.tags ?? [],
+          confidence: entry.confidence ?? existing?.confidence,
+          rating: entry.rating ?? existing?.rating,
+          checklist: entry.checklist ?? existing?.checklist ?? [],
+          screenshotIds: entry.screenshotIds ?? existing?.screenshotIds ?? [],
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        };
+        const newDetail = {
+          ...detail,
+          journals: { ...journals, [tradeId]: fresh },
+          trades: detail.trades.map((t) =>
+            t.id === tradeId ? { ...t, journalId: fresh.id } : t,
+          ),
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      deleteJournal: async (tradeId) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const journals = { ...(detail.journals ?? {}) };
+        delete journals[tradeId];
+        const newDetail = {
+          ...detail,
+          journals,
+          trades: detail.trades.map((t) =>
+            t.id === tradeId ? { ...t, journalId: undefined } : t,
           ),
         };
         set({ activeDetail: newDetail });
