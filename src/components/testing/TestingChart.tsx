@@ -34,14 +34,14 @@ import {
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import { ema } from "@/lib/indicators";
 import { LazyCandleStore, aggregateCandles, TESTING_TFS } from "@/lib/testing/candles";
-import { stepEngine, computeUnrealized } from "@/lib/testing/engine";
+import { stepEngine } from "@/lib/testing/engine";
 import {
   useTestingStore,
   type SessionMeta,
   type Position,
 } from "@/lib/store/testing-store";
 import { PositionOverlay } from "./PositionOverlay";
-import { formatPrice } from "@/lib/format";
+import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 
 const TV_COLORS = {
   bg: "#131722",
@@ -58,6 +58,10 @@ const TV_COLORS = {
 
 interface Props {
   session: SessionMeta;
+  /** Modo de render de trades cerrados sobre el chart. */
+  closedTradesMode?: ClosedTradesMode;
+  /** Callback con las velas 1m disponibles (para Go To y otras integraciones). */
+  onCandlesLoaded?: (candles1m: { time: number }[]) => void;
 }
 
 interface ContainerSize {
@@ -65,7 +69,7 @@ interface ContainerSize {
   height: number;
 }
 
-export function TestingChart({ session }: Props) {
+export function TestingChart({ session, closedTradesMode = "drawings", onCandlesLoaded }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candleSerRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -203,6 +207,7 @@ export function TestingChart({ session }: Props) {
         if (cancelled) return;
         const total = store.length;
         setReplayTotal(total);
+        onCandlesLoaded?.(store.all);
         // Si el replayIndex está sin setear (=0) y nunca jugaron, lo dejamos en 0
         // (la primera vela del rango).
         setRenderTick((t) => t + 1);
@@ -359,7 +364,7 @@ export function TestingChart({ session }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading]);
 
-  // ── 5. Helpers para PositionOverlay ──────────────────────────────────────
+  // ── 5. Helpers para overlays ─────────────────────────────────────────────
   function priceToY(price: number): number | null {
     const ser = candleSerRef.current;
     if (!ser) return null;
@@ -367,12 +372,29 @@ export function TestingChart({ session }: Props) {
     return y ?? null;
   }
 
+  function timeToX(time: number): number | null {
+    const chart = chartRef.current;
+    if (!chart) return null;
+    const x = chart.timeScale().timeToCoordinate(time as UTCTimestamp);
+    return x ?? null;
+  }
+
   // ── 6. Render ────────────────────────────────────────────────────────────
   const openPositions: Position[] = detail?.positions ?? [];
+  const closedTrades = detail?.trades ?? [];
 
   return (
     <div className="relative h-full w-full">
       <div ref={containerRef} className="h-full w-full" />
+      {/* Layer con trades cerrados (debajo de open positions) */}
+      <ClosedTradesLayer
+        trades={closedTrades}
+        timeToX={timeToX}
+        priceToY={priceToY}
+        width={size.width}
+        height={size.height}
+        mode={closedTradesMode}
+      />
       {/* Overlay con posiciones abiertas */}
       <PositionOverlay
         positions={openPositions}

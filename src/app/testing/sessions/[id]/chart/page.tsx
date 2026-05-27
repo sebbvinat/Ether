@@ -25,6 +25,9 @@ import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
 import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
+import { PositionsPanel } from "@/components/testing/PositionsPanel";
+import { GoToMenu } from "@/components/testing/GoToMenu";
+import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
 import { makeMarketOrder } from "@/lib/testing/engine";
 import type { Timeframe } from "@/lib/binance/types";
 import { cn } from "@/lib/utils";
@@ -65,6 +68,9 @@ export default function SessionChartPage({ params }: Props) {
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [autoplay, setAutoplay] = useState(false);
   const [quantity, setQuantity] = useState("1");
+  const [closedMode, setClosedMode] = useState<ClosedTradesMode>("drawings");
+  const [candles1m, setCandles1m] = useState<{ time: number }[]>([]);
+  const [showPanel, setShowPanel] = useState(true);
 
   // Asegurarse de que la sesión activa esté seteada (carga IDB)
   useEffect(() => {
@@ -211,6 +217,36 @@ export default function SessionChartPage({ params }: Props) {
 
         <div className="flex-1" />
 
+        {/* Closed trades render mode */}
+        <div className="flex items-center gap-1 rounded border border-tv-border bg-tv-panel/40 p-0.5 text-[10px]">
+          {(["drawings", "arrows", "hidden"] as const).map((m) => (
+            <button
+              key={m}
+              onClick={() => setClosedMode(m)}
+              className={cn(
+                "rounded px-1.5 py-0.5",
+                closedMode === m
+                  ? "bg-tv-blue text-white"
+                  : "text-tv-text-muted hover:text-tv-text",
+              )}
+              title={`Trades cerrados: ${m === "drawings" ? "cajas" : m === "arrows" ? "flechas" : "ocultos"}`}
+            >
+              {m === "drawings" ? "□" : m === "arrows" ? "→" : "✕"}
+            </button>
+          ))}
+        </div>
+
+        {/* Go To */}
+        <GoToMenu
+          currentTimeMs={
+            candles1m[session.replayIndex]?.time
+              ? candles1m[session.replayIndex].time * 1000
+              : session.startDate
+          }
+          candles1m={candles1m}
+          onGoTo={(idx) => setReplayIndex(idx)}
+        />
+
         <button
           onClick={() => setOrderDialogOpen(true)}
           className="flex items-center gap-1 rounded bg-tv-blue px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-blue/90"
@@ -220,9 +256,20 @@ export default function SessionChartPage({ params }: Props) {
         </button>
       </div>
 
-      {/* Chart */}
-      <div className="relative min-h-0 flex-1">
-        <TestingChart session={session} />
+      {/* Chart + Positions Panel (split vertical) */}
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <TestingChart
+            session={session}
+            closedTradesMode={closedMode}
+            onCandlesLoaded={setCandles1m}
+          />
+        </div>
+        {showPanel && (
+          <div className="h-48 shrink-0 border-t border-tv-border">
+            <PositionsPanel lastPrice={lastPrice} />
+          </div>
+        )}
       </div>
 
       {/* Replay controls */}
