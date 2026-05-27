@@ -146,10 +146,19 @@ export interface SessionMeta {
   /** Wins / losses cache. */
   wins: number;
   losses: number;
-  /** Índice del cursor de replay (cuál es la última vela "vivida"). */
+  /** Índice del cursor de replay (cuál es la última vela "vivida"). En velas
+   *  de base 1m. */
   replayIndex: number;
-  /** Cuántas velas tiene la ventana histórica total (se setea al cargar). */
+  /** Cuántas velas (en base 1m) tiene la ventana histórica total. */
   replayTotal: number;
+  /** TF para visualizar el chart (1m/5m/15m/30m/1h/4h/1d). Cambiable on-the-fly.
+   *  Default = "15m". */
+  chartTimeframe: Timeframe;
+  /** Step size del replay: cuántas velas 1m avanzar por cada ">|" click.
+   *  Default 1 (= 1m por step). 5 = 5 minutos, 15 = 15 minutos, etc. */
+  replayStepSize: number;
+  /** Speed del autoplay: ms entre cada step. Default 1000. */
+  replayIntervalMs: number;
   /** Descripción opcional del trader. */
   description?: string;
   /** Tags opcionales para agrupar sesiones (ej. "strategy: ICT", "phase: 1"). */
@@ -189,7 +198,7 @@ interface TestingState {
   setActiveSession: (id: string | null) => Promise<void>;
 
   // sesiones (meta)
-  createSession: (input: Omit<SessionMeta, "id" | "currentBalance" | "realizedPnL" | "totalTrades" | "wins" | "losses" | "replayIndex" | "replayTotal" | "createdAt" | "updatedAt" | "tags"> & { tags?: string[] }) => string;
+  createSession: (input: Omit<SessionMeta, "id" | "currentBalance" | "realizedPnL" | "totalTrades" | "wins" | "losses" | "replayIndex" | "replayTotal" | "createdAt" | "updatedAt" | "tags" | "chartTimeframe" | "replayStepSize" | "replayIntervalMs"> & { tags?: string[] }) => string;
   duplicateSession: (id: string, newName: string) => Promise<string | null>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, name: string) => void;
@@ -198,8 +207,17 @@ interface TestingState {
   // detalle (operan sobre activeDetail)
   setReplayIndex: (idx: number) => void;
   setReplayTotal: (total: number) => void;
-  // (las acciones de órdenes/posiciones/trades llegan en Wave 18; acá sólo
-  //  dejamos el shape listo)
+  setChartTimeframe: (tf: Timeframe) => void;
+  setReplayStepSize: (size: number) => void;
+  setReplayIntervalMs: (ms: number) => void;
+  // Wave 18 — acciones de engine (operan sobre activeDetail + meta)
+  addOrder: (order: Order) => Promise<void>;
+  cancelOrderById: (orderId: string) => Promise<void>;
+  closePositionManual: (positionId: string, closePrice: number, closedAtMs: number) => Promise<void>;
+  updatePositionLevels: (positionId: string, patch: { sl?: number; tp?: number }) => Promise<void>;
+  /** Aplica un snapshot del engine al detail activo + persiste a IDB.
+   *  Usado por TestingChart al avanzar el replay (después de stepEngine). */
+  applyEngineState: (next: { orders: Order[]; positions: Position[]; trades: Trade[]; realizedPnL: number }) => Promise<void>;
 }
 
 // ─── defaults ─────────────────────────────────────────────────────────────────
@@ -290,6 +308,9 @@ export const useTestingStore = create<TestingState>()(
           losses: 0,
           replayIndex: 0,
           replayTotal: 0,
+          chartTimeframe: input.timeframe,
+          replayStepSize: 1,
+          replayIntervalMs: 1000,
           description: input.description,
           tags: input.tags ?? [],
           createdAt: now,
@@ -314,6 +335,9 @@ export const useTestingStore = create<TestingState>()(
           wins: 0,
           losses: 0,
           replayIndex: 0,
+          chartTimeframe: meta.chartTimeframe ?? meta.timeframe,
+          replayStepSize: meta.replayStepSize ?? 1,
+          replayIntervalMs: meta.replayIntervalMs ?? 1000,
           createdAt: now,
           updatedAt: now,
         };
@@ -380,6 +404,182 @@ export const useTestingStore = create<TestingState>()(
           ),
         }));
       },
+
+      setChartTimeframe: (tf) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, chartTimeframe: tf, updatedAt: Date.now() } : x,
+          ),
+        }));
+      },
+
+      setReplayStepSize: (size) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, replayStepSize: Math.max(1, size) } : x,
+          ),
+        }));
+      },
+
+      setReplayIntervalMs: (ms) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, replayIntervalMs: Math.max(50, ms) } : x,
+          ),
+        }));
+      },
+
+      addOrder: async (order) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = { ...detail, orders: [...detail.orders, order] };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      cancelOrderById: async (orderId) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = {
+          ...detail,
+          orders: detail.orders.map((o) =>
+            o.id === orderId && o.status === "pending"
+              ? { ...o, status: "cancelled" as const, cancelledAt: Date.now() }
+              : o,
+          ),
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      closePositionManual: async (positionId, closePrice, closedAtMs) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const pos = detail.positions.find((p) => p.id === positionId);
+        if (!pos) return;
+        const dir = pos.side === "buy" ? 1 : -1;
+        const realized = (closePrice - pos.entry) * pos.size * dir;
+        const outcome: TradeOutcome =
+          realized > 0 ? "win" : realized < 0 ? "loss" : "breakeven";
+        let rMultiple: number | undefined;
+        let idealRR: number | undefined;
+        if (pos.sl !== undefined) {
+          const risk = Math.abs(pos.entry - pos.sl) * pos.size;
+          if (risk > 0) {
+            rMultiple = realized / risk;
+            idealRR = (pos.maxFavorable ?? 0) / risk;
+          }
+        }
+        const trade: Trade = {
+          id: uid(),
+          sessionId: active,
+          side: pos.side,
+          size: pos.size,
+          entry: pos.entry,
+          sl: pos.sl,
+          tp: pos.tp,
+          closePrice,
+          closeReason: "manual",
+          openedAt: pos.openedAt,
+          closedAt: closedAtMs,
+          realizedPnL: realized,
+          commission: 0,
+          outcome,
+          rMultiple,
+          idealRR,
+          maxAdverse: pos.maxAdverse ?? 0,
+          maxFavorable: pos.maxFavorable ?? 0,
+          tags: pos.tags,
+        };
+        const newDetail = {
+          ...detail,
+          positions: detail.positions.filter((p) => p.id !== positionId),
+          trades: [...detail.trades, trade],
+        };
+        // Update meta: realizedPnL, balance, totals
+        const meta = get().sessions.find((s) => s.id === active);
+        const updatedMeta = meta
+          ? {
+              realizedPnL: meta.realizedPnL + realized,
+              currentBalance: meta.currentBalance + realized,
+              totalTrades: meta.totalTrades + 1,
+              wins: meta.wins + (outcome === "win" ? 1 : 0),
+              losses: meta.losses + (outcome === "loss" ? 1 : 0),
+              updatedAt: Date.now(),
+            }
+          : null;
+        set((s) => ({
+          activeDetail: newDetail,
+          sessions: updatedMeta
+            ? s.sessions.map((x) => (x.id === active ? { ...x, ...updatedMeta } : x))
+            : s.sessions,
+        }));
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      updatePositionLevels: async (positionId, patch) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = {
+          ...detail,
+          positions: detail.positions.map((p) =>
+            p.id === positionId ? { ...p, ...patch } : p,
+          ),
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      applyEngineState: async (next) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        const meta = get().sessions.find((s) => s.id === active);
+        if (!active || !detail || !meta) return;
+        const realizedDelta = next.realizedPnL - meta.realizedPnL;
+        const newTradesCount = next.trades.length - detail.trades.length;
+        let wins = meta.wins;
+        let losses = meta.losses;
+        if (newTradesCount > 0) {
+          const fresh = next.trades.slice(detail.trades.length);
+          for (const t of fresh) {
+            if (t.outcome === "win") wins++;
+            else if (t.outcome === "loss") losses++;
+          }
+        }
+        const newDetail = {
+          ...detail,
+          orders: next.orders,
+          positions: next.positions,
+          trades: next.trades,
+        };
+        set((s) => ({
+          activeDetail: newDetail,
+          sessions: s.sessions.map((x) =>
+            x.id === active
+              ? {
+                  ...x,
+                  realizedPnL: next.realizedPnL,
+                  currentBalance: x.initialBalance + next.realizedPnL,
+                  totalTrades: next.trades.length,
+                  wins,
+                  losses,
+                  updatedAt: Date.now(),
+                }
+              : x,
+          ),
+        }));
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
     }),
     {
       name: "ether-testing-v1",
@@ -388,6 +588,17 @@ export const useTestingStore = create<TestingState>()(
         // NO persistimos activeDetail (vive en IDB) ni activeSessionId
         // (vuelve a null al recargar — el usuario re-elige).
       }),
+      merge: (persistedRaw, currentState) => {
+        // Wave 18 — backfill de campos nuevos en sesiones creadas en Wave 17.
+        const p = persistedRaw as { sessions?: SessionMeta[] } | undefined;
+        const sessions = (p?.sessions ?? []).map((sess) => ({
+          ...sess,
+          chartTimeframe: sess.chartTimeframe ?? sess.timeframe,
+          replayStepSize: sess.replayStepSize ?? 1,
+          replayIntervalMs: sess.replayIntervalMs ?? 1000,
+        }));
+        return { ...currentState, ...(p ?? {}), sessions };
+      },
     },
   ),
 );
