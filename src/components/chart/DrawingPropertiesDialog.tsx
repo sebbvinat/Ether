@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { X, ChevronDown, Bold, Italic, Trash2, Check } from "lucide-react";
+import { X, ChevronDown, Bold, Italic, Trash2, Check, Bell, BellOff } from "lucide-react";
 import {
   useChartStore,
   type Drawing,
@@ -9,9 +9,15 @@ import {
   type DrawingStyle,
   type DrawingTool,
 } from "@/lib/store/chart-store";
+import { supportsAlerts } from "@/lib/alerts/drawing-levels";
 import { cn } from "@/lib/utils";
 
-type Tab = "style" | "text" | "coordinates" | "visibility";
+/** Indica si el tipo de dibujo soporta alertas. */
+function canAlert(t: Drawing["type"]): boolean {
+  return supportsAlerts(t);
+}
+
+type Tab = "style" | "text" | "coordinates" | "visibility" | "alert";
 
 // Tipo → label en español (mostrado en el header del dialog)
 const TYPE_LABELS: Partial<Record<DrawingTool, string>> = {
@@ -52,6 +58,7 @@ const TYPE_LABELS: Partial<Record<DrawingTool, string>> = {
   gannfan: "Abanico Gann",
   callout: "Callout",
   brush: "Pincel",
+  anchoredVwap: "VWAP anclado",
 };
 
 // Paleta estilo TradingView — fila de grises + matriz tono × brillo.
@@ -213,6 +220,9 @@ export function DrawingPropertiesDialog() {
               ["text", "Texto"],
               ["coordinates", "Coordenadas"],
               ["visibility", "Visibilidad"],
+              ...(canAlert(target.type)
+                ? ([["alert", "Alerta"]] as [Tab, string][])
+                : ([] as [Tab, string][])),
             ] as [Tab, string][]
           ).map(([id, label]) => (
             <button
@@ -260,6 +270,9 @@ export function DrawingPropertiesDialog() {
           )}
           {tab === "visibility" && (
             <VisibilityTab draft={draftStyle} setDraft={setDraftStyle} />
+          )}
+          {tab === "alert" && canAlert(target.type) && (
+            <AlertTab drawingId={target.id} />
           )}
         </div>
 
@@ -1019,6 +1032,132 @@ function TemplateDropdown({
       )}
       {/* Evita 'unused' lint en currentStyle (consumido al guardar via closure de onSave) */}
       <span className="hidden">{JSON.stringify(currentStyle).length}</span>
+    </div>
+  );
+}
+
+// =========================================================================
+// Tab: Alert (Wave 14)
+// =========================================================================
+
+function AlertTab({ drawingId }: { drawingId: string }) {
+  const alerts = useChartStore((s) => s.drawingAlerts);
+  const setDrawingAlert = useChartStore((s) => s.setDrawingAlert);
+  const rearmAlert = useChartStore((s) => s.rearmAlert);
+  const a = alerts[drawingId];
+
+  const enabled = !!a;
+  const direction = a?.direction ?? "both";
+  const note = a?.note ?? "";
+  const triggered = !!a?.triggered;
+
+  function requestNotifyPerm() {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission().catch(() => {});
+      }
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded border border-tv-border bg-tv-bg/40 px-3 py-3">
+        <label className="flex cursor-pointer items-center gap-3">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => {
+              if (e.target.checked) {
+                setDrawingAlert(drawingId, {
+                  drawingId,
+                  direction: "both",
+                  triggered: false,
+                  note: "",
+                });
+                requestNotifyPerm();
+              } else {
+                setDrawingAlert(drawingId, null);
+              }
+            }}
+            className="h-4 w-4 accent-tv-blue"
+          />
+          <div className="flex flex-col">
+            <span className="flex items-center gap-2 text-[12px] font-medium text-tv-text">
+              {enabled ? (
+                <Bell className="h-3.5 w-3.5 text-tv-yellow" />
+              ) : (
+                <BellOff className="h-3.5 w-3.5 text-tv-text-muted" />
+              )}
+              Alerta activa
+            </span>
+            <span className="text-[10px] text-tv-text-muted">
+              Dispara un toast cuando el precio cruza el nivel del dibujo
+            </span>
+          </div>
+        </label>
+      </div>
+
+      {enabled && (
+        <>
+          <Row label="Dirección">
+            <select
+              value={direction}
+              onChange={(e) =>
+                setDrawingAlert(drawingId, {
+                  drawingId,
+                  direction: e.target.value as "above" | "below" | "both",
+                  triggered: false,
+                  note,
+                })
+              }
+              className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
+            >
+              <option value="both">Cualquier cruce</option>
+              <option value="above">Cruza hacia arriba (↑)</option>
+              <option value="below">Cruza hacia abajo (↓)</option>
+            </select>
+          </Row>
+          <Row label="Nota">
+            <input
+              type="text"
+              value={note}
+              onChange={(e) =>
+                setDrawingAlert(drawingId, {
+                  drawingId,
+                  direction,
+                  triggered,
+                  note: e.target.value,
+                })
+              }
+              placeholder="Opcional — se muestra en el toast"
+              className="flex-1 rounded border border-tv-border bg-tv-bg px-2 py-1 text-xs"
+            />
+          </Row>
+
+          {triggered && (
+            <div className="flex items-center justify-between gap-2 rounded border border-tv-red/40 bg-tv-red/10 px-3 py-2 text-[11px]">
+              <span className="text-tv-text">
+                Alerta disparada
+                {a?.triggeredAt
+                  ? ` · ${new Date(a.triggeredAt).toLocaleString()}`
+                  : ""}
+              </span>
+              <button
+                onClick={() => rearmAlert(drawingId)}
+                className="rounded border border-tv-border bg-tv-panel px-2 py-1 text-tv-text hover:bg-tv-panel-hover"
+              >
+                Rearmar
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      <p className="text-[10px] text-tv-text-muted">
+        Las alertas funcionan mientras la app esté abierta. Si el browser pide
+        permiso de notificaciones, aceptá para recibir notificaciones del SO
+        además del toast.
+      </p>
     </div>
   );
 }

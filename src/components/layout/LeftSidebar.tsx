@@ -115,6 +115,8 @@ const GROUPS: Group[] = [
       { id: "forecast", glyph: "⇄", label: "Proyección", clicks: 2, storeKey: "forecast" },
       { id: "cycle", glyph: "∿", label: "Líneas de ciclo", clicks: 2, storeKey: "cycle" },
       { id: "regression", glyph: "∷", label: "Canal de regresión lineal", clicks: 2, storeKey: "regression" },
+      // Wave 12 — Anchored VWAP: 1 clic ancla la VWAP desde esa vela
+      { id: "avwap", glyph: "Ⓥ", label: "VWAP anclado (AVWAP)", clicks: 1, storeKey: "anchoredVwap" },
     ],
   },
   {

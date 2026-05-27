@@ -17,7 +17,9 @@ import { PineEditor } from "@/components/pine/PineEditor";
 import { BacktestDialog } from "@/components/backtest/BacktestDialog";
 import { DataWindow } from "@/components/chart/DataWindow";
 import { DrawingPropertiesDialog } from "@/components/chart/DrawingPropertiesDialog";
+import { DrawingAlertsToast } from "@/components/alerts/DrawingAlertsToast";
 import { useChartStore } from "@/lib/store/chart-store";
+import { matchesCombo, isTypingTarget, type ShortcutAction } from "@/lib/shortcuts";
 
 export default function HomePage() {
   const mobileLeftOpen = useChartStore((s) => s.mobileLeftOpen);
@@ -65,44 +67,80 @@ export default function HomePage() {
     };
   }, []);
 
-  // Global keyboard shortcuts: Z clean · F focus · H hide-legend · Alt+R replay · Esc cascade
+  // Global keyboard shortcuts — Wave 15: configurables vía store.shortcuts.
+  // Esc se mantiene hardcoded como cascada de "salir" (no es rebindeable).
   useEffect(() => {
-    const isTyping = (el: EventTarget | null): boolean => {
-      const n = el as HTMLElement | null;
-      return (
-        !!n &&
-        (n.tagName === "INPUT" ||
-          n.tagName === "TEXTAREA" ||
-          n.isContentEditable === true)
-      );
-    };
     const onKey = (e: KeyboardEvent) => {
-      if (isTyping(document.activeElement)) return;
-      const k = e.key.toLowerCase();
+      if (isTypingTarget(document.activeElement)) return;
       if (e.key === "Escape") {
         if (cleanMode) setCleanMode(false);
         else if (focusMode) setFocusMode(false);
         else if (tool !== "cursor") setTool("cursor");
         return;
       }
-      if (e.metaKey || e.ctrlKey) return;
-      if (k === "r" && e.altKey) {
+      const st = useChartStore.getState();
+      const shortcuts = st.shortcuts as Record<ShortcutAction, string>;
+      // Recorre cada acción y dispara la primera que matchee
+      for (const action of Object.keys(shortcuts) as ShortcutAction[]) {
+        const combo = shortcuts[action];
+        if (!combo) continue;
+        if (!matchesCombo(e, combo)) continue;
         e.preventDefault();
-        const st = useChartStore.getState();
-        if (st.replay.active) st.stopReplay();
-        else
+        runShortcut(action);
+        return;
+      }
+    };
+    function runShortcut(action: ShortcutAction) {
+      const st = useChartStore.getState();
+      switch (action) {
+        case "cleanMode":
+          st.toggleCleanMode();
+          break;
+        case "focusMode":
+          st.setFocusMode(!st.focusMode);
+          break;
+        case "hideLegend":
+          st.toggleHideLegend();
+          break;
+        case "replay":
+          if (st.replay.active) st.stopReplay();
+          else
+            window.dispatchEvent(
+              new CustomEvent("ether:start-replay", {
+                detail: { slotId: st.activeSlotId },
+              }),
+            );
+          break;
+        case "openPine":
+          window.dispatchEvent(new CustomEvent("ether:open-pine"));
+          break;
+        case "openBacktest":
+          window.dispatchEvent(new CustomEvent("ether:open-backtest"));
+          break;
+        case "openIndicators":
+          window.dispatchEvent(new CustomEvent("ether:open-indicators"));
+          break;
+        case "openLayers":
+          window.dispatchEvent(new CustomEvent("ether:open-layers"));
+          break;
+        case "toggleLockDrawings":
+          st.toggleLockDrawings();
+          break;
+        case "toggleHideDrawings":
+          st.toggleHideDrawings();
+          break;
+        case "toggleMagnet":
+          st.toggleMagnetMode();
+          break;
+        case "screenshot":
           window.dispatchEvent(
-            new CustomEvent("ether:start-replay", {
+            new CustomEvent("ether:capture", {
               detail: { slotId: st.activeSlotId },
             }),
           );
-        return;
+          break;
       }
-      if (e.altKey) return;
-      if (k === "z") toggleCleanMode();
-      else if (k === "f") setFocusMode(!focusMode);
-      else if (k === "h") toggleHideLegend();
-    };
+    }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [
@@ -112,8 +150,6 @@ export default function HomePage() {
     setCleanMode,
     setFocusMode,
     setTool,
-    toggleCleanMode,
-    toggleHideLegend,
   ]);
 
   const backdropOpen = mobileLeftOpen || mobileRightOpen;
@@ -181,6 +217,7 @@ export default function HomePage() {
         timeframe={timeframe}
       />
       <DrawingPropertiesDialog />
+      <DrawingAlertsToast />
     </div>
   );
 }

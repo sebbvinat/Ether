@@ -4,6 +4,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Timeframe } from "@/lib/binance/types";
 import { setYahooSymbolsCache, type Instrument } from "@/lib/instruments";
+import { DEFAULT_SHORTCUTS } from "@/lib/shortcuts";
 
 export type IndicatorKey =
   | "ema20"
@@ -80,14 +81,19 @@ export type DrawingTool =
   | "gannfan"
   | "callout"
   // Wave 6C
-  | "brush";
+  | "brush"
+  // Wave 12 — Anchored VWAP (1 click → ancla; la línea se computa de ahí en adelante)
+  | "anchoredVwap";
 
 export type ChartStyle =
   | "candles"
   | "heikin"
   | "line"
   | "area"
-  | "baseline";
+  | "baseline"
+  // Wave 16 — chart types con eje de "bricks" en vez de tiempo continuo
+  | "renko"
+  | "lineBreak";
 
 /** Modo de la escala de precio. */
 export type PriceScaleModeKey = "normal" | "log" | "percent" | "indexed";
@@ -108,6 +114,30 @@ export interface ChartAppearance {
   /** Mostrar la grilla. Undefined → true. */
   showGrid?: boolean;
 }
+
+/** Wave 13 — definición de una sesión de mercado (Asia / Europa / NY / etc.).
+ *  start/end son minutos desde la medianoche UTC (0–1440). Si end < start,
+ *  cruza medianoche (no aplica para las 3 default, pero queda soportado). */
+export interface SessionDef {
+  id: string;
+  name: string;
+  /** Color base — el render usa esto con opacidad baja (~0.08). */
+  color: string;
+  /** Minutos desde 00:00 UTC. */
+  startMin: number;
+  endMin: number;
+  enabled: boolean;
+}
+
+/** Sesiones por defecto en UTC, sin DST porque sería un quilombo:
+ *  Asia: 00:00–09:00 (Tokio + HK + Sydney ya cerrada).
+ *  Europa: 07:00–16:00 (Londres + Frankfurt).
+ *  Nueva York: 12:30–21:00 (NYSE 09:30–16:00 ET aprox sin DST). */
+const DEFAULT_SESSIONS: SessionDef[] = [
+  { id: "asia", name: "Asia", color: "#7c4dff", startMin: 0, endMin: 540, enabled: true },
+  { id: "europe", name: "Europa", color: "#26a69a", startMin: 420, endMin: 960, enabled: true },
+  { id: "ny", name: "Nueva York", color: "#ffb74d", startMin: 750, endMin: 1260, enabled: true },
+];
 
 export interface WatchlistSection {
   id: string;
@@ -221,6 +251,20 @@ export interface DrawingTemplate {
   style: DrawingStyle;
 }
 
+/** Wave 14 — alerta client-side anclada a un dibujo (hline / trendline / ray /
+ *  hrange / hlineExt). Se dispara cuando el precio cruza el nivel del dibujo. */
+export interface DrawingAlert {
+  drawingId: string;
+  /** Dirección: "above" dispara cuando price cruza el nivel hacia arriba, "below"
+   *  hacia abajo, "both" dispara en cualquier cruce. */
+  direction: "above" | "below" | "both";
+  /** Una vez disparada se marca y no vuelve a sonar (a menos que se rearme). */
+  triggered: boolean;
+  triggeredAt?: number;
+  /** Mensaje opcional que se muestra en el toast. */
+  note?: string;
+}
+
 export type Drawing =
   | {
       id: string;
@@ -323,7 +367,9 @@ export type Drawing =
   | { id: string; symbol: string; type: "gannfan"; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { id: string; symbol: string; type: "callout"; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
   // Wave 6C
-  | { id: string; symbol: string; type: "brush"; points: DrawingPoint[]; color?: string };
+  | { id: string; symbol: string; type: "brush"; points: DrawingPoint[]; color?: string }
+  // Wave 12 — Anchored VWAP: el ancla define desde qué vela se acumula el VWAP.
+  | { id: string; symbol: string; type: "anchoredVwap"; at: DrawingPoint; color?: string };
 
 export type DrawingInput =
   | {
@@ -380,7 +426,9 @@ export type DrawingInput =
   | { type: "gannfan"; symbol: string; a: DrawingPoint; b: DrawingPoint; color?: string }
   | { type: "callout"; symbol: string; a: DrawingPoint; b: DrawingPoint; text: string; color?: string }
   // Wave 6C
-  | { type: "brush"; symbol: string; points: DrawingPoint[]; color?: string };
+  | { type: "brush"; symbol: string; points: DrawingPoint[]; color?: string }
+  // Wave 12
+  | { type: "anchoredVwap"; symbol: string; at: DrawingPoint; color?: string };
 
 export function layoutSlotCount(l: LayoutType): number {
   switch (l) {
@@ -559,6 +607,9 @@ interface ChartState {
   priceScaleMode: PriceScaleModeKey;
   /** Overrides de apariencia del gráfico (colores velas/fondo/grilla). */
   chartAppearance: ChartAppearance;
+  /** Wave 13 — resaltado de sesiones (Asia / Europa / NY). */
+  sessionsEnabled: boolean;
+  sessions: SessionDef[];
   /** Data Window — panel OHLCV de la vela bajo el cursor. */
   dataWindowOpen: boolean;
   /** Snapshot que alimenta el Data Window (ephemeral, lo escribe PriceChart). */
@@ -643,6 +694,10 @@ interface ChartState {
   drawingTemplates: DrawingTemplate[];
   /** Drawing cuyo dialog de propiedades está abierto (null = cerrado). Ephemeral. */
   drawingPropsTargetId: string | null;
+  /** Wave 14 — alertas atadas a dibujos (key = drawing id). Persistido. */
+  drawingAlerts: Record<string, DrawingAlert>;
+  /** Wave 15 — atajos de teclado configurables (acción → combo canónico). */
+  shortcuts: Record<string, string>;
 
   // Actions
   setSymbol: (s: string, slotId?: string) => void;
@@ -660,6 +715,18 @@ interface ChartState {
   resetChartAppearance: () => void;
   setDataWindowOpen: (v: boolean) => void;
   setDataWindow: (d: ChartState["dataWindow"]) => void;
+  setSessionsEnabled: (v: boolean) => void;
+  toggleSession: (id: string) => void;
+  setSessionColor: (id: string, color: string) => void;
+  resetSessions: () => void;
+  /** Wave 14 — alertas sobre dibujos. */
+  setDrawingAlert: (drawingId: string, alert: DrawingAlert | null) => void;
+  markAlertTriggered: (drawingId: string) => void;
+  rearmAlert: (drawingId: string) => void;
+  clearAllDrawingAlerts: () => void;
+  /** Wave 15 — atajos de teclado. */
+  setShortcut: (action: string, combo: string) => void;
+  resetShortcuts: () => void;
   setSyncCharts: (v: boolean) => void;
   setTheme: (t: "dark" | "light") => void;
   toggleTheme: () => void;
@@ -814,6 +881,8 @@ export const useChartStore = create<ChartState>()(
       chartAppearance: {} as ChartAppearance,
       dataWindowOpen: false,
       dataWindow: null,
+      sessionsEnabled: false,
+      sessions: DEFAULT_SESSIONS.map((s) => ({ ...s })),
       syncCharts: false,
       compares: {},
       theme: "dark" as "dark" | "light",
@@ -847,6 +916,8 @@ export const useChartStore = create<ChartState>()(
       drawingStyles: {},
       drawingTemplates: [],
       drawingPropsTargetId: null,
+      drawingAlerts: {},
+      shortcuts: { ...DEFAULT_SHORTCUTS },
       replay: {
         active: false,
         slotId: null,
@@ -946,6 +1017,20 @@ export const useChartStore = create<ChartState>()(
       resetChartAppearance: () => set({ chartAppearance: {} }),
       setDataWindowOpen: (dataWindowOpen) => set({ dataWindowOpen }),
       setDataWindow: (dataWindow) => set({ dataWindow }),
+      setSessionsEnabled: (sessionsEnabled) => set({ sessionsEnabled }),
+      toggleSession: (id) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === id ? { ...s, enabled: !s.enabled } : s,
+          ),
+        })),
+      setSessionColor: (id, color) =>
+        set((state) => ({
+          sessions: state.sessions.map((s) =>
+            s.id === id ? { ...s, color } : s,
+          ),
+        })),
+      resetSessions: () => set({ sessions: DEFAULT_SESSIONS.map((s) => ({ ...s })) }),
       setSyncCharts: (syncCharts) => set({ syncCharts }),
       setTheme: (theme) => set({ theme }),
       toggleTheme: () =>
@@ -1401,6 +1486,41 @@ export const useChartStore = create<ChartState>()(
             drawingStyles: { ...state.drawingStyles, [drawingId]: { ...t.style } },
           };
         }),
+      setDrawingAlert: (drawingId, alert) =>
+        set((state) => {
+          const next = { ...state.drawingAlerts };
+          if (alert === null) delete next[drawingId];
+          else next[drawingId] = alert;
+          return { drawingAlerts: next };
+        }),
+      markAlertTriggered: (drawingId) =>
+        set((state) => {
+          const a = state.drawingAlerts[drawingId];
+          if (!a) return {};
+          return {
+            drawingAlerts: {
+              ...state.drawingAlerts,
+              [drawingId]: { ...a, triggered: true, triggeredAt: Date.now() },
+            },
+          };
+        }),
+      rearmAlert: (drawingId) =>
+        set((state) => {
+          const a = state.drawingAlerts[drawingId];
+          if (!a) return {};
+          return {
+            drawingAlerts: {
+              ...state.drawingAlerts,
+              [drawingId]: { ...a, triggered: false, triggeredAt: undefined },
+            },
+          };
+        }),
+      clearAllDrawingAlerts: () => set({ drawingAlerts: {} }),
+      setShortcut: (action, combo) =>
+        set((state) => ({
+          shortcuts: { ...state.shortcuts, [action]: combo },
+        })),
+      resetShortcuts: () => set({ shortcuts: { ...DEFAULT_SHORTCUTS } }),
       setSymbolDialogOpen: (symbolDialogOpen) => set({ symbolDialogOpen }),
       setSettingsTarget: (settingsTarget) => set({ settingsTarget }),
       setMobileLeftOpen: (mobileLeftOpen) => set({ mobileLeftOpen }),
@@ -1464,6 +1584,8 @@ export const useChartStore = create<ChartState>()(
         priceScaleMode: s.priceScaleMode,
         chartAppearance: s.chartAppearance,
         dataWindowOpen: s.dataWindowOpen,
+        sessionsEnabled: s.sessionsEnabled,
+        sessions: s.sessions,
         syncCharts: s.syncCharts,
         compares: s.compares,
         workspaces: s.workspaces,
@@ -1480,6 +1602,8 @@ export const useChartStore = create<ChartState>()(
         hideDrawings: s.hideDrawings,
         drawingStyles: s.drawingStyles,
         drawingTemplates: s.drawingTemplates,
+        drawingAlerts: s.drawingAlerts,
+        shortcuts: s.shortcuts,
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.yahooSymbols) setYahooSymbolsCache(state.yahooSymbols);
@@ -1513,6 +1637,8 @@ export const useChartStore = create<ChartState>()(
           priceLines: p.priceLines ?? currentState.priceLines,
           drawingStyles: p.drawingStyles ?? currentState.drawingStyles,
           drawingTemplates: p.drawingTemplates ?? currentState.drawingTemplates,
+          drawingAlerts: p.drawingAlerts ?? currentState.drawingAlerts,
+          shortcuts: { ...currentState.shortcuts, ...(p.shortcuts ?? {}) },
           binanceMarket: p.binanceMarket ?? currentState.binanceMarket,
           chartStyle: p.chartStyle ?? currentState.chartStyle,
           tabs: p.tabs ?? currentState.tabs,

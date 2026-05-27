@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MoreHorizontal,
   Activity,
@@ -19,6 +19,8 @@ import {
   Code2,
   LineChart,
   Settings2,
+  Clock,
+  Keyboard,
 } from "lucide-react";
 import { useChartStore } from "@/lib/store/chart-store";
 import { AlertsDialog } from "@/components/alerts/AlertsDialog";
@@ -28,6 +30,8 @@ import { JournalDialog } from "@/components/journal/JournalDialog";
 import { ObjectTreeDialog } from "@/components/layout/ObjectTreeDialog";
 import { IndicatorsDialog } from "@/components/chart/IndicatorsDialog";
 import { ChartSettingsDialog } from "@/components/chart/ChartSettingsDialog";
+import { SessionsDialog } from "@/components/chart/SessionsDialog";
+import { ShortcutsDialog } from "@/components/layout/ShortcutsDialog";
 import { cn } from "@/lib/utils";
 
 /**
@@ -43,7 +47,21 @@ export function MoreMenu() {
   const [layersOpen, setLayersOpen] = useState(false);
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
   const [chartSettingsOpen, setChartSettingsOpen] = useState(false);
+  const [sessionsDialogOpen, setSessionsDialogOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Wave 15 — escuchar eventos globales para abrir dialogs vía shortcut.
+  useEffect(() => {
+    const openInd = () => setIndicatorsOpen(true);
+    const openLay = () => setLayersOpen(true);
+    window.addEventListener("ether:open-indicators", openInd);
+    window.addEventListener("ether:open-layers", openLay);
+    return () => {
+      window.removeEventListener("ether:open-indicators", openInd);
+      window.removeEventListener("ether:open-layers", openLay);
+    };
+  }, []);
 
   const activeSlotId = useChartStore((s) => s.activeSlotId);
   const replay = useChartStore((s) => s.replay);
@@ -59,6 +77,8 @@ export function MoreMenu() {
   const setSyncCharts = useChartStore((s) => s.setSyncCharts);
   const dataWindowOpen = useChartStore((s) => s.dataWindowOpen);
   const setDataWindowOpen = useChartStore((s) => s.setDataWindowOpen);
+  const sessionsEnabled = useChartStore((s) => s.sessionsEnabled);
+  const setSessionsEnabled = useChartStore((s) => s.setSessionsEnabled);
   const binanceMarket = useChartStore((s) => s.binanceMarket);
   const setBinanceMarket = useChartStore((s) => s.setBinanceMarket);
 
@@ -217,12 +237,33 @@ export function MoreMenu() {
                 value={dataWindowOpen}
                 onChange={setDataWindowOpen}
               />
+              <Toggle
+                label="Resaltado de sesiones"
+                value={sessionsEnabled}
+                onChange={setSessionsEnabled}
+              />
+              <Row
+                icon={<Clock className="h-4 w-4" />}
+                label="Configurar sesiones…"
+                onClick={() => {
+                  setOpen(false);
+                  setSessionsDialogOpen(true);
+                }}
+              />
               <Row
                 icon={<Settings2 className="h-4 w-4" />}
                 label="Configuración del gráfico"
                 onClick={() => {
                   setOpen(false);
                   setChartSettingsOpen(true);
+                }}
+              />
+              <Row
+                icon={<Keyboard className="h-4 w-4" />}
+                label="Atajos de teclado…"
+                onClick={() => {
+                  setOpen(false);
+                  setShortcutsOpen(true);
                 }}
               />
             </Section>
@@ -371,6 +412,11 @@ export function MoreMenu() {
         open={chartSettingsOpen}
         onOpenChange={setChartSettingsOpen}
       />
+      <SessionsDialog
+        open={sessionsDialogOpen}
+        onOpenChange={setSessionsDialogOpen}
+      />
+      <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </>
   );
 }

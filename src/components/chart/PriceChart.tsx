@@ -28,6 +28,8 @@ import {
   stochastic,
   vwap,
   heikinAshi,
+  renko,
+  lineBreak,
   cci,
   williamsR,
   mfi,
@@ -53,6 +55,12 @@ import { IndicatorPill } from "./IndicatorPill";
 import { MeasureOverlay } from "./MeasureOverlay";
 import { DrawingsLayer } from "./DrawingsLayer";
 import { VolumeProfileLayer } from "./VolumeProfileLayer";
+import { SessionsLayer } from "./SessionsLayer";
+import {
+  drawingLevelsAt,
+  supportsAlerts,
+  crossed,
+} from "@/lib/alerts/drawing-levels";
 import { Countdown } from "./Countdown";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
@@ -231,6 +239,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const addDrawing = useChartStore((s) => s.addDrawing);
   const removeDrawing = useChartStore((s) => s.removeDrawing);
   const updateDrawing = useChartStore((s) => s.updateDrawing);
+  const drawingAlerts = useChartStore((s) => s.drawingAlerts);
+  const markAlertTriggered = useChartStore((s) => s.markAlertTriggered);
   const selectedDrawingId = useChartStore((s) => s.selectedDrawingId);
   const selectDrawing = useChartStore((s) => s.selectDrawing);
   const panesCollapsed = useChartStore((s) => s.panesCollapsed);
@@ -239,6 +249,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const storeHideDrawings = useChartStore((s) => s.hideDrawings);
   const storeLockDrawings = useChartStore((s) => s.lockDrawings);
   const drawingStyles = useChartStore((s) => s.drawingStyles);
+  const sessionsEnabled = useChartStore((s) => s.sessionsEnabled);
+  const sessions = useChartStore((s) => s.sessions);
   const theme = useChartStore((s) => s.theme);
   const removeIndicator = useChartStore((s) => s.removeIndicator);
   const toggleHidden = useChartStore((s) => s.toggleHidden);
@@ -268,6 +280,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   symbolRef.current = symbol;
   const configRef = useRef(config);
   configRef.current = config;
+  // Wave 14 — refs para alertas (el closure de onCandle se cierra una vez por
+  // symbol/timeframe; necesitamos refs para que vea cambios sin re-suscribir).
+  const drawingsRef = useRef(drawings);
+  drawingsRef.current = drawings;
+  const drawingAlertsRef = useRef(drawingAlerts);
+  drawingAlertsRef.current = drawingAlerts;
+  const lastClosePriceRef = useRef<number | null>(null);
   const replayActiveRef = useRef(replayActiveForThis);
   replayActiveRef.current = replayActiveForThis;
   const replayIndexRef = useRef(replay.index);
@@ -284,7 +303,24 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
 
   function getDisplayCandles(): Candle[] {
     const view = getViewCandles();
-    if (chartStyleRef.current === "heikin") return heikinAshi(view);
+    const st = chartStyleRef.current;
+    if (st === "heikin") return heikinAshi(view);
+    if (st === "renko") {
+      // Box-size default: 0.5% del último close (clamp a >= 1e-8 para evitar 0)
+      const last = view[view.length - 1]?.close ?? 0;
+      const box = Math.max(last * 0.005, 1e-8);
+      // Reasignar tiempos secuenciales (1 segundo por brick) — lightweight-charts
+      // necesita tiempos estrictamente ascendentes. Cada brick reemplaza el tiempo
+      // por una secuencia desde el time del primer candle.
+      const bricks = renko(view, box);
+      const base = view[0]?.time ?? 0;
+      return bricks.map((b, i) => ({ ...b, time: base + i }));
+    }
+    if (st === "lineBreak") {
+      const bricks = lineBreak(view, 3);
+      const base = view[0]?.time ?? 0;
+      return bricks.map((b, i) => ({ ...b, time: base + i }));
+    }
     return view;
   }
 
@@ -657,11 +693,13 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       }
 
       // Wave 6A — 1-point tools that commit immediately
+      // Wave 12 — anchoredVwap también es 1-clic (ancla la VWAP a esa vela)
       if (
         tool === "hline" ||
         tool === "cross" ||
         tool === "flag" ||
-        tool === "plabel"
+        tool === "plabel" ||
+        tool === "anchoredVwap"
       ) {
         if (!param.time) return;
         const time = Number(param.time);
@@ -1694,6 +1732,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         "callout",
         // Wave 6C
         "brush",
+        // Wave 12
+        "anchoredVwap",
       ];
       containerRef.current.style.cursor = drawTools.includes(tool)
         ? "crosshair"
@@ -2537,6 +2577,27 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         }
         // During replay we keep ingesting data into the buffer but don't update the visible series
         if (replayActiveRef.current) return;
+        // Wave 16 — Renko/LineBreak no soportan .update() porque un nuevo candle
+        // puede formar 0, 1 o N bricks. En esos modos hacemos setData() completo.
+        const st = chartStyleRef.current;
+        if (st === "renko" || st === "lineBreak") {
+          const display = getDisplayCandles();
+          candleSeriesRef.current.setData(
+            display.map((b) => ({
+              time: b.time as UTCTimestamp,
+              open: b.open,
+              high: b.high,
+              low: b.low,
+              close: b.close,
+            })),
+          );
+          setLastPrice({
+            value: k.close,
+            pct: 0,
+          });
+          checkDrawingAlerts(k.time, k.close);
+          return;
+        }
         candleSeriesRef.current.update({
           time: k.time as UTCTimestamp,
           open: k.open,
@@ -2586,9 +2647,55 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
               ? ((k.close - prev.close) / prev.close) * 100
               : 0,
         });
+        // Wave 14 — chequear alertas sobre dibujos en cada tick
+        checkDrawingAlerts(k.time, k.close);
       },
       onError: (e) => console.error("Failed to load chart data:", e),
     });
+
+    // Wave 14 — escanea las alertas y dispara `ether:alert-fired` si hubo cruce
+    function checkDrawingAlerts(time: number, price: number) {
+      const prevPrice = lastClosePriceRef.current;
+      lastClosePriceRef.current = price;
+      if (prevPrice === null) return; // primer tick: aún no hay cruce posible
+      const alerts = drawingAlertsRef.current;
+      const allDrawings = drawingsRef.current;
+      const sym = symbol;
+      for (const d of allDrawings) {
+        if (d.symbol !== sym) continue;
+        if (!supportsAlerts(d.type)) continue;
+        const a = alerts[d.id];
+        if (!a || !a) continue;
+        if (a.triggered) continue;
+        const levels = drawingLevelsAt(d, time);
+        if (!levels) continue;
+        for (const level of levels) {
+          if (!Number.isFinite(level)) continue;
+          if (crossed(prevPrice, price, level, a.direction)) {
+            const direction =
+              a.direction === "both"
+                ? price >= level
+                  ? "above"
+                  : "below"
+                : a.direction;
+            window.dispatchEvent(
+              new CustomEvent("ether:alert-fired", {
+                detail: {
+                  drawingId: d.id,
+                  symbol: sym,
+                  level,
+                  price,
+                  direction,
+                  note: a.note,
+                },
+              }),
+            );
+            markAlertTriggered(d.id);
+            break; // un cruce por alerta por tick
+          }
+        }
+      }
+    }
 
     return () => unsub();
   }, [symbol, timeframe]);
@@ -2752,9 +2859,14 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
       } catch {}
       overlaySeriesRef.current = null;
     }
-    if (chartStyle === "candles" || chartStyle === "heikin") {
+    if (
+      chartStyle === "candles" ||
+      chartStyle === "heikin" ||
+      chartStyle === "renko" ||
+      chartStyle === "lineBreak"
+    ) {
       candleSeriesRef.current?.applyOptions({ visible: true });
-      // Reapply data using transformed candles (HA or regular)
+      // Reapply data using transformed candles (HA / Renko / LineBreak / regular)
       const display = getDisplayCandles();
       candleSeriesRef.current?.setData(
         display.map((k) => ({
@@ -3109,6 +3221,21 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
           color={INDICATOR_COLORS.vp}
         />
       )}
+      {sessionsEnabled && (
+        <SessionsLayer
+          sessions={sessions}
+          enabled={sessionsEnabled}
+          candles={getViewCandles()}
+          timeToX={(time) => {
+            const ts = chartRef.current?.timeScale();
+            if (!ts) return null;
+            const x = ts.timeToCoordinate(time as UTCTimestamp);
+            return x == null ? null : x;
+          }}
+          width={containerSize.width}
+          height={containerSize.height}
+        />
+      )}
       {/* Countdown pegado al eje derecho, justo debajo del label del precio actual */}
       {countdownY !== null && (
         <div
@@ -3163,6 +3290,7 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         toolActive={tool !== "cursor"}
         hideDrawings={storeHideDrawings}
         lockDrawings={storeLockDrawings}
+        candles={getViewCandles()}
         containerWidth={containerSize.width}
         containerHeight={containerSize.height}
       />
