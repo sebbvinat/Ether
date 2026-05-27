@@ -11,6 +11,7 @@ import {
   Sun,
   TrendingUp,
 } from "lucide-react";
+import Link from "next/link";
 import { SymbolSelector } from "@/components/chart/SymbolSelector";
 import { TimeframeSelector } from "@/components/chart/TimeframeSelector";
 import { IndicatorMenu } from "@/components/chart/IndicatorMenu";
@@ -86,6 +87,22 @@ export function Header() {
           <span className="font-serif text-lg italic leading-none text-tv-text">
             Ether
           </span>
+        </div>
+        {/* Wave 17 — Chart | Testing pill */}
+        <div className="hidden items-center gap-0.5 rounded-full border border-tv-border bg-tv-bg/40 p-0.5 md:flex">
+          <span
+            className="rounded-full bg-tv-blue/20 px-2.5 py-0.5 text-[11px] font-medium text-tv-blue"
+            aria-current="page"
+          >
+            Chart
+          </span>
+          <Link
+            href="/testing/dashboard"
+            className="rounded-full px-2.5 py-0.5 text-[11px] font-medium text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+            title="Ir al área de Testing (backtest)"
+          >
+            Testing
+          </Link>
         </div>
         <Separator
           orientation="vertical"

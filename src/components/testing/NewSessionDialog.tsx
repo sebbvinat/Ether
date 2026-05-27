@@ -1,0 +1,232 @@
+"use client";
+
+import { useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { useTestingStore } from "@/lib/store/testing-store";
+import type { Timeframe } from "@/lib/binance/types";
+
+interface Props {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  /** Si se pasa, llama acá al crear con el id de la nueva sesión. */
+  onCreated?: (id: string) => void;
+  /** Defaults pre-llenados si vienen. */
+  defaults?: {
+    symbol?: string;
+    timeframe?: Timeframe;
+  };
+}
+
+const TFS: Timeframe[] = ["1m", "5m", "15m", "30m", "1h", "4h", "1d"];
+
+// Símbolos populares pre-cargados (el usuario puede tipear cualquier ticker
+// Binance — los más comunes están de quick-pick).
+const POPULAR = [
+  { symbol: "BTCUSDT", label: "BTCUSDT · Binance" },
+  { symbol: "ETHUSDT", label: "ETHUSDT · Binance" },
+  { symbol: "SOLUSDT", label: "SOLUSDT · Binance" },
+  { symbol: "^GSPC", label: "S&P 500 · Yahoo" },
+  { symbol: "^IXIC", label: "Nasdaq Composite · Yahoo" },
+];
+
+function isoToMs(s: string): number {
+  return new Date(s + "T00:00:00Z").getTime();
+}
+function msToIso(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/**
+ * Wave 17 — Nueva sesión de backtest.
+ * Mínimo: nombre + símbolo + timeframe + rango de fechas + balance inicial.
+ */
+export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Props) {
+  const createSession = useTestingStore((s) => s.createSession);
+  const [name, setName] = useState("");
+  const [symbol, setSymbol] = useState(defaults?.symbol ?? "BTCUSDT");
+  const [timeframe, setTimeframe] = useState<Timeframe>(defaults?.timeframe ?? "15m");
+  // Default range: últimos 6 meses
+  const now = Date.now();
+  const sixMonthsAgo = now - 1000 * 60 * 60 * 24 * 180;
+  const [startDate, setStartDate] = useState(msToIso(sixMonthsAgo));
+  const [endDate, setEndDate] = useState(msToIso(now));
+  const [initialBalance, setInitialBalance] = useState("100000");
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleCreate(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const startMs = isoToMs(startDate);
+    const endMs = isoToMs(endDate);
+    if (!name.trim()) {
+      setError("Poné un nombre para la sesión.");
+      return;
+    }
+    if (!symbol.trim()) {
+      setError("Elegí o tipeá un símbolo.");
+      return;
+    }
+    if (endMs <= startMs) {
+      setError("La fecha de fin debe ser posterior a la de inicio.");
+      return;
+    }
+    const balance = Number(initialBalance.replace(/,/g, ""));
+    if (!Number.isFinite(balance) || balance <= 0) {
+      setError("Balance inicial inválido.");
+      return;
+    }
+    const id = createSession({
+      name: name.trim(),
+      symbol: symbol.trim().toUpperCase(),
+      timeframe,
+      startDate: startMs,
+      endDate: endMs,
+      initialBalance: balance,
+      description: description.trim() || undefined,
+      tags: [],
+    });
+    onOpenChange(false);
+    onCreated?.(id);
+    // reset
+    setName("");
+    setInitialBalance("100000");
+    setDescription("");
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg gap-0 bg-tv-panel p-0">
+        <DialogHeader className="border-b border-tv-border px-4 py-3">
+          <DialogTitle className="text-sm font-medium">
+            Nueva sesión de backtest
+          </DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleCreate} className="flex flex-col gap-3 p-4">
+          <Field label="Nombre">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Ej: NQ 1A1 RT NY AM"
+              autoFocus
+            />
+          </Field>
+
+          <Field label="Símbolo">
+            <Input
+              value={symbol}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+              placeholder="BTCUSDT, ETHUSDT, ^GSPC..."
+            />
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {POPULAR.map((p) => (
+                <button
+                  key={p.symbol}
+                  type="button"
+                  onClick={() => setSymbol(p.symbol)}
+                  className="rounded bg-tv-bg/40 px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-blue/15 hover:text-tv-blue"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </Field>
+
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Timeframe">
+              <select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value as Timeframe)}
+                className="h-9 w-full rounded border border-tv-border bg-tv-bg px-2 text-sm text-tv-text"
+              >
+                {TFS.map((tf) => (
+                  <option key={tf} value={tf}>
+                    {tf}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Desde">
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+              />
+            </Field>
+            <Field label="Hasta">
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+              />
+            </Field>
+          </div>
+
+          <Field label="Balance inicial (USD)">
+            <Input
+              value={initialBalance}
+              onChange={(e) => setInitialBalance(e.target.value)}
+              placeholder="100000"
+              inputMode="numeric"
+            />
+          </Field>
+
+          <Field label="Descripción (opcional)">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Notas sobre la estrategia, hipótesis..."
+              rows={2}
+              className="w-full resize-none rounded border border-tv-border bg-tv-bg px-2 py-1.5 text-sm text-tv-text"
+            />
+          </Field>
+
+          {error && (
+            <div className="rounded border border-tv-red/40 bg-tv-red/10 px-2 py-1.5 text-[12px] text-tv-red">
+              {error}
+            </div>
+          )}
+
+          <div className="mt-1 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => onOpenChange(false)}
+              className="rounded border border-tv-border px-3 py-1.5 text-[12px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="rounded bg-tv-blue px-3 py-1.5 text-[12px] font-medium text-white hover:bg-tv-blue/90"
+            >
+              Crear sesión
+            </button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <label className="block">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wider text-tv-text-muted">
+        {label}
+      </div>
+      {children}
+    </label>
+  );
+}
