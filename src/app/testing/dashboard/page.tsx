@@ -92,7 +92,7 @@ export default function TestingDashboard() {
         />
         <StatCard
           label="PnL total"
-          value={`${stats.realizedPnL >= 0 ? "+" : ""}$${stats.realizedPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          value={`${stats.realizedPnL >= 0 ? "+" : ""}$${stats.realizedPnL.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           valueClass={
             stats.realizedPnL > 0
               ? "text-tv-green"

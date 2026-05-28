@@ -55,10 +55,17 @@ const PRESETS: Preset[] = [
 interface Props {
   /** Vela actual (timestamp del replay en ms). */
   currentTimeMs: number;
-  /** Array de velas 1m disponibles (para buscar índices). */
-  candles1m: { time: number }[]; // time en segundos UNIX
-  /** Salto: setea el nuevo replayIndex. */
+  /** startDate de la sesión (ms) — para convertir tiempo → replayIndex (minutos). */
+  startDateMs: number;
+  /** Array de velas 1m disponibles (para buscar el próximo match). time en seg UNIX. */
+  candles1m: { time: number }[];
+  /** Salto: setea el nuevo replayIndex (minutos desde startDate). */
   onGoTo: (newIndex: number) => void;
+}
+
+/** Convierte un timestamp (ms) a replayIndex (minutos desde startDate). */
+function msToReplayIndex(ms: number, startDateMs: number): number {
+  return Math.max(0, Math.round((ms - startDateMs) / 60_000));
 }
 
 /** True si la vela `candleMs` cae en la hora NY `targetH:targetM` (vela 1m). */
@@ -76,31 +83,28 @@ function matchesNYTime(candleMs: number, targetH: number, targetM: number): bool
   return hour === targetH && minute === targetM;
 }
 
-export function GoToMenu({ currentTimeMs, candles1m, onGoTo }: Props) {
+export function GoToMenu({ currentTimeMs, startDateMs, candles1m, onGoTo }: Props) {
   const [open, setOpen] = useState(false);
 
   function jumpTo(target: Preset) {
-    // Buscar la próxima vela cuyo NY-time matchee target.hourNY:target.minuteNY
-    // y cuyo timestamp sea > currentTimeMs.
-    // Optimización: candles1m está ordenado por time ASC; buscar desde el índice
-    // del cursor actual.
+    // Buscar la próxima vela 1m (time > cursor) cuyo NY-time matchee el target.
     const startIdx = candles1m.findIndex((c) => c.time * 1000 > currentTimeMs);
     if (startIdx === -1) return;
     for (let i = startIdx; i < candles1m.length; i++) {
       const ms = candles1m[i].time * 1000;
       if (matchesNYTime(ms, target.hourNY, target.minuteNY)) {
-        onGoTo(i);
+        onGoTo(msToReplayIndex(ms, startDateMs));
         setOpen(false);
         return;
       }
     }
-    // No encontrado en lo cacheado — fallback: avanzar al final
-    onGoTo(candles1m.length - 1);
+    // No encontrado en lo cacheado — fallback: avanzar al final de lo cargado.
+    const lastMs = candles1m[candles1m.length - 1]?.time * 1000;
+    if (lastMs) onGoTo(msToReplayIndex(lastMs, startDateMs));
     setOpen(false);
   }
 
   function jumpNextSession() {
-    // Toma el primer preset Asian/London/NY cuyo timestamp sea futuro mínimo
     const startIdx = candles1m.findIndex((c) => c.time * 1000 > currentTimeMs);
     if (startIdx === -1) return;
     const targets = [
@@ -108,18 +112,16 @@ export function GoToMenu({ currentTimeMs, candles1m, onGoTo }: Props) {
       { hour: 2, minute: 0 }, // London
       { hour: 9, minute: 30 }, // NY
     ];
-    let bestIdx = -1;
     for (let i = startIdx; i < candles1m.length; i++) {
       const ms = candles1m[i].time * 1000;
       for (const t of targets) {
         if (matchesNYTime(ms, t.hour, t.minute)) {
-          bestIdx = i;
-          break;
+          onGoTo(msToReplayIndex(ms, startDateMs));
+          setOpen(false);
+          return;
         }
       }
-      if (bestIdx !== -1) break;
     }
-    if (bestIdx !== -1) onGoTo(bestIdx);
     setOpen(false);
   }
 

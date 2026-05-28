@@ -112,11 +112,11 @@ export default function SessionChartPage({ params }: Props) {
     return () => window.removeEventListener("ether-testing:last-price", handler);
   }, []);
 
-  // Timestamp (ms) de la vela actual del replay — para openedAt de los fills.
+  // Timestamp (ms) de la vela actual del replay — cursorTime = start + idx*60000.
   const currentTimeMs = useMemo(() => {
-    const c = session ? candles1m[session.replayIndex] : undefined;
-    return c?.time ? c.time * 1000 : session?.startDate ?? Date.now();
-  }, [candles1m, session]);
+    if (!session) return Date.now();
+    return session.startDate + session.replayIndex * 60_000;
+  }, [session]);
 
   const handleFastBuy = useCallback(
     async (side: "buy" | "sell") => {
@@ -230,11 +230,8 @@ export default function SessionChartPage({ params }: Props) {
 
         {/* Go To */}
         <GoToMenu
-          currentTimeMs={
-            candles1m[session.replayIndex]?.time
-              ? candles1m[session.replayIndex].time * 1000
-              : session.startDate
-          }
+          currentTimeMs={currentTimeMs}
+          startDateMs={session.startDate}
           candles1m={candles1m}
           onGoTo={(idx) => setReplayIndex(idx)}
         />
