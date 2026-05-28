@@ -146,11 +146,15 @@ export interface SessionMeta {
   /** Wins / losses cache. */
   wins: number;
   losses: number;
-  /** Índice del cursor de replay (cuál es la última vela "vivida"). En velas
-   *  de base 1m. */
+  /** LEGACY (Wave 18) — índice del cursor en minutos. Reemplazado por
+   *  replayCursorMs. Se mantiene para compat de sesiones viejas. */
   replayIndex: number;
-  /** Cuántas velas (en base 1m) tiene la ventana histórica total. */
+  /** LEGACY — total en minutos. */
   replayTotal: number;
+  /** Wave 18.5 — cursor de replay como TIMESTAMP (ms). Esta es la fuente de
+   *  verdad: el chart muestra toda la historia con time ≤ replayCursorMs y el
+   *  replay avanza de a 1 barra del TF actual. Default = startDate. */
+  replayCursorMs: number;
   /** TF para visualizar el chart (1m/5m/15m/30m/1h/4h/1d). Cambiable on-the-fly.
    *  Default = "15m". */
   chartTimeframe: Timeframe;
@@ -200,7 +204,7 @@ interface TestingState {
   setActiveSession: (id: string | null) => Promise<void>;
 
   // sesiones (meta)
-  createSession: (input: Omit<SessionMeta, "id" | "currentBalance" | "realizedPnL" | "totalTrades" | "wins" | "losses" | "replayIndex" | "replayTotal" | "createdAt" | "updatedAt" | "tags" | "chartTimeframe" | "replayStepSize" | "replayIntervalMs"> & { tags?: string[] }) => string;
+  createSession: (input: Omit<SessionMeta, "id" | "currentBalance" | "realizedPnL" | "totalTrades" | "wins" | "losses" | "replayIndex" | "replayTotal" | "replayCursorMs" | "createdAt" | "updatedAt" | "tags" | "chartTimeframe" | "replayStepSize" | "replayIntervalMs"> & { tags?: string[] }) => string;
   duplicateSession: (id: string, newName: string) => Promise<string | null>;
   deleteSession: (id: string) => Promise<void>;
   renameSession: (id: string, name: string) => void;
@@ -209,6 +213,8 @@ interface TestingState {
   // detalle (operan sobre activeDetail)
   setReplayIndex: (idx: number) => void;
   setReplayTotal: (total: number) => void;
+  /** Wave 18.5 — setea el cursor de replay (timestamp ms). Fuente de verdad. */
+  setReplayCursor: (ms: number) => void;
   setChartTimeframe: (tf: Timeframe) => void;
   setReplayStepSize: (size: number) => void;
   setReplayIntervalMs: (ms: number) => void;
@@ -326,6 +332,7 @@ export const useTestingStore = create<TestingState>()(
           losses: 0,
           replayIndex: 0,
           replayTotal: 0,
+          replayCursorMs: input.startDate,
           chartTimeframe: input.timeframe,
           replayStepSize: 1,
           replayIntervalMs: 1000,
@@ -353,6 +360,7 @@ export const useTestingStore = create<TestingState>()(
           wins: 0,
           losses: 0,
           replayIndex: 0,
+          replayCursorMs: meta.startDate,
           chartTimeframe: meta.chartTimeframe ?? meta.timeframe,
           replayStepSize: meta.replayStepSize ?? 1,
           replayIntervalMs: meta.replayIntervalMs ?? 1000,
@@ -420,6 +428,18 @@ export const useTestingStore = create<TestingState>()(
           sessions: s.sessions.map((x) =>
             x.id === active ? { ...x, replayTotal: total } : x,
           ),
+        }));
+      },
+
+      setReplayCursor: (ms) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) => {
+            if (x.id !== active) return x;
+            const clamped = Math.max(x.startDate, Math.min(x.endDate, ms));
+            return { ...x, replayCursorMs: clamped };
+          }),
         }));
       },
 
@@ -705,6 +725,7 @@ export const useTestingStore = create<TestingState>()(
           chartTimeframe: sess.chartTimeframe ?? sess.timeframe,
           replayStepSize: sess.replayStepSize ?? 1,
           replayIntervalMs: sess.replayIntervalMs ?? 1000,
+          replayCursorMs: sess.replayCursorMs ?? sess.startDate,
         }));
         return { ...currentState, ...(p ?? {}), sessions };
       },
