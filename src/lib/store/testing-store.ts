@@ -214,6 +214,19 @@ interface TestingState {
   setReplayIntervalMs: (ms: number) => void;
   // Wave 18 — acciones de engine (operan sobre activeDetail + meta)
   addOrder: (order: Order) => Promise<void>;
+  /** Abre una posición inmediatamente al precio actual (market fill). No pasa
+   *  por el flujo pending→engine: las market orders se llenan al toque, incluso
+   *  con el replay pausado (igual que FXReplay). */
+  openPositionNow: (input: {
+    side: Side;
+    size: number;
+    entry: number;
+    sl?: number;
+    tp?: number;
+    tags?: string[];
+    notes?: string;
+    openedAtMs: number;
+  }) => Promise<void>;
   cancelOrderById: (orderId: string) => Promise<void>;
   closePositionManual: (positionId: string, closePrice: number, closedAtMs: number) => Promise<void>;
   updatePositionLevels: (positionId: string, patch: { sl?: number; tp?: number }) => Promise<void>;
@@ -445,6 +458,49 @@ export const useTestingStore = create<TestingState>()(
         const detail = get().activeDetail;
         if (!active || !detail) return;
         const newDetail = { ...detail, orders: [...detail.orders, order] };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      openPositionNow: async (input) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const orderId = uid();
+        // Order sintética "filled" para historial
+        const order: Order = {
+          id: orderId,
+          side: input.side,
+          type: "market",
+          size: input.size,
+          entryPrice: input.entry,
+          sl: input.sl,
+          tp: input.tp,
+          tags: input.tags ?? [],
+          notes: input.notes,
+          status: "filled",
+          createdAt: input.openedAtMs,
+          filledAt: input.openedAtMs,
+        };
+        const position: Position = {
+          id: uid(),
+          orderId,
+          side: input.side,
+          size: input.size,
+          entry: input.entry,
+          sl: input.sl,
+          tp: input.tp,
+          openedAt: input.openedAtMs,
+          unrealizedPnL: 0,
+          tags: input.tags ?? [],
+          maxAdverse: 0,
+          maxFavorable: 0,
+        };
+        const newDetail = {
+          ...detail,
+          orders: [...detail.orders, order],
+          positions: [...detail.positions, position],
+        };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);
       },
