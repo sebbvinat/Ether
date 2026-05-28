@@ -86,7 +86,6 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
 
   const detail = useTestingStore((s) => s.activeDetail);
   const applyEngineState = useTestingStore((s) => s.applyEngineState);
-  const setReplayIndex = useTestingStore((s) => s.setReplayIndex);
   const setReplayTotal = useTestingStore((s) => s.setReplayTotal);
 
   // Refs siempre frescos para los handlers que viven en closures
@@ -336,33 +335,9 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.replayIndex, loading]);
 
-  // Detectar cuando se agrega una orden recién creada y la sesión está pausada:
-  // forzar 1 step para que las market orders se llenen en la próxima vela.
-  // (Esto se logra en el effect anterior porque cualquier addOrder altera detail,
-  //  pero replayIndex no cambia. Por eso adicionalmente cuando aparece una nueva
-  //  orden pendiente, podemos pisar lastProcessed para reprocesar la vela actual.)
-  useEffect(() => {
-    if (!detail) return;
-    const hasPending = detail.orders.some((o) => o.status === "pending");
-    if (hasPending) {
-      lastProcessedIndexRef.current = sessionRef.current.replayIndex - 1;
-      setRenderTick((t) => t + 1);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [detail?.orders.length]);
-
-  // Re-run engine pass cuando renderTick muta (truco para forzar)
-  useEffect(() => {
-    if (loading) return;
-    const store = candleStoreRef.current;
-    const det = detailRef.current;
-    const sess = sessionRef.current;
-    if (!store || !det) return;
-    if (lastProcessedIndexRef.current >= sess.replayIndex) return;
-    // Pasa por el effect principal en la siguiente render
-    setReplayIndex(sess.replayIndex);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading]);
+  // NOTA: las órdenes MARKET se llenan al instante vía openPositionNow (store),
+  // sin pasar por el engine. Sólo limit/stop quedan pending y se resuelven al
+  // avanzar el replay (effect #4). Por eso ya no hace falta forzar reprocesos.
 
   // ── 5. Helpers para overlays ─────────────────────────────────────────────
   function priceToY(price: number): number | null {

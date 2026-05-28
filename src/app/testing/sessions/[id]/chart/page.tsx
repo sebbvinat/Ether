@@ -28,7 +28,6 @@ import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
 import { PositionsPanel } from "@/components/testing/PositionsPanel";
 import { GoToMenu } from "@/components/testing/GoToMenu";
 import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
-import { makeMarketOrder } from "@/lib/testing/engine";
 import type { Timeframe } from "@/lib/binance/types";
 import { cn } from "@/lib/utils";
 
@@ -63,7 +62,7 @@ export default function SessionChartPage({ params }: Props) {
   const setChartTf = useTestingStore((s) => s.setChartTimeframe);
   const setStepSize = useTestingStore((s) => s.setReplayStepSize);
   const setIntervalMs = useTestingStore((s) => s.setReplayIntervalMs);
-  const addOrder = useTestingStore((s) => s.addOrder);
+  const openPositionNow = useTestingStore((s) => s.openPositionNow);
 
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [autoplay, setAutoplay] = useState(false);
@@ -102,22 +101,8 @@ export default function SessionChartPage({ params }: Props) {
     return () => clearInterval(interval);
   }, [autoplay, session, setReplayIndex]);
 
-  // Última vela conocida (para market orders rápidas + ticker)
-  const currentCandle = useMemo(() => {
-    // No tenemos acceso directo al candle store desde acá. Usamos el balance
-    // y el unrealized vivos del detail. Para Place Order el ref price viene
-    // del último open position o de un fetch separado — más fácil pasarle el
-    // entry de la sesión + último closed trade. Por simplicidad: usamos el
-    // precio de cierre del último position o del último trade. Si nada, 0.
-    // El TestingChart hidrata el detail con unrealized correcto en cada step.
-    return null;
-  }, []);
-
-  // Cuando se aprieta Buy/Sell rápido, necesitamos un precio de referencia.
-  // Hack temporal: en Wave 19 vamos a tener un "lastPrice" expuesto del chart.
-  // Por ahora levantamos la última vela 1m via fetch one-shot.
+  // Precio actual del chart (sincronizado vía custom event que dispara TestingChart).
   const [lastPrice, setLastPrice] = useState<number>(0);
-  // Receiver del custom event para sync el lastPrice del chart
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<{ price: number }>;
@@ -126,6 +111,12 @@ export default function SessionChartPage({ params }: Props) {
     window.addEventListener("ether-testing:last-price", handler);
     return () => window.removeEventListener("ether-testing:last-price", handler);
   }, []);
+
+  // Timestamp (ms) de la vela actual del replay — para openedAt de los fills.
+  const currentTimeMs = useMemo(() => {
+    const c = session ? candles1m[session.replayIndex] : undefined;
+    return c?.time ? c.time * 1000 : session?.startDate ?? Date.now();
+  }, [candles1m, session]);
 
   const handleFastBuy = useCallback(
     async (side: "buy" | "sell") => {
@@ -137,15 +128,16 @@ export default function SessionChartPage({ params }: Props) {
         alert("Esperá a que cargue el precio actual");
         return;
       }
-      const order = makeMarketOrder({
+      // Market fill inmediato al precio actual (incluso pausado).
+      await openPositionNow({
         side,
         size: sizeN,
-        refPrice,
+        entry: refPrice,
         tags: ["fast"],
+        openedAtMs: currentTimeMs,
       });
-      await addOrder(order);
     },
-    [session, quantity, lastPrice, addOrder],
+    [session, quantity, lastPrice, openPositionNow, currentTimeMs],
   );
 
   if (!session) {
@@ -417,7 +409,8 @@ export default function SessionChartPage({ params }: Props) {
       <PlaceOrderDialog
         open={orderDialogOpen}
         onOpenChange={setOrderDialogOpen}
-        refPrice={lastPrice || session.initialBalance}
+        refPrice={lastPrice || 0}
+        currentTimeMs={currentTimeMs}
       />
     </div>
   );

@@ -24,11 +24,7 @@ import {
   type Side,
   type OrderType,
 } from "@/lib/store/testing-store";
-import {
-  makeMarketOrder,
-  makeLimitOrder,
-  makeStopOrder,
-} from "@/lib/testing/engine";
+import { makeLimitOrder, makeStopOrder } from "@/lib/testing/engine";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -36,10 +32,13 @@ interface Props {
   onOpenChange: (v: boolean) => void;
   /** Precio referencial (la última vela del replay) — para prefill de Entry. */
   refPrice: number;
+  /** Timestamp (ms) de la vela actual del replay — para openedAt de market fills. */
+  currentTimeMs: number;
 }
 
-export function PlaceOrderDialog({ open, onOpenChange, refPrice }: Props) {
+export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }: Props) {
   const addOrder = useTestingStore((s) => s.addOrder);
+  const openPositionNow = useTestingStore((s) => s.openPositionNow);
   const [side, setSide] = useState<Side>("buy");
   const [orderType, setOrderType] = useState<OrderType>("market");
   const [size, setSize] = useState("1");
@@ -88,39 +87,43 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice }: Props) {
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
-    let order;
     if (orderType === "market") {
-      order = makeMarketOrder({
+      // Market: fill inmediato al precio actual (refPrice), incluso pausado.
+      await openPositionNow({
         side,
         size: sizeN,
-        refPrice: entryN,
+        entry: refPrice,
         sl: slN,
         tp: tpN,
         tags,
         notes: notes || undefined,
+        openedAtMs: currentTimeMs,
       });
     } else if (orderType === "limit") {
-      order = makeLimitOrder({
-        side,
-        size: sizeN,
-        entryPrice: entryN,
-        sl: slN,
-        tp: tpN,
-        tags,
-        notes: notes || undefined,
-      });
+      await addOrder(
+        makeLimitOrder({
+          side,
+          size: sizeN,
+          entryPrice: entryN,
+          sl: slN,
+          tp: tpN,
+          tags,
+          notes: notes || undefined,
+        }),
+      );
     } else {
-      order = makeStopOrder({
-        side,
-        size: sizeN,
-        entryPrice: entryN,
-        sl: slN,
-        tp: tpN,
-        tags,
-        notes: notes || undefined,
-      });
+      await addOrder(
+        makeStopOrder({
+          side,
+          size: sizeN,
+          entryPrice: entryN,
+          sl: slN,
+          tp: tpN,
+          tags,
+          notes: notes || undefined,
+        }),
+      );
     }
-    await addOrder(order);
     reset();
     onOpenChange(false);
   }
