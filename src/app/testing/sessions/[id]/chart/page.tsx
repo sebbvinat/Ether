@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
+import { TF_MINUTES } from "@/lib/testing/candles";
 import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
 import { PositionsPanel } from "@/components/testing/PositionsPanel";
@@ -35,12 +36,12 @@ interface Props {
   params: Promise<{ id: string }>;
 }
 
-const STEP_SIZES: { value: number; label: string }[] = [
-  { value: 1, label: "1m" },
-  { value: 5, label: "5m" },
-  { value: 15, label: "15m" },
-  { value: 30, label: "30m" },
-  { value: 60, label: "1h" },
+// Cuántas barras del TF actual avanza cada step.
+const STEP_BARS: { value: number; label: string }[] = [
+  { value: 1, label: "1 barra" },
+  { value: 2, label: "2 barras" },
+  { value: 5, label: "5 barras" },
+  { value: 10, label: "10 barras" },
 ];
 
 const SPEEDS: { ms: number; label: string }[] = [
@@ -58,7 +59,7 @@ export default function SessionChartPage({ params }: Props) {
   const detail = useTestingStore((s) => s.activeDetail);
   const activeId = useTestingStore((s) => s.activeSessionId);
   const setActive = useTestingStore((s) => s.setActiveSession);
-  const setReplayIndex = useTestingStore((s) => s.setReplayIndex);
+  const setReplayCursor = useTestingStore((s) => s.setReplayCursor);
   const setChartTf = useTestingStore((s) => s.setChartTimeframe);
   const setStepSize = useTestingStore((s) => s.setReplayStepSize);
   const setIntervalMs = useTestingStore((s) => s.setReplayIntervalMs);
@@ -78,28 +79,34 @@ export default function SessionChartPage({ params }: Props) {
     }
   }, [session, activeId, setActive]);
 
-  // Autoplay tick — usa replayIntervalMs de la sesión
-  const replayIndexRef = useRef(session?.replayIndex ?? 0);
-  replayIndexRef.current = session?.replayIndex ?? 0;
-  const replayTotalRef = useRef(session?.replayTotal ?? 0);
-  replayTotalRef.current = session?.replayTotal ?? 0;
-  const stepSizeRef = useRef(session?.replayStepSize ?? 1);
-  stepSizeRef.current = session?.replayStepSize ?? 1;
+  // Step en ms = nº de barras × minutos del TF actual.
+  const barsPerStep = session?.replayStepSize ?? 1;
+  const stepMs = session
+    ? barsPerStep * TF_MINUTES[session.chartTimeframe] * 60_000
+    : 60_000;
+
+  // Refs frescos para el autoplay (closures)
+  const cursorRef = useRef(session?.replayCursorMs ?? session?.startDate ?? 0);
+  cursorRef.current = session?.replayCursorMs ?? session?.startDate ?? 0;
+  const endRef = useRef(session?.endDate ?? 0);
+  endRef.current = session?.endDate ?? 0;
+  const stepMsRef = useRef(stepMs);
+  stepMsRef.current = stepMs;
 
   useEffect(() => {
     if (!autoplay || !session) return;
     const intervalMs = session.replayIntervalMs ?? 1000;
     const interval = setInterval(() => {
-      const nextIdx = replayIndexRef.current + stepSizeRef.current;
-      if (nextIdx >= replayTotalRef.current - 1) {
+      const next = cursorRef.current + stepMsRef.current;
+      if (next >= endRef.current) {
         setAutoplay(false);
-        setReplayIndex(replayTotalRef.current - 1);
+        setReplayCursor(endRef.current);
         return;
       }
-      setReplayIndex(nextIdx);
+      setReplayCursor(next);
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [autoplay, session, setReplayIndex]);
+  }, [autoplay, session, setReplayCursor]);
 
   // Precio actual del chart (sincronizado vía custom event que dispara TestingChart).
   const [lastPrice, setLastPrice] = useState<number>(0);
@@ -112,11 +119,8 @@ export default function SessionChartPage({ params }: Props) {
     return () => window.removeEventListener("ether-testing:last-price", handler);
   }, []);
 
-  // Timestamp (ms) de la vela actual del replay — cursorTime = start + idx*60000.
-  const currentTimeMs = useMemo(() => {
-    if (!session) return Date.now();
-    return session.startDate + session.replayIndex * 60_000;
-  }, [session]);
+  // Timestamp (ms) del cursor de replay — fuente de verdad.
+  const currentTimeMs = session?.replayCursorMs ?? session?.startDate ?? Date.now();
 
   const handleFastBuy = useCallback(
     async (side: "buy" | "sell") => {
@@ -163,10 +167,12 @@ export default function SessionChartPage({ params }: Props) {
     (acc, p) => acc + (p.unrealizedPnL ?? 0),
     0,
   );
+  const span = session.endDate - session.startDate;
   const progressPct =
-    session.replayTotal > 0
-      ? Math.round(((session.replayIndex + 1) / session.replayTotal) * 100)
+    span > 0
+      ? Math.round(((currentTimeMs - session.startDate) / span) * 100)
       : 0;
+  const cursorDate = new Date(currentTimeMs);
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col bg-tv-bg">
@@ -231,9 +237,8 @@ export default function SessionChartPage({ params }: Props) {
         {/* Go To */}
         <GoToMenu
           currentTimeMs={currentTimeMs}
-          startDateMs={session.startDate}
           candles1m={candles1m}
-          onGoTo={(idx) => setReplayIndex(idx)}
+          onGoTo={(ms) => setReplayCursor(ms)}
         />
 
         <button
@@ -264,16 +269,16 @@ export default function SessionChartPage({ params }: Props) {
       {/* Replay controls */}
       <div className="flex items-center gap-2 border-t border-tv-border px-3 py-1.5">
         <button
-          onClick={() => setReplayIndex(0)}
+          onClick={() => setReplayCursor(session.startDate)}
           className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
           title="Volver al inicio"
         >
           <ChevronsLeft className="h-4 w-4" />
         </button>
         <button
-          onClick={() => setReplayIndex(session.replayIndex - session.replayStepSize)}
+          onClick={() => setReplayCursor(currentTimeMs - stepMs)}
           className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
-          title="Vela anterior"
+          title="Barra anterior"
         >
           <ChevronLeft className="h-4 w-4" />
         </button>
@@ -288,16 +293,14 @@ export default function SessionChartPage({ params }: Props) {
           {autoplay ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
         </button>
         <button
-          onClick={() =>
-            setReplayIndex(session.replayIndex + session.replayStepSize)
-          }
+          onClick={() => setReplayCursor(currentTimeMs + stepMs)}
           className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
-          title="Vela siguiente"
+          title="Barra siguiente"
         >
           <ChevronRight className="h-4 w-4" />
         </button>
 
-        {/* Step size */}
+        {/* Step size (barras del TF por avance) */}
         <div className="ml-2 flex items-center gap-1">
           <span className="text-[10px] uppercase tracking-wider text-tv-text-muted">
             Step
@@ -307,7 +310,7 @@ export default function SessionChartPage({ params }: Props) {
             onChange={(e) => setStepSize(parseInt(e.target.value, 10))}
             className="rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text"
           >
-            {STEP_SIZES.map((s) => (
+            {STEP_BARS.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
@@ -335,8 +338,14 @@ export default function SessionChartPage({ params }: Props) {
 
         {/* Progress */}
         <div className="ml-3 flex flex-1 items-center gap-2">
-          <span className="text-[10px] font-mono text-tv-text-muted">
-            {session.replayIndex + 1} / {session.replayTotal || "—"}
+          <span className="whitespace-nowrap text-[10px] font-mono text-tv-text-muted">
+            {cursorDate.toLocaleString("es-AR", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
           </span>
           <div className="h-1 flex-1 overflow-hidden rounded bg-tv-panel">
             <div

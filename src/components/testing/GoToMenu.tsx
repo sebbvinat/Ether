@@ -55,17 +55,10 @@ const PRESETS: Preset[] = [
 interface Props {
   /** Vela actual (timestamp del replay en ms). */
   currentTimeMs: number;
-  /** startDate de la sesión (ms) — para convertir tiempo → replayIndex (minutos). */
-  startDateMs: number;
   /** Array de velas 1m disponibles (para buscar el próximo match). time en seg UNIX. */
   candles1m: { time: number }[];
-  /** Salto: setea el nuevo replayIndex (minutos desde startDate). */
-  onGoTo: (newIndex: number) => void;
-}
-
-/** Convierte un timestamp (ms) a replayIndex (minutos desde startDate). */
-function msToReplayIndex(ms: number, startDateMs: number): number {
-  return Math.max(0, Math.round((ms - startDateMs) / 60_000));
+  /** Salto: setea el nuevo cursor de replay (timestamp ms). */
+  onGoTo: (newCursorMs: number) => void;
 }
 
 /** True si la vela `candleMs` cae en la hora NY `targetH:targetM` (vela 1m). */
@@ -83,7 +76,7 @@ function matchesNYTime(candleMs: number, targetH: number, targetM: number): bool
   return hour === targetH && minute === targetM;
 }
 
-export function GoToMenu({ currentTimeMs, startDateMs, candles1m, onGoTo }: Props) {
+export function GoToMenu({ currentTimeMs, candles1m, onGoTo }: Props) {
   const [open, setOpen] = useState(false);
 
   function jumpTo(target: Preset) {
@@ -93,14 +86,14 @@ export function GoToMenu({ currentTimeMs, startDateMs, candles1m, onGoTo }: Prop
     for (let i = startIdx; i < candles1m.length; i++) {
       const ms = candles1m[i].time * 1000;
       if (matchesNYTime(ms, target.hourNY, target.minuteNY)) {
-        onGoTo(msToReplayIndex(ms, startDateMs));
+        onGoTo(ms);
         setOpen(false);
         return;
       }
     }
     // No encontrado en lo cacheado — fallback: avanzar al final de lo cargado.
     const lastMs = candles1m[candles1m.length - 1]?.time * 1000;
-    if (lastMs) onGoTo(msToReplayIndex(lastMs, startDateMs));
+    if (lastMs) onGoTo(lastMs);
     setOpen(false);
   }
 
@@ -116,7 +109,7 @@ export function GoToMenu({ currentTimeMs, startDateMs, candles1m, onGoTo }: Prop
       const ms = candles1m[i].time * 1000;
       for (const t of targets) {
         if (matchesNYTime(ms, t.hour, t.minute)) {
-          onGoTo(msToReplayIndex(ms, startDateMs));
+          onGoTo(ms);
           setOpen(false);
           return;
         }
