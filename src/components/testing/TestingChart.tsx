@@ -56,6 +56,14 @@ const TV_COLORS = {
   grid: "#1e222d",
 };
 
+/** Minutos de historia a cargar ANTES del startDate para tener contexto.
+ *  4000 min ≈ 2.7 días de 1m = 266 velas de 15m / 66 de 1h. Balance entre
+ *  contexto suficiente y velocidad de carga (~4 requests). El prefetch
+ *  extiende sobre la marcha al avanzar el replay. */
+const HISTORY_MIN = 4000;
+/** Minutos a precargar hacia adelante del cursor (buffer de replay). */
+const FUTURE_MIN = 2000;
+
 interface Props {
   session: SessionMeta;
   /** Modo de render de trades cerrados sobre el chart. */
@@ -174,8 +182,17 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
     });
     obs.observe(containerRef.current);
 
+    // CRÍTICO: re-render de los overlays (posiciones, trades) cuando el usuario
+    // panea/zoomea. Sin esto las líneas quedan fijas mientras las velas se mueven
+    // ("el trade se mueve con la cámara"). Forzamos render en cada cambio de rango.
+    const onRangeChange = () => setRenderTick((t) => t + 1);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
+
     return () => {
       obs.disconnect();
+      try {
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
+      } catch {}
       try {
         chart.remove();
       } catch {}
@@ -189,26 +206,33 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
   }, []);
 
   // ── 2. Cargar candle store + primera ventana ────────────────────────────
+  // El cursor del replay es TIEMPO: cursorTimeMs = startDate + replayIndex*60000.
+  // El store carga desde (startDate − HISTORY) para tener pasado visible, y el
+  // chart muestra TODAS las velas con time ≤ cursorTimeMs.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(null);
+    // Lower bound del store: HISTORY_MIN antes del startDate (clamp dentro del store).
+    const dataStartMs = session.startDate - HISTORY_MIN * 60_000;
     const store = new LazyCandleStore(
       session.symbol,
-      session.startDate,
+      dataStartMs,
       session.endDate,
     );
     candleStoreRef.current = store;
-    // Cargar ~1000 velas al inicio (cerca del startDate, que es donde empieza el replay)
+    // Cargar historia (HISTORY antes) + buffer hacia adelante.
     store
-      .ensureLoaded(session.startDate, 0, 1000)
+      .ensureLoaded(session.startDate, HISTORY_MIN, FUTURE_MIN)
       .then(() => {
         if (cancelled) return;
-        const total = store.length;
-        setReplayTotal(total);
+        // replayTotal = minutos totales del rango de replay (start→end).
+        const totalMin = Math.max(
+          1,
+          Math.floor((session.endDate - session.startDate) / 60_000),
+        );
+        setReplayTotal(totalMin);
         onCandlesLoaded?.(store.all);
-        // Si el replayIndex está sin setear (=0) y nunca jugaron, lo dejamos en 0
-        // (la primera vela del rango).
         setRenderTick((t) => t + 1);
         setLoading(false);
       })
@@ -223,6 +247,24 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.id, session.symbol, session.startDate, session.endDate]);
 
+  // ── 2b. Prefetch: cuando el cursor se acerca al borde cargado, traer más ──
+  useEffect(() => {
+    if (loading) return;
+    const store = candleStoreRef.current;
+    if (!store) return;
+    const cursorTimeMs = session.startDate + session.replayIndex * 60_000;
+    const lastLoaded = store.all[store.all.length - 1];
+    if (!lastLoaded) return;
+    // Si el cursor está a menos de 500 min del borde cargado, traer más.
+    if (cursorTimeMs + 500 * 60_000 > lastLoaded.time * 1000) {
+      void store.ensureLoaded(cursorTimeMs, 100, FUTURE_MIN).then(() => {
+        onCandlesLoaded?.(store.all);
+        setRenderTick((t) => t + 1);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.replayIndex, loading]);
+
   // ── 3. Renderizar las velas + indicadores cuando cambia replayIndex o TF ─
   useEffect(() => {
     if (loading) return;
@@ -234,8 +276,10 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
     const e200 = ema200Ref.current;
     if (!store || !candle || !vol || !e20 || !e50 || !e200) return;
 
-    // 1m clipped hasta replayIndex
-    const view1m = store.upToIndex(session.replayIndex);
+    // Cursor del replay en tiempo (seg UNIX).
+    const cursorSec = (session.startDate + session.replayIndex * 60_000) / 1000;
+    // Todas las velas 1m hasta el cursor (incluye la historia anterior al start).
+    const view1m = store.all.filter((c) => c.time <= cursorSec);
     // Agregar al TF actual
     const view = aggregateCandles(view1m, session.chartTimeframe);
     if (view.length === 0) return;
@@ -274,21 +318,31 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
     setRenderTick((t) => t + 1);
   }, [loading, session.replayIndex, session.chartTimeframe]);
 
-  // ── 4. Step engine cuando avanza replayIndex ─────────────────────────────
-  const lastProcessedIndexRef = useRef<number>(-1);
+  // ── 4. Step engine cuando avanza el cursor (por TIEMPO) ──────────────────
+  // Procesa las velas 1m entre el último cursor procesado y el actual.
+  const lastProcessedSecRef = useRef<number>(-1);
   useEffect(() => {
     if (loading) return;
     const store = candleStoreRef.current;
     const det = detailRef.current;
     const sess = sessionRef.current;
     if (!store || !det) return;
-    const start = lastProcessedIndexRef.current + 1;
-    const end = sess.replayIndex;
-    if (end < start) {
-      // Replay rewound — no procesamos hacia atrás (los trades cerrados ya son inmutables)
-      lastProcessedIndexRef.current = end;
+    const cursorSec = (sess.startDate + sess.replayIndex * 60_000) / 1000;
+    // Primera pasada: inicializamos sin procesar el pasado (la historia previa
+    // al start no genera trades — el usuario aún no operó).
+    if (lastProcessedSecRef.current < 0) {
+      lastProcessedSecRef.current = cursorSec;
       return;
     }
+    if (cursorSec < lastProcessedSecRef.current) {
+      // Replay rewound — no reprocesamos hacia atrás.
+      lastProcessedSecRef.current = cursorSec;
+      return;
+    }
+    const prevSec = lastProcessedSecRef.current;
+    const newCandles = store.all.filter(
+      (c) => c.time > prevSec && c.time <= cursorSec,
+    );
     let state = {
       orders: det.orders,
       positions: det.positions,
@@ -297,29 +351,24 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
       realizedPnL: sess.realizedPnL,
     };
     let changed = false;
-    for (let i = start; i <= end; i++) {
-      const c = store.at(i);
-      if (!c) break;
+    for (const c of newCandles) {
       const next = stepEngine(state, c, { sessionId: sess.id });
-      // Detectar cambios: si hubo fill, close, etc. — simple check sobre length de trades
       if (
         next.trades.length !== state.trades.length ||
         next.positions.length !== state.positions.length ||
-        next.orders.some(
-          (o, idx) => o.status !== state.orders[idx]?.status,
-        )
+        next.orders.some((o, idx) => o.status !== state.orders[idx]?.status)
       ) {
         changed = true;
       }
       state = next;
     }
-    // Actualizar unrealized PnL incluso si no hubo fills nuevos
-    const lastCandle = store.at(end);
-    if (lastCandle && state.positions.length > 0) {
-      const lp = lastCandle.close;
+    // Actualizar unrealized PnL al cierre de la vela del cursor.
+    const lastClose = newCandles[newCandles.length - 1]?.close
+      ?? store.all.filter((c) => c.time <= cursorSec).at(-1)?.close;
+    if (lastClose != null && state.positions.length > 0) {
       state.positions = state.positions.map((p) => {
         const dir = p.side === "buy" ? 1 : -1;
-        return { ...p, unrealizedPnL: (lp - p.entry) * p.size * dir };
+        return { ...p, unrealizedPnL: (lastClose - p.entry) * p.size * dir };
       });
       changed = true;
     }
@@ -331,7 +380,7 @@ export function TestingChart({ session, closedTradesMode = "drawings", onCandles
         realizedPnL: state.realizedPnL,
       });
     }
-    lastProcessedIndexRef.current = end;
+    lastProcessedSecRef.current = cursorSec;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session.replayIndex, loading]);
 
