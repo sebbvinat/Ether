@@ -27,7 +27,7 @@ import {
 } from "lightweight-charts";
 import { ema, sma, bollinger, vwap } from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
-import { stepEngine } from "@/lib/testing/engine";
+import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
 import {
   useTestingStore,
   type SessionMeta,
@@ -81,7 +81,9 @@ export function TestingChart({
   // Wave 18.6 — drawing tool state
   const [tool, setTool] = useState<DrawingTool>("cursor");
   const [draft, setDraft] = useState<
-    { type: "trendline" | "rect" | "fib"; a: DrawingPoint } | null
+    | { type: "trendline" | "rect" | "fib"; a: DrawingPoint }
+    | { type: "long" | "short"; entry: DrawingPoint; sl?: DrawingPoint }
+    | null
   >(null);
   const toolRef = useRef<DrawingTool>(tool);
   toolRef.current = tool;
@@ -189,16 +191,40 @@ export function TestingChart({
         return;
       }
       const d = draftRef.current;
-      if (!d || d.type !== t) {
-        setDraft({ type: t, a: pt });
+      // Long/Short: 3 clicks → entry, SL, TP → crea limit order
+      if (t === "long" || t === "short") {
+        if (!d || d.type !== t) {
+          setDraft({ type: t, entry: pt });
+          return;
+        }
+        if (!("sl" in d) || d.sl === undefined) {
+          setDraft({ type: t, entry: d.entry, sl: pt });
+          return;
+        }
+        // 3er click = TP → crear orden limit
+        const order = makeLimitOrder({
+          side: t === "long" ? "buy" : "sell",
+          size: 1,
+          entryPrice: d.entry.price,
+          sl: d.sl.price,
+          tp: pt.price,
+          tags: [t],
+        });
+        void store.addOrder(order);
+        setDraft(null);
+        setTool("cursor");
         return;
       }
-      // Segundo punto → cerrar el dibujo
+      // Resto: 2 puntos
+      if (!d || d.type !== t) {
+        setDraft({ type: t as "trendline" | "rect" | "fib", a: pt });
+        return;
+      }
       void store.addDrawingToActive({
         id: uid(),
         symbol,
         type: t,
-        a: d.a,
+        a: (d as { a: DrawingPoint }).a,
         b: pt,
       } as Drawing);
       setDraft(null);
@@ -420,6 +446,11 @@ export function TestingChart({
     if (!chart) return null;
     return chart.timeScale().timeToCoordinate(timeSec as UTCTimestamp) ?? null;
   }
+  function yToPrice(y: number): number | null {
+    const ser = candleSerRef.current;
+    if (!ser) return null;
+    return ser.coordinateToPrice(y);
+  }
 
   const openPositions: Position[] = detail?.positions ?? [];
   const closedTrades = detail?.trades ?? [];
@@ -466,6 +497,7 @@ export function TestingChart({
       <PositionOverlay
         positions={openPositions}
         priceToY={priceToY}
+        yToPrice={yToPrice}
         width={size.width}
         height={size.height}
       />
@@ -516,31 +548,56 @@ function DrawingsToolbar({
   onSelect: (t: DrawingTool) => void;
   onClear: () => void;
 }) {
-  const tools: { key: DrawingTool; glyph: string; title: string }[] = [
+  const tools: { key: DrawingTool; glyph: string; title: string; color?: string }[] = [
     { key: "cursor", glyph: "✛", title: "Cursor" },
     { key: "trendline", glyph: "╱", title: "Línea de tendencia (2 clics)" },
     { key: "hline", glyph: "─", title: "Línea horizontal (1 clic)" },
     { key: "rect", glyph: "▢", title: "Rectángulo (2 clics)" },
     { key: "fib", glyph: "φ", title: "Fibonacci retroceso (2 clics)" },
+    {
+      key: "long",
+      glyph: "L",
+      title: "Posición LONG (3 clics: entry → SL → TP, crea buy limit)",
+      color: "tv-green",
+    },
+    {
+      key: "short",
+      glyph: "S",
+      title: "Posición SHORT (3 clics: entry → SL → TP, crea sell limit)",
+      color: "tv-red",
+    },
     { key: "eraser", glyph: "⌫", title: "Borrador" },
   ];
   return (
     <div className="absolute left-1 top-1 z-20 flex flex-col gap-0.5 rounded border border-tv-border bg-tv-panel/95 p-1 shadow-md">
-      {tools.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => onSelect(t.key)}
-          title={t.title}
-          className={
-            "h-6 w-6 rounded text-[14px] " +
-            (tool === t.key
-              ? "bg-tv-blue/20 text-tv-blue"
-              : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text")
-          }
-        >
-          {t.glyph}
-        </button>
-      ))}
+      {tools.map((t) => {
+        const isLong = t.key === "long";
+        const isShort = t.key === "short";
+        const activeBg = isLong
+          ? "bg-tv-green/20 text-tv-green"
+          : isShort
+            ? "bg-tv-red/20 text-tv-red"
+            : "bg-tv-blue/20 text-tv-blue";
+        const inactiveColor =
+          isLong
+            ? "text-tv-green/70 hover:bg-tv-green/10 hover:text-tv-green"
+            : isShort
+              ? "text-tv-red/70 hover:bg-tv-red/10 hover:text-tv-red"
+              : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text";
+        return (
+          <button
+            key={t.key}
+            onClick={() => onSelect(t.key)}
+            title={t.title}
+            className={
+              "h-6 w-6 rounded text-[14px] " +
+              (tool === t.key ? activeBg : inactiveColor)
+            }
+          >
+            {t.glyph}
+          </button>
+        );
+      })}
       <div className="my-0.5 border-t border-tv-border" />
       <button
         onClick={onClear}

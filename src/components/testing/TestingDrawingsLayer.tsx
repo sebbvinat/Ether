@@ -223,7 +223,15 @@ function renderFib(
   );
 }
 
-export type DrawingTool = "cursor" | "trendline" | "hline" | "rect" | "fib" | "eraser";
+export type DrawingTool =
+  | "cursor"
+  | "trendline"
+  | "hline"
+  | "rect"
+  | "fib"
+  | "long"
+  | "short"
+  | "eraser";
 
 interface DrawingPointDraft extends DrawingPoint {}
 export type { DrawingPointDraft };

@@ -1,50 +1,106 @@
 "use client";
 
 /**
- * Wave 18b — SVG overlay que dibuja las posiciones abiertas sobre el chart.
+ * Wave 18.6 — PositionOverlay con drag de SL/TP.
  *
- * Cada posición se renderiza con 3 líneas horizontales (entry/SL/TP) +
- * zonas coloreadas (verde TP, rojo SL) + label con risk/reward en $.
- *
- * Es read-only (pointer-events:none) — los SL/TP no se arrastran desde acá
- * todavía (deferred a polish). Patrón: VolumeProfileLayer.tsx + SessionsLayer.tsx.
+ * Cada posición tiene 3 líneas horizontales (entry/SL/TP). SL y TP ahora
+ * se pueden ARRASTRAR para ajustar — patrón similar al drag de drawings
+ * en DrawingsLayer del chart en vivo (window-level listeners para evitar
+ * race conditions con pointer-events del SVG durante el drag).
  */
 
-import type { Position } from "@/lib/store/testing-store";
+import { useEffect, useRef, useState } from "react";
+import { useTestingStore, type Position } from "@/lib/store/testing-store";
 
 interface Props {
   positions: Position[];
   priceToY: (price: number) => number | null;
+  yToPrice: (y: number) => number | null;
   width: number;
   height: number;
 }
 
-export function PositionOverlay({ positions, priceToY, width, height }: Props) {
+type DragState = { positionId: string; kind: "sl" | "tp"; currentY: number };
+
+export function PositionOverlay({
+  positions,
+  priceToY,
+  yToPrice,
+  width,
+  height,
+}: Props) {
+  const updateLevels = useTestingStore((s) => s.updatePositionLevels);
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+
+  // Drag global con window listeners — evita race con pointer-events:none
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e: PointerEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      setDrag((d) => (d ? { ...d, currentY: y } : null));
+    };
+    const onUp = (e: PointerEvent) => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      const y = e.clientY - rect.top;
+      const newPrice = yToPrice(y);
+      if (newPrice !== null && drag) {
+        const patch =
+          drag.kind === "sl" ? { sl: newPrice } : { tp: newPrice };
+        void updateLevels(drag.positionId, patch);
+      }
+      setDrag(null);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [drag, yToPrice, updateLevels]);
+
   if (positions.length === 0 || width === 0 || height === 0) return null;
 
   return (
     <svg
-      className="pointer-events-none absolute inset-0 h-full w-full"
-      style={{ zIndex: 5, overflow: "hidden" }}
+      ref={svgRef}
+      className="absolute inset-0 h-full w-full"
+      // pointer-events: visible permite click sobre rects/lines pero deja
+      // pasar a través de áreas vacías (el chart sigue siendo interactivo).
+      style={{ zIndex: 5, overflow: "hidden", pointerEvents: "none" }}
     >
       {positions.map((pos) => {
         const yEntry = priceToY(pos.entry);
         if (yEntry === null) return null;
-        const ySl = pos.sl !== undefined ? priceToY(pos.sl) : null;
-        const yTp = pos.tp !== undefined ? priceToY(pos.tp) : null;
+        let ySl = pos.sl !== undefined ? priceToY(pos.sl) : null;
+        let yTp = pos.tp !== undefined ? priceToY(pos.tp) : null;
+        // Si está arrastrando esta posición, usar el Y del drag para feedback en vivo
+        if (drag?.positionId === pos.id) {
+          if (drag.kind === "sl") ySl = drag.currentY;
+          if (drag.kind === "tp") yTp = drag.currentY;
+        }
+        const slPrice =
+          drag?.positionId === pos.id && drag.kind === "sl" && ySl !== null
+            ? yToPrice(ySl) ?? pos.sl
+            : pos.sl;
+        const tpPrice =
+          drag?.positionId === pos.id && drag.kind === "tp" && yTp !== null
+            ? yToPrice(yTp) ?? pos.tp
+            : pos.tp;
         const dir = pos.side === "buy" ? 1 : -1;
         const risk =
-          pos.sl !== undefined
-            ? Math.abs(pos.entry - pos.sl) * pos.size
-            : null;
+          slPrice !== undefined ? Math.abs(pos.entry - slPrice) * pos.size : null;
         const reward =
-          pos.tp !== undefined
-            ? Math.abs(pos.tp - pos.entry) * pos.size
-            : null;
+          tpPrice !== undefined ? Math.abs(tpPrice - pos.entry) * pos.size : null;
 
         return (
           <g key={pos.id}>
-            {/* TP zone: between entry and TP (green) */}
+            {/* TP zone */}
             {yTp !== null && (
               <rect
                 x={0}
@@ -54,7 +110,7 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
                 fill="rgba(38,166,154,0.10)"
               />
             )}
-            {/* SL zone: between entry and SL (red) */}
+            {/* SL zone */}
             {ySl !== null && (
               <rect
                 x={0}
@@ -65,7 +121,7 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
               />
             )}
 
-            {/* Entry line */}
+            {/* Entry line (no draggeable) */}
             <line
               x1={0}
               y1={yEntry}
@@ -96,16 +152,29 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
               {pos.entry.toFixed(2)}
             </text>
 
-            {/* SL line */}
+            {/* SL line — DRAGGEABLE */}
             {ySl !== null && (
-              <>
+              <g style={{ pointerEvents: "auto", cursor: "ns-resize" }}>
+                {/* Hit area ancha invisible para captar el drag */}
+                <line
+                  x1={0}
+                  y1={ySl}
+                  x2={width}
+                  y2={ySl}
+                  stroke="transparent"
+                  strokeWidth={12}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    setDrag({ positionId: pos.id, kind: "sl", currentY: ySl! });
+                  }}
+                />
                 <line
                   x1={0}
                   y1={ySl}
                   x2={width}
                   y2={ySl}
                   stroke="#ef5350"
-                  strokeWidth={1}
+                  strokeWidth={drag?.positionId === pos.id && drag.kind === "sl" ? 2 : 1}
                   strokeDasharray="4 3"
                 />
                 <rect
@@ -125,8 +194,9 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
                   fontWeight={600}
                   fontFamily="var(--font-mono), monospace"
                   textAnchor="middle"
+                  style={{ pointerEvents: "none" }}
                 >
-                  SL {pos.sl?.toFixed(2)}
+                  SL {slPrice?.toFixed(2)}
                 </text>
                 {risk !== null && (
                   <text
@@ -136,23 +206,36 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
                     fontSize={10}
                     fontWeight={500}
                     fontFamily="var(--font-mono), monospace"
+                    style={{ pointerEvents: "none" }}
                   >
                     Risk -${risk.toFixed(2)}
                   </text>
                 )}
-              </>
+              </g>
             )}
 
-            {/* TP line */}
+            {/* TP line — DRAGGEABLE */}
             {yTp !== null && (
-              <>
+              <g style={{ pointerEvents: "auto", cursor: "ns-resize" }}>
+                <line
+                  x1={0}
+                  y1={yTp}
+                  x2={width}
+                  y2={yTp}
+                  stroke="transparent"
+                  strokeWidth={12}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    setDrag({ positionId: pos.id, kind: "tp", currentY: yTp! });
+                  }}
+                />
                 <line
                   x1={0}
                   y1={yTp}
                   x2={width}
                   y2={yTp}
                   stroke="#26a69a"
-                  strokeWidth={1}
+                  strokeWidth={drag?.positionId === pos.id && drag.kind === "tp" ? 2 : 1}
                   strokeDasharray="4 3"
                 />
                 <rect
@@ -172,8 +255,9 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
                   fontWeight={600}
                   fontFamily="var(--font-mono), monospace"
                   textAnchor="middle"
+                  style={{ pointerEvents: "none" }}
                 >
-                  TP {pos.tp?.toFixed(2)}
+                  TP {tpPrice?.toFixed(2)}
                 </text>
                 {reward !== null && (
                   <text
@@ -183,11 +267,12 @@ export function PositionOverlay({ positions, priceToY, width, height }: Props) {
                     fontSize={10}
                     fontWeight={500}
                     fontFamily="var(--font-mono), monospace"
+                    style={{ pointerEvents: "none" }}
                   >
                     Reward +${reward.toFixed(2)}
                   </text>
                 )}
-              </>
+              </g>
             )}
           </g>
         );
