@@ -216,6 +216,12 @@ interface TestingState {
   /** Wave 18.5 — setea el cursor de replay (timestamp ms). Fuente de verdad. */
   setReplayCursor: (ms: number) => void;
   setChartTimeframe: (tf: Timeframe) => void;
+  /** Wave 18.6 — toggle un indicador en la sesión activa. */
+  toggleIndicator: (key: IndicatorKey) => Promise<void>;
+  /** Wave 18.6 — drawings sobre el chart de la sesión activa. */
+  addDrawingToActive: (drawing: Drawing) => Promise<void>;
+  removeDrawingFromActive: (drawingId: string) => Promise<void>;
+  clearDrawingsInActive: () => Promise<void>;
   setReplayStepSize: (size: number) => void;
   setReplayIntervalMs: (ms: number) => void;
   // Wave 18 — acciones de engine (operan sobre activeDetail + meta)
@@ -441,6 +447,51 @@ export const useTestingStore = create<TestingState>()(
             return { ...x, replayCursorMs: clamped };
           }),
         }));
+      },
+
+      toggleIndicator: async (key) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = {
+          ...detail,
+          indicators: {
+            ...detail.indicators,
+            [key]: !detail.indicators[key],
+          },
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      addDrawingToActive: async (drawing) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = { ...detail, drawings: [...detail.drawings, drawing] };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      removeDrawingFromActive: async (drawingId) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = {
+          ...detail,
+          drawings: detail.drawings.filter((d) => d.id !== drawingId),
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      clearDrawingsInActive: async () => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = { ...detail, drawings: [] };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
       },
 
       setChartTimeframe: (tf) => {

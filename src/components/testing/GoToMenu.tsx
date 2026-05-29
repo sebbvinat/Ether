@@ -55,66 +55,60 @@ const PRESETS: Preset[] = [
 interface Props {
   /** Vela actual (timestamp del replay en ms). */
   currentTimeMs: number;
-  /** Array de velas 1m disponibles (para buscar el próximo match). time en seg UNIX. */
-  candles1m: { time: number }[];
   /** Salto: setea el nuevo cursor de replay (timestamp ms). */
   onGoTo: (newCursorMs: number) => void;
 }
 
-/** True si la vela `candleMs` cae en la hora NY `targetH:targetM` (vela 1m). */
-function matchesNYTime(candleMs: number, targetH: number, targetM: number): boolean {
-  const d = new Date(candleMs);
+/** Devuelve la hora/minuto NY de un timestamp UTC ms (h23). */
+function nyHourMinute(ms: number): { hour: number; minute: number } {
   const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/New_York",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
   });
-  const parts = fmt.formatToParts(d);
+  const parts = fmt.formatToParts(ms);
   const hour = parseInt(parts.find((p) => p.type === "hour")?.value ?? "0", 10);
   const minute = parseInt(parts.find((p) => p.type === "minute")?.value ?? "0", 10);
-  return hour === targetH && minute === targetM;
+  return { hour, minute };
 }
 
-export function GoToMenu({ currentTimeMs, candles1m, onGoTo }: Props) {
+/**
+ * Devuelve el próximo timestamp UTC (ms) cuya hora NY sea exactamente
+ * `targetHourNY:targetMinuteNY`, estrictamente posterior a `fromMs`.
+ * Usa aritmética en minutos NY → robusto a DST (con ±1h de error en el día
+ * de transición, aceptable).
+ */
+function nextOccurrenceMs(fromMs: number, targetHourNY: number, targetMinuteNY: number): number {
+  const { hour, minute } = nyHourMinute(fromMs);
+  const curMin = hour * 60 + minute;
+  const tgtMin = targetHourNY * 60 + targetMinuteNY;
+  let offsetMin: number;
+  if (tgtMin > curMin) offsetMin = tgtMin - curMin;
+  else offsetMin = 24 * 60 - curMin + tgtMin;
+  return fromMs + offsetMin * 60_000;
+}
+
+export function GoToMenu({ currentTimeMs, onGoTo }: Props) {
   const [open, setOpen] = useState(false);
 
   function jumpTo(target: Preset) {
-    // Buscar la próxima vela 1m (time > cursor) cuyo NY-time matchee el target.
-    const startIdx = candles1m.findIndex((c) => c.time * 1000 > currentTimeMs);
-    if (startIdx === -1) return;
-    for (let i = startIdx; i < candles1m.length; i++) {
-      const ms = candles1m[i].time * 1000;
-      if (matchesNYTime(ms, target.hourNY, target.minuteNY)) {
-        onGoTo(ms);
-        setOpen(false);
-        return;
-      }
-    }
-    // No encontrado en lo cacheado — fallback: avanzar al final de lo cargado.
-    const lastMs = candles1m[candles1m.length - 1]?.time * 1000;
-    if (lastMs) onGoTo(lastMs);
+    const targetMs = nextOccurrenceMs(currentTimeMs, target.hourNY, target.minuteNY);
+    // Si el target está más allá de la data cargada, igual avanzamos —
+    // el chart se va a re-prefetchear automáticamente.
+    onGoTo(targetMs);
     setOpen(false);
   }
 
   function jumpNextSession() {
-    const startIdx = candles1m.findIndex((c) => c.time * 1000 > currentTimeMs);
-    if (startIdx === -1) return;
-    const targets = [
+    // Próxima sesión = la más cercana entre Asian/London/NY desde ahora.
+    const candidates = [
       { hour: 19, minute: 0 }, // Asian
       { hour: 2, minute: 0 }, // London
       { hour: 9, minute: 30 }, // NY
-    ];
-    for (let i = startIdx; i < candles1m.length; i++) {
-      const ms = candles1m[i].time * 1000;
-      for (const t of targets) {
-        if (matchesNYTime(ms, t.hour, t.minute)) {
-          onGoTo(ms);
-          setOpen(false);
-          return;
-        }
-      }
-    }
+    ].map((t) => nextOccurrenceMs(currentTimeMs, t.hour, t.minute));
+    const nextMs = Math.min(...candidates);
+    onGoTo(nextMs);
     setOpen(false);
   }
 
