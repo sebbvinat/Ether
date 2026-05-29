@@ -25,7 +25,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { ema } from "@/lib/indicators";
+import { ema, sma, bollinger, vwap } from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
 import { stepEngine } from "@/lib/testing/engine";
 import {
@@ -33,8 +33,11 @@ import {
   type SessionMeta,
   type Position,
 } from "@/lib/store/testing-store";
+import { INDICATOR_COLORS, type IndicatorKey } from "@/lib/store/chart-store";
 import { PositionOverlay } from "./PositionOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
+import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
+import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
 const TV = {
   bg: "#131722",
@@ -65,9 +68,9 @@ export function TestingChart({
   const chartRef = useRef<IChartApi | null>(null);
   const candleSerRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
   const volSerRef = useRef<ISeriesApi<"Histogram"> | null>(null);
-  const e20Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const e50Ref = useRef<ISeriesApi<"Line"> | null>(null);
-  const e200Ref = useRef<ISeriesApi<"Line"> | null>(null);
+  /** Mapa de series de indicadores activas. Keys del IndicatorKey enum +
+   *  sufijos para multi-línea ("bb-up", "bb-low", etc.). */
+  const indSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const storeRef = useRef<LazyCandleStore | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +78,15 @@ export function TestingChart({
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [renderTick, setRenderTick] = useState(0);
   const didFitRef = useRef(false);
+  // Wave 18.6 — drawing tool state
+  const [tool, setTool] = useState<DrawingTool>("cursor");
+  const [draft, setDraft] = useState<
+    { type: "trendline" | "rect" | "fib"; a: DrawingPoint } | null
+  >(null);
+  const toolRef = useRef<DrawingTool>(tool);
+  toolRef.current = tool;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const detail = useTestingStore((s) => s.activeDetail);
   const applyEngineState = useTestingStore((s) => s.applyEngineState);
@@ -134,29 +146,65 @@ export function TestingChart({
     chart.priceScale("volume").applyOptions({
       scaleMargins: { top: 0.85, bottom: 0 },
     });
-    e20Ref.current = chart.addSeries(LineSeries, {
-      color: TV.yellow,
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    e50Ref.current = chart.addSeries(LineSeries, {
-      color: TV.blue,
-      lineWidth: 1,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
-    e200Ref.current = chart.addSeries(LineSeries, {
-      color: TV.purple,
-      lineWidth: 2,
-      priceLineVisible: false,
-      lastValueVisible: false,
-    });
 
-    // Re-render overlays en cada pan/zoom (FIX: el trade ya no "se mueve" solo)
-    const bump = () => setRenderTick((t) => t + 1);
+    // Re-render overlays en cada pan/zoom — THROTTLED a rAF para que pan/zoom
+    // rápido no haga cientos de renders por segundo (era el lag del overlay).
+    let pending = false;
+    const bump = () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        setRenderTick((t) => t + 1);
+      });
+    };
     chart.timeScale().subscribeVisibleLogicalRangeChange(bump);
     chart.subscribeCrosshairMove(bump);
+
+    // Wave 18.6 — handler de clicks para dibujar (lee tool/draft via ref).
+    const clickHandler = (param: { time?: unknown; point?: { x: number; y: number } }) => {
+      const t = toolRef.current;
+      if (t === "cursor" || t === "eraser") return;
+      if (!param.time || !param.point) return;
+      const cs = candleSerRef.current;
+      if (!cs) return;
+      const price = cs.coordinateToPrice(param.point.y);
+      if (price == null) return;
+      const time = Number(param.time);
+      const pt: DrawingPoint = { time, price };
+      const uid = (): string =>
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2);
+      const symbol = sessionRef.current.symbol;
+      const store = useTestingStore.getState();
+      if (t === "hline") {
+        void store.addDrawingToActive({
+          id: uid(),
+          symbol,
+          type: "hline",
+          at: pt,
+        } as Drawing);
+        setTool("cursor");
+        return;
+      }
+      const d = draftRef.current;
+      if (!d || d.type !== t) {
+        setDraft({ type: t, a: pt });
+        return;
+      }
+      // Segundo punto → cerrar el dibujo
+      void store.addDrawingToActive({
+        id: uid(),
+        symbol,
+        type: t,
+        a: d.a,
+        b: pt,
+      } as Drawing);
+      setDraft(null);
+      setTool("cursor");
+    };
+    chart.subscribeClick(clickHandler);
 
     const obs = new ResizeObserver(() => {
       const el = containerRef.current;
@@ -171,14 +219,13 @@ export function TestingChart({
       try {
         chart.timeScale().unsubscribeVisibleLogicalRangeChange(bump);
         chart.unsubscribeCrosshairMove(bump);
+        chart.unsubscribeClick(clickHandler);
         chart.remove();
       } catch {}
       chartRef.current = null;
       candleSerRef.current = null;
       volSerRef.current = null;
-      e20Ref.current = null;
-      e50Ref.current = null;
-      e200Ref.current = null;
+      indSeriesRef.current.clear();
     };
   }, []);
 
@@ -261,12 +308,7 @@ export function TestingChart({
         color: c.close >= c.open ? "rgba(38,166,154,0.4)" : "rgba(239,83,80,0.4)",
       })),
     );
-    const e20 = ema(displayed, 20);
-    const e50 = ema(displayed, 50);
-    const e200 = ema(displayed, 200);
-    e20Ref.current?.setData(e20.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
-    e50Ref.current?.setData(e50.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
-    e200Ref.current?.setData(e200.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+    // (los indicadores se rendean en su propio effect — ver más abajo)
 
     // Fit solo la primera vez (no en cada step — respeta el pan del usuario)
     if (!didFitRef.current && chartRef.current) {
@@ -281,6 +323,12 @@ export function TestingChart({
       );
     }
   }, [displayed]);
+
+  // ── 5b. Reconciliar indicadores cuando cambien `displayed` o el toggle ──
+  useEffect(() => {
+    if (displayed.length === 0) return;
+    renderIndicators(displayed, detail?.indicators, chartRef.current, indSeriesRef.current);
+  }, [displayed, detail?.indicators]);
 
   // ── 6. Engine: procesar velas 1m entre cursor previo y nuevo ──────────
   const lastCursorRef = useRef<number>(session.replayCursorMs ?? session.startDate);
@@ -375,13 +423,39 @@ export function TestingChart({
 
   const openPositions: Position[] = detail?.positions ?? [];
   const closedTrades = detail?.trades ?? [];
+  const drawings: Drawing[] = detail?.drawings ?? [];
+
+  function toCoord(timeSec: number, price: number) {
+    const x = timeToX(timeSec);
+    const y = priceToY(price);
+    if (x == null || y == null) return null;
+    return { x, y };
+  }
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full" />
-      {/* renderTick fuerza recomputar overlays en pan/zoom */}
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        style={{ cursor: tool === "cursor" ? "default" : "crosshair" }}
+      />
+      {/* Drawings (debajo de posiciones, encima de candles) */}
+      <TestingDrawingsLayer
+        drawings={drawings}
+        toCoord={toCoord}
+        onErase={
+          tool === "eraser"
+            ? (id) => {
+                void useTestingStore.getState().removeDrawingFromActive(id);
+              }
+            : undefined
+        }
+        width={size.width}
+        height={size.height}
+      />
+      {/* Sin key=renderTick — los overlays re-renderizan via props frescos
+          (priceToY/timeToX cambian de ref en cada render del padre). */}
       <ClosedTradesLayer
-        key={`ct-${renderTick}`}
         trades={closedTrades}
         timeToX={timeToX}
         priceToY={priceToY}
@@ -390,11 +464,22 @@ export function TestingChart({
         mode={closedTradesMode}
       />
       <PositionOverlay
-        key={`po-${renderTick}`}
         positions={openPositions}
         priceToY={priceToY}
         width={size.width}
         height={size.height}
+      />
+      {/* Toolbar vertical de drawings — izquierda del chart */}
+      <DrawingsToolbar
+        tool={tool}
+        onSelect={(t) => {
+          setTool(t);
+          setDraft(null);
+        }}
+        onClear={() => {
+          void useTestingStore.getState().clearDrawingsInActive();
+          setTool("cursor");
+        }}
       />
       {loading && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-tv-bg/70 backdrop-blur-sm">
@@ -418,3 +503,142 @@ export function TestingChart({
 }
 
 export { TESTING_TFS };
+
+// ─── DrawingsToolbar ──────────────────────────────────────────────────────
+// Toolbar vertical sobre el chart con los 5 tools básicos + clear.
+
+function DrawingsToolbar({
+  tool,
+  onSelect,
+  onClear,
+}: {
+  tool: DrawingTool;
+  onSelect: (t: DrawingTool) => void;
+  onClear: () => void;
+}) {
+  const tools: { key: DrawingTool; glyph: string; title: string }[] = [
+    { key: "cursor", glyph: "✛", title: "Cursor" },
+    { key: "trendline", glyph: "╱", title: "Línea de tendencia (2 clics)" },
+    { key: "hline", glyph: "─", title: "Línea horizontal (1 clic)" },
+    { key: "rect", glyph: "▢", title: "Rectángulo (2 clics)" },
+    { key: "fib", glyph: "φ", title: "Fibonacci retroceso (2 clics)" },
+    { key: "eraser", glyph: "⌫", title: "Borrador" },
+  ];
+  return (
+    <div className="absolute left-1 top-1 z-20 flex flex-col gap-0.5 rounded border border-tv-border bg-tv-panel/95 p-1 shadow-md">
+      {tools.map((t) => (
+        <button
+          key={t.key}
+          onClick={() => onSelect(t.key)}
+          title={t.title}
+          className={
+            "h-6 w-6 rounded text-[14px] " +
+            (tool === t.key
+              ? "bg-tv-blue/20 text-tv-blue"
+              : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text")
+          }
+        >
+          {t.glyph}
+        </button>
+      ))}
+      <div className="my-0.5 border-t border-tv-border" />
+      <button
+        onClick={onClear}
+        title="Borrar todos los dibujos"
+        className="h-6 w-6 rounded text-[14px] text-tv-text-muted hover:bg-tv-red/20 hover:text-tv-red"
+      >
+        🗑
+      </button>
+    </div>
+  );
+}
+
+// ─── renderIndicators ─────────────────────────────────────────────────────
+// Reconcilia las series de indicadores con el set activo en detail.indicators.
+// Crea series nuevas para indicadores que no estaban, las quita si dejaron de
+// estar activas, y actualiza los datos de las activas.
+
+import type { Candle } from "@/lib/binance/types";
+
+function renderIndicators(
+  candles: Candle[],
+  active: Record<IndicatorKey, boolean> | undefined,
+  chart: IChartApi | null,
+  series: Map<string, ISeriesApi<"Line">>,
+) {
+  if (!chart) return;
+  // Conjunto de keys que DEBERÍAN tener serie
+  const wanted = new Set<string>();
+  if (active?.ema20) wanted.add("ema20");
+  if (active?.ema50) wanted.add("ema50");
+  if (active?.ema200) wanted.add("ema200");
+  if (active?.sma20) wanted.add("sma20");
+  if (active?.sma50) wanted.add("sma50");
+  if (active?.bb) {
+    wanted.add("bb-up");
+    wanted.add("bb-mid");
+    wanted.add("bb-low");
+  }
+  if (active?.vwap) wanted.add("vwap");
+
+  // Quitar series que ya no están activas
+  for (const [key, ser] of series.entries()) {
+    if (!wanted.has(key)) {
+      try {
+        chart.removeSeries(ser);
+      } catch {}
+      series.delete(key);
+    }
+  }
+
+  // Helper para crear/get una line series con color
+  function getOrCreate(key: string, color: string, width = 1): ISeriesApi<"Line"> {
+    let s = series.get(key);
+    if (!s) {
+      s = chart!.addSeries(LineSeries, {
+        color,
+        lineWidth: width as 1 | 2 | 3 | 4,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
+      series.set(key, s);
+    }
+    return s;
+  }
+
+  // EMAs y SMAs (línea simple)
+  const singleLines: [string, IndicatorKey | null, number, "ema" | "sma"][] = [
+    ["ema20", "ema20", 20, "ema"],
+    ["ema50", "ema50", 50, "ema"],
+    ["ema200", "ema200", 200, "ema"],
+    ["sma20", "sma20", 20, "sma"],
+    ["sma50", "sma50", 50, "sma"],
+  ];
+  for (const [key, indKey, period, kind] of singleLines) {
+    if (!indKey || !wanted.has(key)) continue;
+    const color = INDICATOR_COLORS[indKey]?.[0] ?? "#999";
+    const ser = getOrCreate(key, color, period >= 200 ? 2 : 1);
+    const pts = kind === "ema" ? ema(candles, period) : sma(candles, period);
+    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+  }
+
+  // Bollinger (3 líneas)
+  if (wanted.has("bb-mid")) {
+    const cols = INDICATOR_COLORS.bb ?? ["#787b86", "#787b86", "#787b86"];
+    const up = getOrCreate("bb-up", cols[0]);
+    const mid = getOrCreate("bb-mid", cols[1]);
+    const low = getOrCreate("bb-low", cols[2]);
+    const pts = bollinger(candles, 20, 2);
+    up.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })));
+    mid.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.basis })));
+    low.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })));
+  }
+
+  // VWAP (1 línea — anclada al inicio del rango cargado, suficiente para MVP)
+  if (wanted.has("vwap")) {
+    const color = INDICATOR_COLORS.vwap?.[0] ?? "#ffb74d";
+    const ser = getOrCreate("vwap", color, 2);
+    const pts = vwap(candles);
+    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+  }
+}

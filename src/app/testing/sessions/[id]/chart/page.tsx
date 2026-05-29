@@ -28,6 +28,7 @@ import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
 import { PositionsPanel } from "@/components/testing/PositionsPanel";
 import { GoToMenu } from "@/components/testing/GoToMenu";
+import { IndicatorsMenu } from "@/components/testing/IndicatorsMenu";
 import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
 import type { Timeframe } from "@/lib/binance/types";
 import { cn } from "@/lib/utils";
@@ -37,12 +38,19 @@ interface Props {
 }
 
 // Cuántas barras del TF actual avanza cada step.
-const STEP_BARS: { value: number; label: string }[] = [
-  { value: 1, label: "1 barra" },
-  { value: 2, label: "2 barras" },
-  { value: 5, label: "5 barras" },
-  { value: 10, label: "10 barras" },
-];
+const STEP_BARS = [1, 2, 5, 10];
+
+/** Etiqueta humana para un step: "1 vela 15m", "30 min", "2 horas", etc. */
+function stepLabel(bars: number, tfMinutes: number): string {
+  const totalMin = bars * tfMinutes;
+  if (totalMin < 60) return `${totalMin} min`;
+  if (totalMin < 1440) {
+    const h = totalMin / 60;
+    return h === Math.floor(h) ? `${h} h` : `${h.toFixed(1)} h`;
+  }
+  const d = totalMin / 1440;
+  return d === Math.floor(d) ? `${d} día${d > 1 ? "s" : ""}` : `${d.toFixed(1)} días`;
+}
 
 const SPEEDS: { ms: number; label: string }[] = [
   { ms: 2000, label: "0.5x" },
@@ -234,12 +242,11 @@ export default function SessionChartPage({ params }: Props) {
           ))}
         </div>
 
+        {/* Indicadores */}
+        <IndicatorsMenu />
+
         {/* Go To */}
-        <GoToMenu
-          currentTimeMs={currentTimeMs}
-          candles1m={candles1m}
-          onGoTo={(ms) => setReplayCursor(ms)}
-        />
+        <GoToMenu currentTimeMs={currentTimeMs} onGoTo={(ms) => setReplayCursor(ms)} />
 
         <button
           onClick={() => setOrderDialogOpen(true)}
@@ -258,6 +265,28 @@ export default function SessionChartPage({ params }: Props) {
             closedTradesMode={closedMode}
             onCandlesLoaded={setCandles1m}
           />
+        </div>
+        {/* Minimize/expand tab para el panel de posiciones */}
+        <div className="flex shrink-0 items-center justify-between border-t border-tv-border bg-tv-panel/40 px-3 py-0.5">
+          <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-tv-text-muted">
+            <span>Posiciones</span>
+            {detail && (
+              <span className="font-mono">
+                <span className="text-tv-green">{detail.positions.length} abiertas</span>
+                {" · "}
+                <span>{detail.orders.filter((o) => o.status === "pending").length} pendientes</span>
+                {" · "}
+                <span className="text-tv-text-muted">{detail.trades.length} cerradas</span>
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setShowPanel((v) => !v)}
+            className="rounded px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+            title={showPanel ? "Minimizar" : "Mostrar"}
+          >
+            {showPanel ? "▼ Ocultar" : "▲ Mostrar"}
+          </button>
         </div>
         {showPanel && (
           <div className="h-48 shrink-0 border-t border-tv-border">
@@ -300,7 +329,7 @@ export default function SessionChartPage({ params }: Props) {
           <ChevronRight className="h-4 w-4" />
         </button>
 
-        {/* Step size (barras del TF por avance) */}
+        {/* Step size (cuánto avanza por click) */}
         <div className="ml-2 flex items-center gap-1">
           <span className="text-[10px] uppercase tracking-wider text-tv-text-muted">
             Step
@@ -310,9 +339,10 @@ export default function SessionChartPage({ params }: Props) {
             onChange={(e) => setStepSize(parseInt(e.target.value, 10))}
             className="rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text"
           >
-            {STEP_BARS.map((s) => (
-              <option key={s.value} value={s.value}>
-                {s.label}
+            {STEP_BARS.map((bars) => (
+              <option key={bars} value={bars}>
+                {stepLabel(bars, TF_MINUTES[session.chartTimeframe])}
+                {bars > 1 ? ` (${bars} velas)` : " (1 vela)"}
               </option>
             ))}
           </select>
