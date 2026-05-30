@@ -25,7 +25,7 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { ema, sma, bollinger, vwap } from "@/lib/indicators";
+import { ema, sma, bollinger, vwap, rsi, macd, stochastic } from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
 import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
 import {
@@ -646,6 +646,22 @@ function renderIndicators(
     wanted.add("bb-low");
   }
   if (active?.vwap) wanted.add("vwap");
+  if (active?.rsi) {
+    wanted.add("rsi");
+    wanted.add("rsi-30");
+    wanted.add("rsi-70");
+  }
+  if (active?.macd) {
+    wanted.add("macd-line");
+    wanted.add("macd-signal");
+    wanted.add("macd-hist");
+  }
+  if (active?.stoch) {
+    wanted.add("stoch-k");
+    wanted.add("stoch-d");
+    wanted.add("stoch-20");
+    wanted.add("stoch-80");
+  }
 
   // Quitar series que ya no están activas
   for (const [key, ser] of series.entries()) {
@@ -657,16 +673,25 @@ function renderIndicators(
     }
   }
 
-  // Helper para crear/get una line series con color
-  function getOrCreate(key: string, color: string, width = 1): ISeriesApi<"Line"> {
+  // Helper para crear/get una line series con color en un pane específico
+  function getOrCreate(
+    key: string,
+    color: string,
+    width = 1,
+    paneIndex = 0,
+  ): ISeriesApi<"Line"> {
     let s = series.get(key);
     if (!s) {
-      s = chart!.addSeries(LineSeries, {
-        color,
-        lineWidth: width as 1 | 2 | 3 | 4,
-        priceLineVisible: false,
-        lastValueVisible: false,
-      });
+      s = chart!.addSeries(
+        LineSeries,
+        {
+          color,
+          lineWidth: width as 1 | 2 | 3 | 4,
+          priceLineVisible: false,
+          lastValueVisible: paneIndex > 0,
+        },
+        paneIndex,
+      );
       series.set(key, s);
     }
     return s;
@@ -706,5 +731,72 @@ function renderIndicators(
     const ser = getOrCreate("vwap", color, 2);
     const pts = vwap(candles);
     ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+  }
+
+  // ── Sub-panels (paneIndex > 0) ─────────────────────────────────────────
+
+  // RSI 14 en pane 1, con líneas de oversold/overbought
+  if (wanted.has("rsi")) {
+    const color = INDICATOR_COLORS.rsi?.[0] ?? "#ab47bc";
+    const ser = getOrCreate("rsi", color, 1, 1);
+    const pts = rsi(candles, 14);
+    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+    // Guides: 30 y 70 como líneas planas
+    if (pts.length > 0) {
+      const t0 = pts[0].time as UTCTimestamp;
+      const tN = pts[pts.length - 1].time as UTCTimestamp;
+      const guide30 = getOrCreate("rsi-30", "#787b86", 1, 1);
+      guide30.applyOptions({ lineStyle: 3 });
+      guide30.setData([
+        { time: t0, value: 30 },
+        { time: tN, value: 30 },
+      ]);
+      const guide70 = getOrCreate("rsi-70", "#787b86", 1, 1);
+      guide70.applyOptions({ lineStyle: 3 });
+      guide70.setData([
+        { time: t0, value: 70 },
+        { time: tN, value: 70 },
+      ]);
+    }
+  }
+
+  // MACD en pane 2 (2 líneas: MACD y signal)
+  if (wanted.has("macd-line")) {
+    const cols = INDICATOR_COLORS.macd ?? ["#2962ff", "#ef5350", "#787b86"];
+    const line = getOrCreate("macd-line", cols[0], 1, 2);
+    const signal = getOrCreate("macd-signal", cols[1], 1, 2);
+    const pts = macd(candles, 12, 26, 9);
+    line.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.macd })));
+    signal.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.signal })));
+    // hist como línea (en MVP — un histogram real necesitaría HistogramSeries)
+    const hist = getOrCreate("macd-hist", cols[2], 1, 2);
+    hist.applyOptions({ lineStyle: 0 });
+    hist.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.histogram })));
+  }
+
+  // Stochastic en pane 3 (%K + %D + guías 20/80)
+  if (wanted.has("stoch-k")) {
+    const cols = INDICATOR_COLORS.stoch ?? ["#2962ff", "#ef5350"];
+    const k = getOrCreate("stoch-k", cols[0], 1, 3);
+    const d = getOrCreate("stoch-d", cols[1] ?? "#ef5350", 1, 3);
+    const pts = stochastic(candles, 14, 3);
+    k.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })));
+    d.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })));
+    if (pts.length > 0) {
+      const t0 = pts[0].time as UTCTimestamp;
+      const tN = pts[pts.length - 1].time as UTCTimestamp;
+      const g20 = getOrCreate("stoch-20", "#787b86", 1, 3);
+      g20.applyOptions({ lineStyle: 3 });
+      g20.setData([
+        { time: t0, value: 20 },
+        { time: tN, value: 20 },
+      ]);
+      const g80 = getOrCreate("stoch-80", "#787b86", 1, 3);
+      g80.applyOptions({ lineStyle: 3 });
+      g80.setData([
+        { time: t0, value: 80 },
+        { time: tN, value: 80 },
+      ]);
+    }
   }
 }
