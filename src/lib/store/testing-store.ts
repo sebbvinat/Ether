@@ -240,6 +240,8 @@ interface TestingState {
     openedAtMs: number;
   }) => Promise<void>;
   cancelOrderById: (orderId: string) => Promise<void>;
+  /** Wave 18.7 — ajustar niveles de una orden pendiente (drag desde el chart). */
+  updateOrderLevels: (orderId: string, patch: { entryPrice?: number; sl?: number; tp?: number }) => Promise<void>;
   closePositionManual: (positionId: string, closePrice: number, closedAtMs: number) => Promise<void>;
   updatePositionLevels: (positionId: string, patch: { sl?: number; tp?: number }) => Promise<void>;
   /** Aplica un snapshot del engine al detail activo + persiste a IDB.
@@ -571,6 +573,20 @@ export const useTestingStore = create<TestingState>()(
           ...detail,
           orders: [...detail.orders, order],
           positions: [...detail.positions, position],
+        };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      updateOrderLevels: async (orderId, patch) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = {
+          ...detail,
+          orders: detail.orders.map((o) =>
+            o.id === orderId && o.status === "pending" ? { ...o, ...patch } : o,
+          ),
         };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);

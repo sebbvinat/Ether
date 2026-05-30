@@ -35,6 +35,7 @@ import {
 } from "@/lib/store/testing-store";
 import { INDICATOR_COLORS, type IndicatorKey } from "@/lib/store/chart-store";
 import { PositionOverlay } from "./PositionOverlay";
+import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
@@ -453,6 +454,7 @@ export function TestingChart({
   }
 
   const openPositions: Position[] = detail?.positions ?? [];
+  const pendingOrders = (detail?.orders ?? []).filter((o) => o.status === "pending");
   const closedTrades = detail?.trades ?? [];
   const drawings: Drawing[] = detail?.drawings ?? [];
 
@@ -496,6 +498,13 @@ export function TestingChart({
       />
       <PositionOverlay
         positions={openPositions}
+        priceToY={priceToY}
+        yToPrice={yToPrice}
+        width={size.width}
+        height={size.height}
+      />
+      <PendingOrdersOverlay
+        orders={pendingOrders}
         priceToY={priceToY}
         yToPrice={yToPrice}
         width={size.width}
