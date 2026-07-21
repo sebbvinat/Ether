@@ -300,10 +300,14 @@ export function TestingChart({
       session.endDate,
     );
     storeRef.current = store;
-    // 1500 barras de historia inicial + 200 de lookahead. Para 15m eso son
-    // ~15 días de contexto. Sigue siendo ~2 requests a Binance.
+    // Wave 18.11 — centrar el load en el CURSOR (no en startDate). Cuando la
+    // sesión arranca en el fin del rango (endDate = hoy), el cursor está en
+    // Julio pero startDate en Enero: centrar en startDate cargaba data vieja
+    // y dejaba un hueco de meses. Centrando en cursor arrancamos con data
+    // relevante al momento donde estamos viendo.
+    // 1500 barras hacia atrás + 200 de lookahead = ~2 requests a Binance.
     store
-      .ensureLoaded(session.startDate, 1500, 200)
+      .ensureLoaded(cursorMs, 1500, 200)
       .then(() => {
         if (cancelled) return;
         onCandlesLoaded?.(store.all);
