@@ -94,6 +94,31 @@ export async function fetchRange(
 }
 
 /**
+ * Wave 18.15 — trae velas vía /api/candles (Supabase cache). El endpoint
+ * ya maneja fallback a Binance/Yahoo si Supabase no está configurado.
+ */
+async function fetchViaApi(
+  symbol: string,
+  tf: Timeframe,
+  fromMs: number,
+  toMs: number,
+): Promise<Candle[]> {
+  try {
+    const url = `/api/candles?symbol=${encodeURIComponent(symbol)}&tf=${tf}&from=${fromMs}&to=${toMs}`;
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) {
+      // Fallback local si el endpoint tira error
+      return fetchRange(symbol, tf, fromMs, toMs);
+    }
+    const json = (await res.json()) as { candles: Candle[] };
+    return json.candles ?? [];
+  } catch (e) {
+    console.warn("[fetchViaApi] failed, using direct", e);
+    return fetchRange(symbol, tf, fromMs, toMs);
+  }
+}
+
+/**
  * Store lazy de velas en un TF dado. Carga chunks alrededor del cursor.
  */
 export class LazyCandleStore {
@@ -169,7 +194,10 @@ export class LazyCandleStore {
     this.pending = (async () => {
       const fetchFrom = Math.min(from, this.minTime === Infinity ? from : this.minTime * 1000);
       const fetchTo = Math.max(to, this.maxTime === -Infinity ? to : (this.maxTime + 60) * 1000);
-      const fresh = await fetchRange(this.symbol, this.tf, fetchFrom, fetchTo, this.market);
+      // Wave 18.15 — vamos por /api/candles (Supabase cache) en vez de
+      // directo a Binance/Yahoo. El endpoint sirve lo que ya tenga cacheado
+      // y sólo fetchea gaps recientes.
+      const fresh = await fetchViaApi(this.symbol, this.tf, fetchFrom, fetchTo);
       this.merge(fresh);
       // Wave 18.13 — persistir el cache actualizado (debounced).
       this.schedulePersist();
