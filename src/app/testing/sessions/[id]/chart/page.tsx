@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
+  ChevronsRight,
   Play,
   Pause,
   Plus,
@@ -327,6 +328,13 @@ export default function SessionChartPage({ params }: Props) {
           title="Barra siguiente"
         >
           <ChevronRight className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setReplayCursor(session.endDate)}
+          className="rounded p-1 text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+          title="Ir al final (precio actual)"
+        >
+          <ChevronsRight className="h-4 w-4" />
         </button>
 
         {/* Step size (cuánto avanza por click) */}
