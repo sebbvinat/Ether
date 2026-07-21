@@ -59,6 +59,10 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
   const [initialBalance, setInitialBalance] = useState("100000");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Wave 18.10 — dónde arranca el cursor: al inicio (backtest desde el pasado)
+  // o al final del rango (chequear precio actual y avanzar poco a poco).
+  const [startAt, setStartAt] = useState<"start" | "end">("start");
+  const updateSessionMeta = useTestingStore((s) => s.updateSessionMeta);
 
   function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -92,6 +96,10 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
       description: description.trim() || undefined,
       tags: [],
     });
+    if (startAt === "end") {
+      // Cursor arranca al final del rango (para chequear precio actual).
+      updateSessionMeta(id, { replayCursorMs: endMs });
+    }
     onOpenChange(false);
     onCreated?.(id);
     // reset
@@ -175,6 +183,41 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
               placeholder="100000"
               inputMode="numeric"
             />
+          </Field>
+
+          <Field label="Cursor arranca en">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStartAt("start")}
+                className={
+                  "flex-1 rounded border px-3 py-1.5 text-left text-[11px] " +
+                  (startAt === "start"
+                    ? "border-tv-blue bg-tv-blue/10 text-tv-blue"
+                    : "border-tv-border text-tv-text-muted hover:text-tv-text")
+                }
+              >
+                <div className="font-medium">Inicio del rango</div>
+                <div className="text-[10px] opacity-70">
+                  Backtest desde el pasado hacia el presente.
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setStartAt("end")}
+                className={
+                  "flex-1 rounded border px-3 py-1.5 text-left text-[11px] " +
+                  (startAt === "end"
+                    ? "border-tv-blue bg-tv-blue/10 text-tv-blue"
+                    : "border-tv-border text-tv-text-muted hover:text-tv-text")
+                }
+              >
+                <div className="font-medium">Fin del rango (precio actual)</div>
+                <div className="text-[10px] opacity-70">
+                  Ves el precio de hoy. Rewind para el pasado.
+                </div>
+              </button>
+            </div>
           </Field>
 
           <Field label="Descripción (opcional)">
