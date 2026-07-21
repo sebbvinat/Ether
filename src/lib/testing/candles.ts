@@ -15,6 +15,7 @@ import type { Candle, Timeframe } from "@/lib/binance/types";
 import { fetchKlines, type BinanceMarket } from "@/lib/binance/rest";
 import { fetchYahooRange } from "@/lib/yahoo/rest";
 import { getInstrument } from "@/lib/instruments";
+import { idbGet, idbSet, candlesKey } from "@/lib/testing/storage";
 
 /** Minutos por vela de cada TF. */
 export const TF_MINUTES: Record<Timeframe, number> = {
@@ -100,6 +101,10 @@ export class LazyCandleStore {
   private minTime = Infinity;
   private maxTime = -Infinity;
   private pending: Promise<void> | null = null;
+  /** Wave 18.13 — true una vez hidratamos el cache local. Evita re-cargarlo. */
+  private hydrated = false;
+  /** Debounce del save-a-IDB para no serializar 100k velas por cada micro-cambio. */
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly symbol: string,
@@ -108,6 +113,25 @@ export class LazyCandleStore {
     private readonly loadableEndMs: number,
     private readonly market: BinanceMarket = "spot",
   ) {}
+
+  /** Wave 18.13 — carga velas desde IDB si están cacheadas. Idempotente. */
+  async hydrateFromCache(): Promise<void> {
+    if (this.hydrated) return;
+    this.hydrated = true;
+    const cached = await idbGet<Candle[]>(candlesKey(this.symbol, this.tf));
+    if (cached && cached.length > 0) {
+      this.merge(cached);
+    }
+  }
+
+  /** Persiste el estado actual al cache (debounced, fire-and-forget). */
+  private schedulePersist() {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void idbSet(candlesKey(this.symbol, this.tf), this.candles);
+    }, 800);
+  }
 
   get all(): Candle[] {
     return this.candles;
@@ -128,9 +152,12 @@ export class LazyCandleStore {
    * si falta. `beforeBars`/`afterBars` en cantidad de barras del TF.
    */
   async ensureLoaded(centerMs: number, beforeBars = 400, afterBars = 200): Promise<Candle[]> {
+    // Wave 18.13 — primero intentamos hidratar del cache local (una sola vez).
+    // Puede que el cache ya cubra el rango pedido → cero requests.
+    await this.hydrateFromCache();
     const tfMs = TF_MINUTES[this.tf] * 60_000;
     // Wave 18.9 — NO clampeamos por loadableStartMs. El usuario debe poder
-    // panear hacia atrás indefinidamente hasta que Binance corte con []. El
+    // panear hacia atrás indefinidamente hasta que la API corte con []. El
     // constructor deja `loadableStartMs` como hint pero no restringe.
     const from = centerMs - beforeBars * tfMs;
     const to = Math.min(this.loadableEndMs, centerMs + afterBars * tfMs);
@@ -144,6 +171,8 @@ export class LazyCandleStore {
       const fetchTo = Math.max(to, this.maxTime === -Infinity ? to : (this.maxTime + 60) * 1000);
       const fresh = await fetchRange(this.symbol, this.tf, fetchFrom, fetchTo, this.market);
       this.merge(fresh);
+      // Wave 18.13 — persistir el cache actualizado (debounced).
+      this.schedulePersist();
     })();
     try {
       await this.pending;
