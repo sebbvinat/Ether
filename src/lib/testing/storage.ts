@@ -70,9 +70,15 @@ export async function idbKeysWithPrefix(prefix: string): Promise<string[]> {
 const SESSION_DETAIL_PREFIX = "session/";
 const JOURNAL_PREFIX = "journal/";
 const SCREENSHOT_PREFIX = "screenshot/";
+const CANDLES_PREFIX = "candles/";
 
 export function sessionDetailKey(sessionId: string): string {
   return `${SESSION_DETAIL_PREFIX}${sessionId}/detail`;
+}
+
+/** Wave 18.13 — key para el cache de velas por (symbol, tf). */
+export function candlesKey(symbol: string, tf: string): string {
+  return `${CANDLES_PREFIX}${symbol}/${tf}`;
 }
 
 export function journalKey(entryId: string): string {
