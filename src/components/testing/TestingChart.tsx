@@ -161,7 +161,36 @@ export function TestingChart({
         setRenderTick((t) => t + 1);
       });
     };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(bump);
+    // Wave 18.9 — prefetch backward: cuando el usuario panea hacia atrás y
+    // se acerca al borde izquierdo del cache, traer más historia.
+    let prefetchingBackward = false;
+    const onRangeChange = (range: { from: number; to: number } | null) => {
+      bump();
+      const store = storeRef.current;
+      if (!store || range == null) return;
+      // range.from = índice lógico de la primera barra visible (puede ser
+      // negativo si hay whitespace). Si estamos a menos de 50 barras del
+      // inicio del cache, cargar más historia.
+      if (range.from < 50 && store.all.length > 0 && !prefetchingBackward) {
+        prefetchingBackward = true;
+        const minMs = store.all[0].time * 1000;
+        const currentTf = sessionRef.current.chartTimeframe ?? "15m";
+        void store
+          .ensureLoaded(
+            minMs - 500 * TF_MINUTES[currentTf] * 60_000,
+            1000,
+            0,
+          )
+          .then(() => {
+            prefetchingBackward = false;
+            setRenderTick((t) => t + 1);
+          })
+          .catch(() => {
+            prefetchingBackward = false;
+          });
+      }
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange);
     chart.subscribeCrosshairMove(bump);
 
     // Wave 18.6 — handler de clicks para dibujar (lee tool/draft via ref).
@@ -244,7 +273,7 @@ export function TestingChart({
     return () => {
       obs.disconnect();
       try {
-        chart.timeScale().unsubscribeVisibleLogicalRangeChange(bump);
+        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRangeChange);
         chart.unsubscribeCrosshairMove(bump);
         chart.unsubscribeClick(clickHandler);
         chart.remove();
@@ -265,14 +294,16 @@ export function TestingChart({
     const store = new LazyCandleStore(
       session.symbol,
       chartTf,
-      // El "inicio cargable" es ~500 barras antes del startDate (contexto).
-      session.startDate - 500 * TF_MINUTES[chartTf] * 60_000,
+      // Wave 18.9 — hint muy amplio. El clamp ya no aplica en ensureLoaded,
+      // pero dejamos un piso para no ir a 1970 accidentalmente.
+      Date.UTC(2017, 0, 1), // Binance crypto empieza ~2017
       session.endDate,
     );
     storeRef.current = store;
-    // 500 barras de historia + 200 de lookahead = 1 request en la mayoría de TFs.
+    // 1500 barras de historia inicial + 200 de lookahead. Para 15m eso son
+    // ~15 días de contexto. Sigue siendo ~2 requests a Binance.
     store
-      .ensureLoaded(session.startDate, 500, 200)
+      .ensureLoaded(session.startDate, 1500, 200)
       .then(() => {
         if (cancelled) return;
         onCandlesLoaded?.(store.all);

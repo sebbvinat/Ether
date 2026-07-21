@@ -120,7 +120,10 @@ export class LazyCandleStore {
    */
   async ensureLoaded(centerMs: number, beforeBars = 400, afterBars = 200): Promise<Candle[]> {
     const tfMs = TF_MINUTES[this.tf] * 60_000;
-    const from = Math.max(this.loadableStartMs, centerMs - beforeBars * tfMs);
+    // Wave 18.9 — NO clampeamos por loadableStartMs. El usuario debe poder
+    // panear hacia atrás indefinidamente hasta que Binance corte con []. El
+    // constructor deja `loadableStartMs` como hint pero no restringe.
+    const from = centerMs - beforeBars * tfMs;
     const to = Math.min(this.loadableEndMs, centerMs + afterBars * tfMs);
     if (this.hasRange(from, to)) return this.candles;
     if (this.pending) {
