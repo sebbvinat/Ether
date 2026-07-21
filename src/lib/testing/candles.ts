@@ -13,6 +13,8 @@
 
 import type { Candle, Timeframe } from "@/lib/binance/types";
 import { fetchKlines, type BinanceMarket } from "@/lib/binance/rest";
+import { fetchYahooRange } from "@/lib/yahoo/rest";
+import { getInstrument } from "@/lib/instruments";
 
 /** Minutos por vela de cada TF. */
 export const TF_MINUTES: Record<Timeframe, number> = {
@@ -47,6 +49,13 @@ export async function fetchRange(
   endMs: number,
   market: BinanceMarket = "spot",
 ): Promise<Candle[]> {
+  // Wave 18.12 — ruteo por provider: Binance (crypto) o Yahoo (índices, futuros, forex).
+  const inst = getInstrument(symbol);
+  if (inst.provider === "yahoo") {
+    // Yahoo soporta period1/period2 → 1 request cubre todo el rango disponible.
+    const yahooSym = inst.yahooSymbol ?? symbol;
+    return fetchYahooRange(yahooSym, tf, startMs, endMs);
+  }
   const tfMs = TF_MINUTES[tf] * 60_000;
   const out: Candle[] = [];
   let cursorEnd = endMs;
