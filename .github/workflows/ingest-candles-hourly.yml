@@ -1,0 +1,40 @@
+name: Ingest candles hourly
+
+# Wave 18.15 — Vercel Hobby limita crons a 1/día. GitHub Actions permite crons
+# cada 5min y es gratis para public repos. Este workflow curlea el endpoint
+# de ingest de Vercel cada hora, así mantenemos las velas populares fresh
+# sin pagar Vercel Pro.
+
+on:
+  schedule:
+    # Cada hora al minuto 3 (mejor no minuto 0 — GitHub tiene picos ahí)
+    - cron: "3 * * * *"
+  # Botón manual desde GitHub Actions UI
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Trigger Vercel ingest endpoint
+        env:
+          VERCEL_URL: ${{ secrets.VERCEL_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$VERCEL_URL" ] || [ -z "$CRON_SECRET" ]; then
+            echo "::error::Missing VERCEL_URL or CRON_SECRET secret"
+            exit 1
+          fi
+          echo "Hitting ${VERCEL_URL}/api/cron/ingest-candles..."
+          response=$(curl -sS -w "\n%{http_code}" \
+            -H "Authorization: Bearer ${CRON_SECRET}" \
+            "${VERCEL_URL}/api/cron/ingest-candles")
+          body=$(echo "$response" | head -n -1)
+          status=$(echo "$response" | tail -n 1)
+          echo "HTTP $status"
+          echo "$body" | head -c 2000
+          if [ "$status" != "200" ]; then
+            echo "::error::Ingest failed with status $status"
+            exit 1
+          fi
