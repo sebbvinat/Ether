@@ -3,18 +3,48 @@
 /**
  * Wave 18.6 — Menú de indicadores para TestingChart.
  *
- * Subset price-overlay (vive sobre el chart principal): EMAs, SMAs,
- * Bollinger, VWAP. Subpanel (RSI/MACD/etc.) queda para futuro porque
- * requiere panes separados en lightweight-charts.
+ * Dos grupos: overlays sobre el precio (EMAs, SMAs, Bollinger, VWAP) y
+ * sub-paneles (RSI, MACD, Stochastic). §9 agrega el engranaje para ajustar
+ * los períodos de los que tienen parámetros.
  */
 
-import { useState } from "react";
-import { ChevronDown, Activity } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Activity, Settings2 } from "lucide-react";
+import { useTestingStore } from "@/lib/store/testing-store";
 import {
-  useTestingStore,
-} from "@/lib/store/testing-store";
-import { INDICATOR_COLORS, type IndicatorKey } from "@/lib/store/chart-store";
+  INDICATOR_COLORS,
+  type IndicatorConfig,
+  type IndicatorKey,
+} from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
+
+/** §9 — qué períodos se pueden tocar por indicador. Las EMAs y SMAs quedan
+ *  fijas a propósito: son series distintas por diseño (EMA 20, 50 y 200 son
+ *  tres entradas del menú, no una con parámetro). */
+interface ConfigFieldDef {
+  key: keyof IndicatorConfig;
+  label: string;
+  fallback: number;
+  min?: number;
+  step?: number;
+}
+
+const SETTINGS_FIELDS: Partial<Record<IndicatorKey, ConfigFieldDef[]>> = {
+  bb: [
+    { key: "bbPeriod", label: "Período", fallback: 20 },
+    { key: "bbStdDev", label: "Desvíos", fallback: 2, min: 0.1, step: 0.1 },
+  ],
+  rsi: [{ key: "rsi", label: "Período", fallback: 14 }],
+  macd: [
+    { key: "macdFast", label: "Rápida", fallback: 12 },
+    { key: "macdSlow", label: "Lenta", fallback: 26 },
+    { key: "macdSignal", label: "Señal", fallback: 9 },
+  ],
+  stoch: [
+    { key: "stochK", label: "%K", fallback: 14 },
+    { key: "stochD", label: "%D", fallback: 3 },
+  ],
+};
 
 const TESTING_INDICATORS: { key: IndicatorKey; label: string; group: "overlay" | "subpane" }[] = [
   // Overlays sobre el precio
@@ -95,25 +125,111 @@ function IndicatorRow({
 }) {
   const active = !!detail.indicators[ind.key];
   const color = INDICATOR_COLORS[ind.key]?.[0] ?? "#787b86";
+  const [showSettings, setShowSettings] = useState(false);
+  const fields = SETTINGS_FIELDS[ind.key];
   return (
-    <button
-      onClick={() => toggle(ind.key)}
-      className={cn(
-        "flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px]",
-        active
-          ? "bg-tv-blue/10 text-tv-text"
-          : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+    <div>
+      <div
+        className={cn(
+          "flex w-full items-center gap-2 pl-3 pr-1 text-[11px]",
+          active
+            ? "bg-tv-blue/10 text-tv-text"
+            : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+        )}
+      >
+        <button
+          onClick={() => toggle(ind.key)}
+          className="flex flex-1 items-center gap-2 py-1.5 text-left"
+        >
+          <span
+            className="h-2 w-3 shrink-0 rounded-sm"
+            style={{
+              background: active ? color : "transparent",
+              border: `1px solid ${color}`,
+            }}
+          />
+          <span className="flex-1">{ind.label}</span>
+          {active && <span className="text-[9px] text-tv-blue">✓</span>}
+        </button>
+        {/* §9 — el engranaje sólo aparece si el indicador está activo y tiene
+            períodos que valga la pena tocar. */}
+        {active && fields && (
+          <button
+            onClick={() => setShowSettings((v) => !v)}
+            title="Ajustar períodos"
+            className={cn(
+              "rounded p-1 text-[11px] hover:bg-tv-panel-hover",
+              showSettings ? "text-tv-blue" : "text-tv-text-muted",
+            )}
+          >
+            <Settings2 className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+      {active && fields && showSettings && (
+        <div className="flex flex-wrap gap-2 border-y border-tv-border bg-tv-bg/40 px-3 py-2">
+          {fields.map((f) => (
+            <ConfigField key={f.key} field={f} detail={detail} />
+          ))}
+        </div>
       )}
-    >
-      <span
-        className="h-2 w-3 rounded-sm"
-        style={{
-          background: active ? color : "transparent",
-          border: `1px solid ${color}`,
+    </div>
+  );
+}
+
+/** §9 — un input numérico que commitea al salir o con Enter, y revierte si el
+ *  valor no sirve (0, negativo o no numérico). */
+function ConfigField({
+  field,
+  detail,
+}: {
+  field: ConfigFieldDef;
+  detail: NonNullable<ReturnType<typeof useTestingStore.getState>["activeDetail"]>;
+}) {
+  const updateConfig = useTestingStore((s) => s.updateIndicatorConfig);
+  const current = (detail.config as Partial<IndicatorConfig>)[field.key] ?? field.fallback;
+  const [draft, setDraft] = useState(String(current));
+
+  // Si el valor cambia desde afuera (otra sesión, reset), reflejarlo.
+  useEffect(() => {
+    setDraft(String(current));
+  }, [current]);
+
+  function commit() {
+    const n = parseFloat(draft);
+    if (!Number.isFinite(n) || n < (field.min ?? 1)) {
+      setDraft(String(current)); // inválido → revertir
+      return;
+    }
+    if (n !== current) void updateConfig({ [field.key]: n });
+  }
+
+  return (
+    <label className="flex flex-col gap-0.5">
+      <span className="text-[9px] uppercase tracking-wider text-tv-text-muted">
+        {field.label}
+      </span>
+      <input
+        type="number"
+        step={field.step ?? 1}
+        min={field.min ?? 1}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            commit();
+            (e.target as HTMLInputElement).blur();
+          } else if (e.key === "Escape") {
+            e.preventDefault();
+            setDraft(String(current));
+            (e.target as HTMLInputElement).blur();
+          }
+          e.stopPropagation(); // no disparar los atajos globales del replay
         }}
+        className="w-14 rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text"
       />
-      <span className="flex-1">{ind.label}</span>
-      {active && <span className="text-[9px] text-tv-blue">✓</span>}
-    </button>
+    </label>
   );
 }

@@ -34,7 +34,11 @@ import {
   type SessionMeta,
   type Position,
 } from "@/lib/store/testing-store";
-import { INDICATOR_COLORS, type IndicatorKey } from "@/lib/store/chart-store";
+import {
+  INDICATOR_COLORS,
+  type IndicatorConfig,
+  type IndicatorKey,
+} from "@/lib/store/chart-store";
 import { PositionOverlay } from "./PositionOverlay";
 import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
@@ -401,11 +405,18 @@ export function TestingChart({
     }
   }, [displayed]);
 
-  // ── 5b. Reconciliar indicadores cuando cambien `displayed` o el toggle ──
+  // ── 5b. Reconciliar indicadores cuando cambien las velas, los toggles o
+  //        los períodos configurados (§9) ─────────────────────────────────
   useEffect(() => {
     if (displayed.length === 0) return;
-    renderIndicators(displayed, detail?.indicators, chartRef.current, indSeriesRef.current);
-  }, [displayed, detail?.indicators]);
+    renderIndicators(
+      displayed,
+      detail?.indicators,
+      detail?.config,
+      chartRef.current,
+      indSeriesRef.current,
+    );
+  }, [displayed, detail?.indicators, detail?.config]);
 
   // ── 6. Engine: procesar velas 1m entre cursor previo y nuevo ──────────
   const lastCursorRef = useRef<number>(session.replayCursorMs ?? session.startDate);
@@ -679,10 +690,23 @@ import type { Candle } from "@/lib/binance/types";
 function renderIndicators(
   candles: Candle[],
   active: Record<IndicatorKey, boolean> | undefined,
+  config: Partial<IndicatorConfig> | undefined,
   chart: IChartApi | null,
   series: Map<string, ISeriesApi<"Line">>,
 ) {
   if (!chart) return;
+  // §9 — períodos configurables por sesión. Los defaults igualan lo que el
+  // código tenía hardcodeado, así que una sesión sin config no cambia.
+  const cfg = {
+    rsi: config?.rsi ?? 14,
+    macdFast: config?.macdFast ?? 12,
+    macdSlow: config?.macdSlow ?? 26,
+    macdSignal: config?.macdSignal ?? 9,
+    stochK: config?.stochK ?? 14,
+    stochD: config?.stochD ?? 3,
+    bbPeriod: config?.bbPeriod ?? 20,
+    bbStdDev: config?.bbStdDev ?? 2,
+  };
   // Conjunto de keys que DEBERÍAN tener serie
   const wanted = new Set<string>();
   if (active?.ema20) wanted.add("ema20");
@@ -769,7 +793,7 @@ function renderIndicators(
     const up = getOrCreate("bb-up", cols[0]);
     const mid = getOrCreate("bb-mid", cols[1]);
     const low = getOrCreate("bb-low", cols[2]);
-    const pts = bollinger(candles, 20, 2);
+    const pts = bollinger(candles, cfg.bbPeriod, cfg.bbStdDev);
     up.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })));
     mid.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.basis })));
     low.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })));
@@ -789,7 +813,7 @@ function renderIndicators(
   if (wanted.has("rsi")) {
     const color = INDICATOR_COLORS.rsi?.[0] ?? "#ab47bc";
     const ser = getOrCreate("rsi", color, 1, 1);
-    const pts = rsi(candles, 14);
+    const pts = rsi(candles, cfg.rsi);
     ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
     // Guides: 30 y 70 como líneas planas
     if (pts.length > 0) {
@@ -815,7 +839,7 @@ function renderIndicators(
     const cols = INDICATOR_COLORS.macd ?? ["#2962ff", "#ef5350", "#787b86"];
     const line = getOrCreate("macd-line", cols[0], 1, 2);
     const signal = getOrCreate("macd-signal", cols[1], 1, 2);
-    const pts = macd(candles, 12, 26, 9);
+    const pts = macd(candles, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
     line.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.macd })));
     signal.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.signal })));
     // hist como línea (en MVP — un histogram real necesitaría HistogramSeries)
@@ -829,7 +853,7 @@ function renderIndicators(
     const cols = INDICATOR_COLORS.stoch ?? ["#2962ff", "#ef5350"];
     const k = getOrCreate("stoch-k", cols[0], 1, 3);
     const d = getOrCreate("stoch-d", cols[1] ?? "#ef5350", 1, 3);
-    const pts = stochastic(candles, 14, 3);
+    const pts = stochastic(candles, cfg.stochK, cfg.stochD);
     k.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })));
     d.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })));
     if (pts.length > 0) {
