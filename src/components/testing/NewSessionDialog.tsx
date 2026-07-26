@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Search } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useTestingStore } from "@/lib/store/testing-store";
 import type { Timeframe } from "@/lib/binance/types";
+import { SymbolSearchModal } from "./SymbolSearchModal";
 
 interface Props {
   open: boolean;
@@ -50,6 +52,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
   const createSession = useTestingStore((s) => s.createSession);
   const [name, setName] = useState("");
   const [symbol, setSymbol] = useState(defaults?.symbol ?? "BTCUSDT");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [timeframe, setTimeframe] = useState<Timeframe>(defaults?.timeframe ?? "15m");
   // Default range: últimos 6 meses
   const now = Date.now();
@@ -139,11 +142,19 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
           </Field>
 
           <Field label="Símbolo">
-            <Input
-              value={symbol}
-              onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-              placeholder="BTCUSDT, ETHUSDT, ^GSPC..."
-            />
+            {/* §14 — antes había que saber de memoria que el Nasdaq es "^IXIC".
+                Ahora el símbolo se elige desde el buscador. */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="flex w-full items-center justify-between rounded border border-tv-border bg-tv-bg px-2.5 py-1.5 text-left text-sm text-tv-text hover:border-tv-blue/50"
+            >
+              <span className="font-mono">{symbol}</span>
+              <span className="flex items-center gap-1 text-[11px] text-tv-text-muted">
+                <Search className="h-3 w-3" />
+                Buscar
+              </span>
+            </button>
             <div className="mt-1.5 flex flex-wrap gap-1">
               {POPULAR.map((p) => (
                 <button
@@ -328,6 +339,11 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
           </div>
         </form>
       </DialogContent>
+      <SymbolSearchModal
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onSelect={(r) => setSymbol(r.symbol)}
+      />
     </Dialog>
   );
 }
