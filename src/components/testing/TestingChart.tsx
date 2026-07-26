@@ -29,6 +29,11 @@ import { ema, sma, bollinger, vwap, rsi, macd, stochastic } from "@/lib/indicato
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
 import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
 import {
+  composeDisplayed,
+  hasIntrabarData,
+  subCandlesBetween,
+} from "@/lib/testing/intrabar";
+import {
   engineConfigFor,
   useTestingStore,
   type SessionMeta,
@@ -70,10 +75,16 @@ export function TestingChart({
   const indSeriesRef = useRef<Map<string, ISeriesApi<"Line">>>(new Map());
 
   const storeRef = useRef<LazyCandleStore | null>(null);
+  /** §11 — velas de 1m alrededor del cursor, sólo en modo intrabar. */
+  const subStoreRef = useRef<LazyCandleStore | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [renderTick, setRenderTick] = useState(0);
+  /** §11 — aviso de que acá no hay 1m y el replay avanza por vela completa.
+   *  Se muestra una sola vez por sesión de navegación para no ser molesto. */
+  const [noIntrabarData, setNoIntrabarData] = useState(false);
+  const warnedNoIntrabarRef = useRef(false);
   const didFitRef = useRef(false);
   // Wave 18.6 — drawing tool state
   const [tool, setTool] = useState<DrawingTool>("cursor");
@@ -106,6 +117,9 @@ export function TestingChart({
 
   const cursorMs = session.replayCursorMs ?? session.startDate;
   const chartTf = session.chartTimeframe ?? "15m";
+  const tfSec = TF_MINUTES[chartTf] * 60;
+  // §11 — en 1m no hay sub-resolución que mostrar: el modo se ignora.
+  const intrabar = session.playbackMode === "intrabar" && chartTf !== "1m";
 
   const sessionRef = useRef(session);
   sessionRef.current = session;
@@ -312,6 +326,7 @@ export function TestingChart({
     setLoading(true);
     setLoadErr(null);
     didFitRef.current = false;
+    paintedRef.current = null; // serie nueva: el próximo pintado es completo
     const store = new LazyCandleStore(
       session.symbol,
       chartTf,
@@ -361,36 +376,115 @@ export function TestingChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorMs, loading]);
 
-  // ── 4. Velas visibles (toda la historia ≤ cursor) ────────────────────
+  // ── 3b. §11 — store de 1m para el modo intrabar ───────────────────────
+  //   Se crea sólo cuando hace falta y se tira al salir del modo o cambiar de
+  //   símbolo: son muchas velas y no tiene sentido tenerlas si no se usan.
+  const [subLoaded, setSubLoaded] = useState(0);
+  useEffect(() => {
+    warnedNoIntrabarRef.current = false;
+    setNoIntrabarData(false);
+    if (!intrabar) {
+      subStoreRef.current = null;
+      return;
+    }
+    subStoreRef.current = new LazyCandleStore(
+      session.symbol,
+      "1m",
+      Date.UTC(2017, 0, 1),
+      session.endDate,
+    );
+    setSubLoaded((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intrabar, session.symbol, session.endDate]);
+
+  useEffect(() => {
+    const sub = subStoreRef.current;
+    if (!intrabar || !sub) return;
+    // Sólo pedir cuando el cursor se acerca al borde de lo cargado. Sin este
+    // chequeo, cada minuto de replay dispara un fetch (el rango pedido se
+    // corre junto con el cursor) y el playback queda a una vela por segundo
+    // sin importar la velocidad elegida.
+    const loadedMaxMs = (sub.all[sub.all.length - 1]?.time ?? 0) * 1000;
+    const near = cursorMs + 60 * 60_000 > loadedMaxMs; // menos de 1h de colchón
+    if (!near) return;
+    let cancelled = false;
+    const before = sub.length;
+    // ±12h de 1m alrededor del cursor = 1 request, y alcanza para varias
+    // barras hacia adelante antes de tener que volver a pedir.
+    sub
+      .ensureLoaded(cursorMs, 720, 720)
+      .then(() => {
+        // Sin velas nuevas no hay nada que repintar: bumpear igual haría un
+        // render de más por cada minuto del replay.
+        if (!cancelled && sub.length !== before) setSubLoaded((n) => n + 1);
+      })
+      .catch(() => {
+        // Sin 1m el chart cae a vela completa solo (composeDisplayed devuelve
+        // las cerradas). No es un error que valga interrumpir el replay.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [intrabar, cursorMs]);
+
+  // ── 4. Velas visibles ─────────────────────────────────────────────────
+  //   §11 — derivadas del cursor: las que ya cerraron, más la que se está
+  //   formando si estamos en modo intrabar y hay 1m para armarla.
   const displayed = useMemo(() => {
     const store = storeRef.current;
     if (!store || loading) return [];
     const cursorSec = cursorMs / 1000;
-    return store.all.filter((c) => c.time <= cursorSec);
+    const oneMin = intrabar ? (subStoreRef.current?.all ?? null) : null;
+    return composeDisplayed(store.all, oneMin, cursorSec, tfSec);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursorMs, chartTf, loading, renderTick]);
+  }, [cursorMs, chartTf, loading, renderTick, intrabar, subLoaded, tfSec]);
 
   // ── 5. Pintar series ──────────────────────────────────────────────────
+  //   §11 — en modo intrabar esto corre una vez por minuto de mercado. Un
+  //   setData completo con miles de barras a esa frecuencia traba el pan y el
+  //   zoom, así que cuando lo único que cambió es el final de la serie se
+  //   actualizan sólo esas barras. El setData completo queda para cambios de
+  //   TF, rewind y cargas de historia.
+  const paintedRef = useRef<{ count: number; lastTime: number } | null>(null);
   useEffect(() => {
     const cs = candleSerRef.current;
     const vs = volSerRef.current;
     if (!cs || !vs || displayed.length === 0) return;
-    cs.setData(
-      displayed.map((c) => ({
-        time: c.time as UTCTimestamp,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      })),
-    );
-    vs.setData(
-      displayed.map((c) => ({
-        time: c.time as UTCTimestamp,
-        value: c.volume,
-        color: c.close >= c.open ? TV_ALPHA.green40 : TV_ALPHA.red40,
-      })),
-    );
+
+    const bar = (c: (typeof displayed)[number]) => ({
+      time: c.time as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    });
+    const vol = (c: (typeof displayed)[number]) => ({
+      time: c.time as UTCTimestamp,
+      value: c.volume,
+      color: c.close >= c.open ? TV_ALPHA.green40 : TV_ALPHA.red40,
+    });
+
+    const last = displayed[displayed.length - 1];
+    const prev = paintedRef.current;
+    // Sólo se puede parchear si la serie creció como mucho una barra y el
+    // tiempo no retrocedió — `update()` no acepta barras anteriores al final.
+    const grew = prev ? displayed.length - prev.count : NaN;
+    const patchable =
+      prev !== null && last.time >= prev.lastTime && (grew === 0 || grew === 1);
+
+    if (patchable) {
+      // Si cruzamos boundary, la anteúltima es la que acaba de cerrar.
+      const from = grew === 1 ? displayed.length - 2 : displayed.length - 1;
+      for (let i = Math.max(0, from); i < displayed.length; i++) {
+        cs.update(bar(displayed[i]));
+        vs.update(vol(displayed[i]));
+      }
+    } else {
+      cs.setData(displayed.map(bar));
+      vs.setData(displayed.map(vol));
+    }
+    paintedRef.current = { count: displayed.length, lastTime: last.time };
     // (los indicadores se rendean en su propio effect — ver más abajo)
 
     // Fit solo la primera vez (no en cada step — respeta el pan del usuario)
@@ -399,10 +493,9 @@ export function TestingChart({
       didFitRef.current = true;
     }
 
-    const last = displayed[displayed.length - 1]?.close;
-    if (last) {
+    if (last.close) {
       window.dispatchEvent(
-        new CustomEvent("ether-testing:last-price", { detail: { price: last } }),
+        new CustomEvent("ether-testing:last-price", { detail: { price: last.close } }),
       );
     }
   }, [displayed]);
@@ -436,7 +529,22 @@ export function TestingChart({
     }
     const prevSec = prevMs / 1000;
     const curSec = curMs / 1000;
-    const newCandles = store.all.filter((c) => c.time > prevSec && c.time <= curSec);
+    // §11 — en modo intrabar el engine evalúa fills minuto a minuto: un TP
+    // dentro de la vela se cierra EN el minuto que lo toca, no al cierre de
+    // la barra. Si no hay 1m para este tramo (Yahoo viejo, pre-listing),
+    // cae a las velas del TF sin avisar nada — es la misma precisión de antes.
+    const sub = subStoreRef.current;
+    const useSub =
+      intrabar && sub !== null && hasIntrabarData(sub.all, curSec, tfSec);
+    // El proveedor no tiene 1m tan atrás (Yahoo >7 días, cripto pre-listing):
+    // se avanza por vela completa, que es lo que había antes de §11.
+    if (intrabar && !useSub && !warnedNoIntrabarRef.current) {
+      warnedNoIntrabarRef.current = true;
+      setNoIntrabarData(true);
+    }
+    const newCandles = useSub
+      ? subCandlesBetween(sub!.all, prevSec, curSec)
+      : store.all.filter((c) => c.time > prevSec && c.time <= curSec);
     lastCursorRef.current = curMs;
     if (newCandles.length === 0 && det.positions.length === 0) return;
 
@@ -450,7 +558,9 @@ export function TestingChart({
     for (const c of newCandles) {
       state = stepEngine(state, c, engineConfigFor(sess));
     }
-    const lastClose = store.all.filter((c) => c.time <= curSec).at(-1)?.close;
+    const lastClose = useSub
+      ? sub!.all.filter((c) => c.time <= curSec).at(-1)?.close
+      : store.all.filter((c) => c.time <= curSec).at(-1)?.close;
     if (lastClose !== undefined) {
       state.positions = state.positions.map((p) => {
         const dir = p.side === "buy" ? 1 : -1;
@@ -464,7 +574,7 @@ export function TestingChart({
       realizedPnL: state.realizedPnL,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursorMs, loading]);
+  }, [cursorMs, loading, intrabar, subLoaded]);
 
   // ── 7. Reprocesar la vela actual cuando se agrega una orden pending ───
   useEffect(() => {
@@ -594,6 +704,18 @@ export function TestingChart({
               Descargando velas desde {new Date(session.startDate).toLocaleDateString()}…
             </p>
           </div>
+        </div>
+      )}
+      {noIntrabarData && (
+        <div className="pointer-events-auto absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-2 rounded border border-tv-yellow/40 bg-tv-panel/95 px-3 py-1.5 text-[11px] text-tv-yellow shadow-lg">
+          Sin datos de 1m acá — el replay avanza por vela completa.
+          <button
+            onClick={() => setNoIntrabarData(false)}
+            className="rounded px-1 text-tv-text-muted hover:text-tv-text"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
         </div>
       )}
       {loadErr && (

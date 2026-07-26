@@ -64,6 +64,24 @@ const SPEEDS: { ms: number; label: string }[] = [
   { ms: 50, label: "20x" },
 ];
 
+/**
+ * §11 — en modo intrabar la velocidad no se mide en velas sino en MINUTOS DE
+ * MERCADO por segundo real. Se guarda en el mismo `replayIntervalMs` que el
+ * modo vela (como clave de la opción elegida, no como intervalo) para no
+ * sumarle otro campo a la sesión; los valores coinciden con los de SPEEDS,
+ * así que volver a modo vela deja una velocidad sensata.
+ */
+const INTRABAR_SPEEDS: { ms: number; minPerSec: number; label: string }[] = [
+  { ms: 2000, minPerSec: 1, label: "1 min/s" },
+  { ms: 1000, minPerSec: 5, label: "5 min/s" },
+  { ms: 500, minPerSec: 15, label: "15 min/s" },
+  { ms: 200, minPerSec: 60, label: "1 h/s" },
+];
+
+/** El tick del autoplay intrabar. Suficientemente fino para que el avance se
+ *  vea continuo sin ahogar al render. */
+const INTRABAR_TICK_MS = 100;
+
 /** Atajos de tecla → herramienta de dibujo (§2). Se emiten como CustomEvent
  *  porque el estado `tool` vive dentro de TestingChart. */
 const TOOL_KEYS: Record<string, string> = {
@@ -77,7 +95,6 @@ const TOOL_KEYS: Record<string, string> = {
   Escape: "cursor",
 };
 
-/** ms → valor de un <input type="datetime-local"> en hora LOCAL. */
 /** §10 — un número monetario que destella cuando cambia. Vive como componente
  *  propio porque la página tiene early-returns antes del ticker y el hook no
  *  puede colgar de ahí. */
@@ -96,6 +113,14 @@ function FlashMoney({ value }: { value: number }) {
   );
 }
 
+/** §11 — el cierre de la vela del TF que contiene a `ms`. Si el cursor ya
+ *  está justo en un cierre, devuelve el de la vela siguiente. */
+function nextBarCloseMs(ms: number, tfMinutes: number): number {
+  const tfMs = tfMinutes * 60_000;
+  return (Math.floor(ms / tfMs) + 1) * tfMs;
+}
+
+/** ms → valor de un <input type="datetime-local"> en hora LOCAL. */
 function msToLocalInput(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -112,6 +137,7 @@ export default function SessionChartPage({ params }: Props) {
   const setChartTf = useTestingStore((s) => s.setChartTimeframe);
   const setStepSize = useTestingStore((s) => s.setReplayStepSize);
   const setIntervalMs = useTestingStore((s) => s.setReplayIntervalMs);
+  const setPlaybackMode = useTestingStore((s) => s.setPlaybackMode);
   const openPositionNow = useTestingStore((s) => s.openPositionNow);
   const undoDrawings = useTestingStore((s) => s.undoDrawings);
   const redoDrawings = useTestingStore((s) => s.redoDrawings);
@@ -136,8 +162,15 @@ export default function SessionChartPage({ params }: Props) {
 
   // Step en ms = nº de barras × minutos del TF actual.
   const barsPerStep = session?.replayStepSize ?? 1;
+  const tfMinutes = session ? TF_MINUTES[session.chartTimeframe] : 1;
+  // §11 — en 1m no hay sub-resolución: el modo intrabar no aplica.
+  const intrabar =
+    session?.playbackMode === "intrabar" && session?.chartTimeframe !== "1m";
+  // En modo intrabar el step es de un minuto; en modo vela, de N velas.
   const stepMs = session
-    ? barsPerStep * TF_MINUTES[session.chartTimeframe] * 60_000
+    ? intrabar
+      ? 60_000
+      : barsPerStep * tfMinutes * 60_000
     : 60_000;
 
   // Refs frescos para el autoplay (closures)
@@ -150,9 +183,41 @@ export default function SessionChartPage({ params }: Props) {
   const pauseEachBarRef = useRef(pauseEachBar);
   pauseEachBarRef.current = pauseEachBar;
 
+  /** §11 — minutos que quedaron a medias entre ticks del autoplay intrabar.
+   *  Sin esto, 1 min/s con ticks de 100ms redondearía a cero y no avanzaría. */
+  const intrabarRemainderRef = useRef(0);
+
   useEffect(() => {
     if (!autoplay || !session) return;
     const intervalMs = session.replayIntervalMs ?? 1000;
+
+    if (intrabar) {
+      const minPerSec =
+        INTRABAR_SPEEDS.find((s) => s.ms === intervalMs)?.minPerSec ?? 5;
+      const minPerTick = (minPerSec * INTRABAR_TICK_MS) / 1000;
+      const tfMs = tfMinutes * 60_000;
+      intrabarRemainderRef.current = 0;
+      const interval = setInterval(() => {
+        intrabarRemainderRef.current += minPerTick;
+        const whole = Math.floor(intrabarRemainderRef.current);
+        if (whole < 1) return; // todavía no juntamos un minuto entero
+        intrabarRemainderRef.current -= whole;
+        const prev = cursorRef.current;
+        const next = prev + whole * 60_000;
+        if (next >= endRef.current) {
+          setAutoplay(false);
+          setReplayCursor(endRef.current);
+          return;
+        }
+        setReplayCursor(next);
+        // "Pausar c/vela" en intrabar = pausar al cerrar la vela del TF.
+        if (pauseEachBarRef.current && Math.floor(next / tfMs) > Math.floor(prev / tfMs)) {
+          setAutoplay(false);
+        }
+      }, INTRABAR_TICK_MS);
+      return () => clearInterval(interval);
+    }
+
     const interval = setInterval(() => {
       const next = cursorRef.current + stepMsRef.current;
       if (next >= endRef.current) {
@@ -165,7 +230,7 @@ export default function SessionChartPage({ params }: Props) {
       if (pauseEachBarRef.current) setAutoplay(false);
     }, intervalMs);
     return () => clearInterval(interval);
-  }, [autoplay, session, setReplayCursor]);
+  }, [autoplay, session, setReplayCursor, intrabar, tfMinutes]);
 
   // Precio actual del chart (sincronizado vía custom event que dispara TestingChart).
   const [lastPrice, setLastPrice] = useState<number>(0);
@@ -212,7 +277,13 @@ export default function SessionChartPage({ params }: Props) {
       }
       if (k === "ArrowRight") {
         e.preventDefault();
-        setReplayCursor(currentTimeMs + (e.shiftKey ? 10 : 1) * stepMs);
+        // §11 — en intrabar, Shift salta al cierre de la vela en curso en vez
+        // de avanzar 10 minutos sueltos.
+        setReplayCursor(
+          intrabar && e.shiftKey
+            ? nextBarCloseMs(currentTimeMs, tfMinutes)
+            : currentTimeMs + (e.shiftKey ? 10 : 1) * stepMs,
+        );
         return;
       }
       if (k === "ArrowLeft") {
@@ -246,6 +317,8 @@ export default function SessionChartPage({ params }: Props) {
     currentTimeMs,
     stepMs,
     setReplayCursor,
+    intrabar,
+    tfMinutes,
     undoDrawings,
     redoDrawings,
   ]);
@@ -456,22 +529,56 @@ export default function SessionChartPage({ params }: Props) {
           <ChevronsRight className="h-4 w-4" />
         </button>
 
+        {/* §11 — resolución del replay. En 1m no hay sub-resolución que
+            mostrar, así que el toggle se apaga. */}
+        <div
+          className="ml-2 flex items-center overflow-hidden rounded border border-tv-border"
+          title={
+            session.chartTimeframe === "1m"
+              ? "El TF ya es 1m: no hay sub-resolución que reproducir"
+              : "Velas: avanza de vela en vela · Ticks: la vela se forma minuto a minuto"
+          }
+        >
+          {(["bar", "intrabar"] as const).map((mode) => (
+            <button
+              key={mode}
+              onClick={() => setPlaybackMode(mode)}
+              disabled={session.chartTimeframe === "1m"}
+              className={cn(
+                "px-2 py-0.5 text-[10px]",
+                (session.playbackMode ?? "bar") === mode
+                  ? "bg-tv-blue/15 text-tv-blue"
+                  : "text-tv-text-muted enabled:hover:bg-tv-panel-hover enabled:hover:text-tv-text",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+            >
+              {mode === "bar" ? "Velas" : "Ticks"}
+            </button>
+          ))}
+        </div>
+
         {/* Step size (cuánto avanza por click) */}
         <div className="ml-2 flex items-center gap-1">
           <span className="text-[10px] uppercase tracking-wider text-tv-text-muted">
             Step
           </span>
           <select
-            value={session.replayStepSize}
+            value={intrabar ? 1 : session.replayStepSize}
+            disabled={intrabar}
+            title={intrabar ? "En modo Ticks el step es de 1 minuto" : undefined}
             onChange={(e) => setStepSize(parseInt(e.target.value, 10))}
-            className="rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text"
+            className="rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {STEP_BARS.map((bars) => (
-              <option key={bars} value={bars}>
-                {stepLabel(bars, TF_MINUTES[session.chartTimeframe])}
-                {bars > 1 ? ` (${bars} velas)` : " (1 vela)"}
-              </option>
-            ))}
+            {intrabar ? (
+              <option value={1}>1 min</option>
+            ) : (
+              STEP_BARS.map((bars) => (
+                <option key={bars} value={bars}>
+                  {stepLabel(bars, TF_MINUTES[session.chartTimeframe])}
+                  {bars > 1 ? ` (${bars} velas)` : " (1 vela)"}
+                </option>
+              ))
+            )}
           </select>
         </div>
 
@@ -485,7 +592,7 @@ export default function SessionChartPage({ params }: Props) {
             onChange={(e) => setIntervalMs(parseInt(e.target.value, 10))}
             className="rounded border border-tv-border bg-tv-bg px-1.5 py-0.5 font-mono text-[11px] text-tv-text"
           >
-            {SPEEDS.map((s) => (
+            {(intrabar ? INTRABAR_SPEEDS : SPEEDS).map((s) => (
               <option key={s.ms} value={s.ms}>
                 {s.label}
               </option>

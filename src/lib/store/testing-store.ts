@@ -98,6 +98,9 @@ export interface Position {
   beApplied?: boolean;
 }
 
+/** §11 — resolución del replay. */
+export type PlaybackMode = "bar" | "intrabar";
+
 export type TradeOutcome = "win" | "loss" | "breakeven";
 
 /** Una posición ya cerrada. Forma la base de toda la analítica. */
@@ -197,6 +200,10 @@ export interface SessionMeta {
   /** §3 — riesgo por trade en % del balance, para el sizing automático del
    *  diálogo de órdenes. Default 0.5. */
   defaultRiskPct?: number;
+  /** §11 — cómo avanza el replay. "bar": de vela completa en vela completa
+   *  (lo de siempre). "intrabar": la vela en curso se forma minuto a minuto
+   *  y el engine evalúa fills en resolución 1m. Default "bar". */
+  playbackMode?: PlaybackMode;
   /** Descripción opcional del trader. */
   description?: string;
   /** Tags opcionales para agrupar sesiones (ej. "strategy: ICT", "phase: 1"). */
@@ -249,6 +256,8 @@ interface TestingState {
   setReplayTotal: (total: number) => void;
   /** Wave 18.5 — setea el cursor de replay (timestamp ms). Fuente de verdad. */
   setReplayCursor: (ms: number) => void;
+  /** §11 — alterna entre avance por vela y avance minuto a minuto. */
+  setPlaybackMode: (mode: PlaybackMode) => void;
   setChartTimeframe: (tf: Timeframe) => void;
   /** Wave 18.6 — toggle un indicador en la sesión activa. */
   toggleIndicator: (key: IndicatorKey) => Promise<void>;
@@ -409,6 +418,7 @@ export const useTestingStore = create<TestingState>()(
           spreadTicks: input.spreadTicks ?? 0,
           tickSize: input.tickSize ?? 0.01,
           defaultRiskPct: input.defaultRiskPct ?? 0.5,
+          playbackMode: "bar",
           description: input.description,
           tags: input.tags ?? [],
           createdAt: now,
@@ -513,6 +523,16 @@ export const useTestingStore = create<TestingState>()(
             const clamped = Math.max(x.startDate, Math.min(x.endDate, ms));
             return { ...x, replayCursorMs: clamped };
           }),
+        }));
+      },
+
+      setPlaybackMode: (mode) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, playbackMode: mode, updatedAt: Date.now() } : x,
+          ),
         }));
       },
 
@@ -916,6 +936,8 @@ export const useTestingStore = create<TestingState>()(
           spreadTicks: sess.spreadTicks ?? 0,
           tickSize: sess.tickSize ?? 0.01,
           defaultRiskPct: sess.defaultRiskPct ?? 0.5,
+          // §11 — sesiones viejas siguen avanzando por vela completa.
+          playbackMode: sess.playbackMode ?? ("bar" as PlaybackMode),
         }));
         return { ...currentState, ...(p ?? {}), sessions };
       },
