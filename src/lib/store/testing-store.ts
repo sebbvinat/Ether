@@ -27,6 +27,7 @@ import {
 } from "@/lib/testing/storage";
 import { HistoryStack } from "@/lib/history";
 import { manualClose, partialClose, type EngineConfig } from "@/lib/testing/engine";
+import type { SessionRules } from "@/lib/testing/rules";
 
 /** §1 — historial de dibujos de la sesión activa. Vive fuera del store porque
  *  es estado efímero de UI: no se persiste ni dispara re-renders. Se limpia al
@@ -200,6 +201,8 @@ export interface SessionMeta {
   /** §3 — riesgo por trade en % del balance, para el sizing automático del
    *  diálogo de órdenes. Default 0.5. */
   defaultRiskPct?: number;
+  /** §16 — límites diarios estilo prop firm. Sin esto, sin límites. */
+  rules?: SessionRules;
   /** §12 — TF del segundo chart cuando el layout está en 2 paneles.
    *  Default "1m". El primario sigue usando `chartTimeframe`. */
   chartTimeframe2?: Timeframe;
@@ -226,6 +229,8 @@ export interface SessionDetail {
   indicators: Record<IndicatorKey, boolean>;
   hidden: Record<IndicatorKey, boolean>;
   config: IndicatorConfig;
+  /** §16 — items del checklist pre-trade, uno por línea. */
+  checklistTemplate?: string[];
   /** Wave 21 — journal entries keyed by tradeId. */
   journals?: Record<string, JournalEntry>;
 }
@@ -264,6 +269,10 @@ interface TestingState {
   setChartTimeframe: (tf: Timeframe) => void;
   /** §12 — TF del segundo panel. */
   setChartTimeframe2: (tf: Timeframe) => void;
+  /** §16 — límites diarios de la sesión activa. */
+  setSessionRules: (patch: Partial<SessionRules>) => void;
+  /** §16 — items del checklist pre-trade. */
+  setChecklistTemplate: (items: string[]) => Promise<void>;
   /** Wave 18.6 — toggle un indicador en la sesión activa. */
   toggleIndicator: (key: IndicatorKey) => Promise<void>;
   /** §9 — ajustar los períodos de los indicadores de la sesión activa. */
@@ -616,6 +625,27 @@ export const useTestingStore = create<TestingState>()(
         const next = drawingsHistory.redo(detail.drawings);
         if (!next) return;
         const newDetail = { ...detail, drawings: next };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      setSessionRules: (patch) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active
+              ? { ...x, rules: { ...(x.rules ?? {}), ...patch }, updatedAt: Date.now() }
+              : x,
+          ),
+        }));
+      },
+
+      setChecklistTemplate: async (items) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = { ...detail, checklistTemplate: items };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);
       },

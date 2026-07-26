@@ -17,6 +17,8 @@ interface Props {
   positions: Position[];
   /** §6 — precio al que se ejecuta el parcial del botón ½. */
   lastPrice: number;
+  /** Momento del replay con que se sella el parcial. */
+  currentTimeMs: number;
   priceToY: (price: number) => number | null;
   yToPrice: (y: number) => number | null;
   width: number;
@@ -28,6 +30,7 @@ type DragState = { positionId: string; kind: "sl" | "tp"; currentY: number };
 export function PositionOverlay({
   positions,
   lastPrice,
+  currentTimeMs,
   priceToY,
   yToPrice,
   width,
@@ -160,7 +163,7 @@ export function PositionOverlay({
             {lastPrice > 0 && (
               <g
                 style={{ pointerEvents: "auto", cursor: "pointer" }}
-                onClick={() => void closePartial(pos.id, 0.5, lastPrice, Date.now())}
+                onClick={() => void closePartial(pos.id, 0.5, lastPrice, currentTimeMs)}
               >
                 <title>Cerrar el 50% de la posición al precio actual</title>
                 <rect

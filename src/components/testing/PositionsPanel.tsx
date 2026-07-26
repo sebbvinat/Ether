@@ -25,9 +25,13 @@ type Tab = "open" | "pending" | "closed";
 interface Props {
   /** Precio actual para mostrar PnL no realizado live en posiciones. */
   lastPrice: number;
+  /** Momento del replay. Los cierres se sellan con ESTE tiempo, no con el
+   *  reloj: un cierre a mano durante el replay pasó en el momento del replay,
+   *  y de ahí sale el agrupamiento por día de las analíticas y de §16. */
+  currentTimeMs: number;
 }
 
-export function PositionsPanel({ lastPrice }: Props) {
+export function PositionsPanel({ lastPrice, currentTimeMs }: Props) {
   const detail = useTestingStore((s) => s.activeDetail);
   const closePosition = useTestingStore((s) => s.closePositionManual);
   const closePartial = useTestingStore((s) => s.closePositionPartial);
@@ -57,8 +61,9 @@ export function PositionsPanel({ lastPrice }: Props) {
           <OpenTable
             positions={positions}
             lastPrice={lastPrice}
+            currentTimeMs={currentTimeMs}
             onClose={closePosition}
-            onPartial={(id, fraction) => closePartial(id, fraction, lastPrice, Date.now())}
+            onPartial={(id, fraction) => closePartial(id, fraction, lastPrice, currentTimeMs)}
             onBreakeven={(id, entry) => updateLevels(id, { sl: entry })}
             onEditLevels={(id, patch) => updateLevels(id, patch)}
           />
@@ -120,6 +125,7 @@ function TabBtn({
 function OpenTable({
   positions,
   lastPrice,
+  currentTimeMs,
   onClose,
   onPartial,
   onBreakeven,
@@ -127,6 +133,7 @@ function OpenTable({
 }: {
   positions: Position[];
   lastPrice: number;
+  currentTimeMs: number;
   onClose: (id: string, closePrice: number, closedAt: number) => void;
   onPartial: (id: string, fraction: number) => void;
   onBreakeven: (id: string, entry: number) => void;
@@ -220,7 +227,7 @@ function OpenTable({
                     </button>
                   ))}
                   <button
-                    onClick={() => onClose(p.id, lastPrice, Date.now())}
+                    onClick={() => onClose(p.id, lastPrice, currentTimeMs)}
                     className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
                   >
                     Close

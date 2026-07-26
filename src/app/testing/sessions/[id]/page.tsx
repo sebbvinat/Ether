@@ -1,11 +1,12 @@
 "use client";
 
-import { use, useEffect } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Play } from "lucide-react";
 import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
 import { EquityCurve } from "@/components/testing/EquityCurve";
+import type { SessionRules } from "@/lib/testing/rules";
 import {
   computeKPIs,
   equityCurve,
@@ -175,6 +176,9 @@ export default function SessionDetail({ params }: Props) {
         </section>
       </div>
 
+      {/* §16 — reglas diarias + checklist pre-trade */}
+      <RulesEditor sessionId={id} />
+
       {/* Performance by month + Performance by weekday */}
       <div className="grid gap-3 lg:grid-cols-2">
         <section className="rounded-lg border border-tv-border bg-tv-panel/40 p-4">
@@ -320,5 +324,104 @@ function PerformanceBars({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * §16 — editor de los límites diarios y del checklist pre-trade.
+ *
+ * Los límites se guardan en la meta (livianos, van a localStorage); el
+ * checklist en el detail (IndexedDB), que es donde vive el resto del
+ * contenido pesado de la sesión.
+ */
+function RulesEditor({ sessionId }: { sessionId: string }) {
+  const session = useTestingStore((s) => s.sessions.find((x) => x.id === sessionId));
+  const detail = useTestingStore((s) => s.activeDetail);
+  const setRules = useTestingStore((s) => s.setSessionRules);
+  const setChecklist = useTestingStore((s) => s.setChecklistTemplate);
+
+  const saved = (detail?.checklistTemplate ?? []).join("\n");
+  const [draft, setDraft] = useState(saved);
+  // Si el detail termina de cargar (o cambia la sesión), reflejarlo.
+  useEffect(() => setDraft(saved), [saved]);
+
+  if (!session) return null;
+  const rules = session.rules ?? {};
+
+  const numField = (
+    key: keyof SessionRules,
+    label: string,
+    hint: string,
+  ) => (
+    <label key={key} className="flex flex-col gap-0.5">
+      <span className="text-[10px] uppercase tracking-wider text-tv-text-muted">
+        {label}
+      </span>
+      <input
+        type="number"
+        min={0}
+        step="any"
+        value={(rules[key] as number | undefined) ?? ""}
+        placeholder="sin límite"
+        onChange={(e) => {
+          const v = e.target.value.trim();
+          const n = parseFloat(v);
+          setRules({ [key]: v === "" || !Number.isFinite(n) ? undefined : n });
+        }}
+        className="w-28 rounded border border-tv-border bg-tv-bg px-2 py-1 font-mono text-[11px] text-tv-text"
+      />
+      <span className="text-[9px] text-tv-text-dim">{hint}</span>
+    </label>
+  );
+
+  return (
+    <section className="rounded-lg border border-tv-border bg-tv-panel/40 p-4">
+      <h2 className="mb-1 text-[12px] font-semibold uppercase tracking-wider text-tv-text-muted">
+        Reglas del día
+      </h2>
+      <p className="mb-3 text-[11px] text-tv-text-muted">
+        Se miden sobre el día del cursor de replay en horario de Nueva York, no
+        sobre la fecha real. Al topar un límite se bloquean las órdenes nuevas;
+        cerrar o ajustar lo abierto siempre se puede.
+      </p>
+
+      <div className="flex flex-wrap gap-4">
+        {numField("maxTradesPerDay", "Máx trades / día", "vacío = sin tope")}
+        {numField("maxDailyLoss", "Pérdida máx / día", "en positivo: 500 = −$500")}
+        {numField("profitTarget", "Objetivo / día", "sólo avisa, no bloquea")}
+      </div>
+
+      <div className="mt-4 border-t border-tv-border pt-3">
+        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-tv-text">
+          <input
+            type="checkbox"
+            checked={rules.enforceChecklist ?? false}
+            onChange={(e) => setRules({ enforceChecklist: e.target.checked })}
+            className="h-3.5 w-3.5 accent-tv-blue"
+          />
+          Exigir el checklist antes de cada orden
+        </label>
+        <div className="mt-2">
+          <span className="text-[10px] uppercase tracking-wider text-tv-text-muted">
+            Checklist (un item por línea)
+          </span>
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={() =>
+              void setChecklist(
+                draft
+                  .split("\n")
+                  .map((l) => l.trim())
+                  .filter(Boolean),
+              )
+            }
+            rows={4}
+            placeholder={"¿Está a favor de la tendencia de H4?\n¿El stop está en un nivel, no en un número redondo?\n¿El riesgo es el de siempre?"}
+            className="mt-1 w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 text-[11px] text-tv-text"
+          />
+        </div>
+      </div>
+    </section>
   );
 }

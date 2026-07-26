@@ -26,11 +26,13 @@ import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
 import { isTypingTarget } from "@/lib/shortcuts";
 import { TF_MINUTES } from "@/lib/testing/candles";
+import { evaluateRules } from "@/lib/testing/rules";
 import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
 import { PositionsPanel } from "@/components/testing/PositionsPanel";
 import { GoToMenu } from "@/components/testing/GoToMenu";
 import { IndicatorsMenu } from "@/components/testing/IndicatorsMenu";
+import { ChecklistGate } from "@/components/testing/ChecklistGate";
 import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
 import type { Timeframe } from "@/lib/binance/types";
 import { usePriceFlash } from "@/lib/use-price-flash";
@@ -155,6 +157,8 @@ export default function SessionChartPage({ params }: Props) {
   const [jumpOpen, setJumpOpen] = useState(false);
   /** §12 — cuántos paneles de chart mostrar. */
   const [panes, setPanes] = useState<1 | 2>(1);
+  /** §16 — orden esperando a que se complete el checklist. */
+  const [pendingSide, setPendingSide] = useState<"buy" | "sell" | null>(null);
 
   // Asegurarse de que la sesión activa esté seteada (carga IDB)
   useEffect(() => {
@@ -249,6 +253,15 @@ export default function SessionChartPage({ params }: Props) {
   // Timestamp (ms) del cursor de replay — fuente de verdad.
   const currentTimeMs = session?.replayCursorMs ?? session?.startDate ?? Date.now();
 
+  // §16 — límites diarios. El "día" es el del cursor de replay, no el de hoy.
+  const checklistItems = detail?.checklistTemplate ?? [];
+  const checklistRequired =
+    (session?.rules?.enforceChecklist ?? false) && checklistItems.length > 0;
+  const verdict = useMemo(
+    () => evaluateRules({ rules: session?.rules }, detail?.trades ?? [], currentTimeMs),
+    [session?.rules, detail?.trades, currentTimeMs],
+  );
+
   // §2 — atajos de teclado del replay + selección de herramienta.
   // Nota: L y S quedan tomadas por las tools long/short, así que los atajos
   // de Go To (Y/Z/I/L/N estilo FXReplay) no se implementan — Go To va por menú.
@@ -326,8 +339,8 @@ export default function SessionChartPage({ params }: Props) {
     redoDrawings,
   ]);
 
-  const handleFastBuy = useCallback(
-    async (side: "buy" | "sell") => {
+  const submitFastBuy = useCallback(
+    async (side: "buy" | "sell", notes?: string) => {
       if (!session) return;
       const sizeN = parseFloat(quantity);
       if (!Number.isFinite(sizeN) || sizeN <= 0) return;
@@ -342,10 +355,23 @@ export default function SessionChartPage({ params }: Props) {
         size: sizeN,
         entry: refPrice,
         tags: ["fast"],
+        notes,
         openedAtMs: currentTimeMs,
       });
     },
     [session, quantity, lastPrice, openPositionNow, currentTimeMs],
+  );
+
+  const handleFastBuy = useCallback(
+    (side: "buy" | "sell") => {
+      // §16 — con el checklist exigido, la orden espera a que se complete.
+      if (checklistRequired) {
+        setPendingSide(side);
+        return;
+      }
+      void submitFastBuy(side);
+    },
+    [checklistRequired, submitFastBuy],
   );
 
   if (!session) {
@@ -466,12 +492,27 @@ export default function SessionChartPage({ params }: Props) {
 
         <button
           onClick={() => setOrderDialogOpen(true)}
-          className="flex items-center gap-1 rounded bg-tv-blue px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-blue/90"
+          disabled={!!verdict.blocked}
+          title={verdict.blockedMessage}
+          className="flex items-center gap-1 rounded bg-tv-blue px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-blue/90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Plus className="h-3 w-3" />
           Place Order
         </button>
       </div>
+
+      {/* §16 — el bloqueo sólo frena órdenes NUEVAS: cerrar y modificar
+          posiciones abiertas siempre se puede. */}
+      {verdict.blocked && (
+        <div className="shrink-0 border-b border-tv-red/40 bg-tv-red/10 px-3 py-1 text-center text-[11px] font-medium text-tv-red">
+          {verdict.blockedMessage} · podés cerrar o ajustar lo que ya está abierto
+        </div>
+      )}
+      {!verdict.blocked && verdict.targetReached && (
+        <div className="shrink-0 border-b border-tv-green/40 bg-tv-green/10 px-3 py-1 text-center text-[11px] font-medium text-tv-green">
+          🎯 Objetivo diario alcanzado (+${verdict.stats.pnl.toFixed(2)})
+        </div>
+      )}
 
       {/* Chart + Positions Panel (split vertical) */}
       <div className="flex min-h-0 flex-1 flex-col">
@@ -523,7 +564,7 @@ export default function SessionChartPage({ params }: Props) {
         </div>
         {showPanel && (
           <div className="h-48 shrink-0 border-t border-tv-border">
-            <PositionsPanel lastPrice={lastPrice} />
+            <PositionsPanel lastPrice={lastPrice} currentTimeMs={currentTimeMs} />
           </div>
         )}
       </div>
@@ -718,13 +759,17 @@ export default function SessionChartPage({ params }: Props) {
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleFastBuy("buy")}
-            className="rounded bg-tv-green px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-green/90"
+            disabled={!!verdict.blocked}
+            title={verdict.blockedMessage}
+            className="rounded bg-tv-green px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-green/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Buy
           </button>
           <button
             onClick={() => handleFastBuy("sell")}
-            className="rounded bg-tv-red px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-red/90"
+            disabled={!!verdict.blocked}
+            title={verdict.blockedMessage}
+            className="rounded bg-tv-red px-3 py-1 text-[11px] font-medium text-white hover:bg-tv-red/90 disabled:cursor-not-allowed disabled:opacity-40"
           >
             Sell
           </button>
@@ -753,6 +798,17 @@ export default function SessionChartPage({ params }: Props) {
           </span>
         </div>
       </div>
+
+      <ChecklistGate
+        open={pendingSide !== null}
+        items={checklistItems}
+        onCancel={() => setPendingSide(null)}
+        onConfirm={(notes) => {
+          const side = pendingSide;
+          setPendingSide(null);
+          if (side) void submitFastBuy(side, notes);
+        }}
+      />
 
       <PlaceOrderDialog
         open={orderDialogOpen}
