@@ -9,7 +9,7 @@
  * chart en vivo, pero standalone (no usa el sistema de tabs global).
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Bookmark, BookmarkCheck, X } from "lucide-react";
 import {
   useTestingStore,
@@ -32,6 +32,7 @@ export function PositionsPanel({ lastPrice }: Props) {
   const closePosition = useTestingStore((s) => s.closePositionManual);
   const cancelOrder = useTestingStore((s) => s.cancelOrderById);
   const updateLevels = useTestingStore((s) => s.updatePositionLevels);
+  const updateOrderLevels = useTestingStore((s) => s.updateOrderLevels);
   const [tab, setTab] = useState<Tab>("open");
   const [journalTrade, setJournalTrade] = useState<Trade | null>(null);
 
@@ -57,9 +58,16 @@ export function PositionsPanel({ lastPrice }: Props) {
             lastPrice={lastPrice}
             onClose={closePosition}
             onBreakeven={(id, entry) => updateLevels(id, { sl: entry })}
+            onEditLevels={(id, patch) => updateLevels(id, patch)}
           />
         )}
-        {tab === "pending" && <PendingTable orders={orders} onCancel={cancelOrder} />}
+        {tab === "pending" && (
+          <PendingTable
+            orders={orders}
+            onCancel={cancelOrder}
+            onEditLevels={(id, patch) => updateOrderLevels(id, patch)}
+          />
+        )}
         {tab === "closed" && (
           <ClosedTable
             trades={trades}
@@ -112,11 +120,13 @@ function OpenTable({
   lastPrice,
   onClose,
   onBreakeven,
+  onEditLevels,
 }: {
   positions: Position[];
   lastPrice: number;
   onClose: (id: string, closePrice: number, closedAt: number) => void;
   onBreakeven: (id: string, entry: number) => void;
+  onEditLevels: (id: string, patch: { sl?: number; tp?: number }) => void;
 }) {
   if (positions.length === 0) {
     return <Empty msg="No hay posiciones abiertas." />;
@@ -156,8 +166,20 @@ function OpenTable({
               </Td>
               <Td mono>{p.size}</Td>
               <Td mono>{p.entry.toFixed(2)}</Td>
-              <Td mono>{p.sl?.toFixed(2) ?? "—"}</Td>
-              <Td mono>{p.tp?.toFixed(2) ?? "—"}</Td>
+              <Td>
+                <EditableCell
+                  value={p.sl}
+                  onCommit={(sl) => onEditLevels(p.id, { sl })}
+                  className="text-tv-red"
+                />
+              </Td>
+              <Td>
+                <EditableCell
+                  value={p.tp}
+                  onCommit={(tp) => onEditLevels(p.id, { tp })}
+                  className="text-tv-green"
+                />
+              </Td>
               <Td mono>{lastPrice.toFixed(2)}</Td>
               <Td mono>
                 <span className={upnl >= 0 ? "text-tv-green" : "text-tv-red"}>
@@ -200,9 +222,14 @@ function OpenTable({
 function PendingTable({
   orders,
   onCancel,
+  onEditLevels,
 }: {
   orders: Order[];
   onCancel: (id: string) => void;
+  onEditLevels: (
+    id: string,
+    patch: { entryPrice?: number; sl?: number; tp?: number },
+  ) => void;
 }) {
   if (orders.length === 0) {
     return <Empty msg="No hay órdenes pendientes." />;
@@ -239,9 +266,30 @@ function PendingTable({
             </Td>
             <Td>{o.type}</Td>
             <Td mono>{o.size}</Td>
-            <Td mono>{o.entryPrice.toFixed(2)}</Td>
-            <Td mono>{o.sl?.toFixed(2) ?? "—"}</Td>
-            <Td mono>{o.tp?.toFixed(2) ?? "—"}</Td>
+            <Td>
+              <EditableCell
+                value={o.entryPrice}
+                required
+                onCommit={(entryPrice) =>
+                  entryPrice !== undefined && onEditLevels(o.id, { entryPrice })
+                }
+                className="text-tv-yellow"
+              />
+            </Td>
+            <Td>
+              <EditableCell
+                value={o.sl}
+                onCommit={(sl) => onEditLevels(o.id, { sl })}
+                className="text-tv-red"
+              />
+            </Td>
+            <Td>
+              <EditableCell
+                value={o.tp}
+                onCommit={(tp) => onEditLevels(o.id, { tp })}
+                className="text-tv-green"
+              />
+            </Td>
             <Td muted>{new Date(o.createdAt).toLocaleString()}</Td>
             <Td muted>
               {o.tags.length > 0 ? o.tags.join(", ") : "—"}
@@ -373,6 +421,92 @@ function ClosedTable({
         })}
       </tbody>
     </table>
+  );
+}
+
+/**
+ * §7 — celda de precio editable in-place. Click para editar, Enter o blur
+ * para confirmar, Escape para descartar.
+ *
+ * Vaciarla borra el nivel (útil para sacar un TP), salvo que sea obligatoria
+ * — el precio de entrada de una orden pendiente no puede quedar vacío.
+ * Un valor no numérico se descarta en silencio y vuelve al anterior.
+ */
+function EditableCell({
+  value,
+  onCommit,
+  required = false,
+  className,
+}: {
+  value: number | undefined;
+  onCommit: (next: number | undefined) => void;
+  required?: boolean;
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  function start() {
+    setDraft(value !== undefined ? String(value) : "");
+    setEditing(true);
+  }
+
+  function commit() {
+    setEditing(false);
+    const raw = draft.trim();
+    if (raw === "") {
+      // Vaciar quita el nivel; si es obligatorio, se descarta el cambio.
+      if (!required && value !== undefined) onCommit(undefined);
+      return;
+    }
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return; // inválido → revertir
+    if (n !== value) onCommit(n);
+  }
+
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
+
+  if (!editing) {
+    return (
+      <button
+        onClick={start}
+        title="Click para editar"
+        className={cn(
+          "-mx-1 rounded px-1 text-left font-mono hover:bg-tv-panel-hover hover:text-tv-text",
+          value === undefined && "text-tv-text-muted",
+          className,
+        )}
+      >
+        {value !== undefined ? value.toFixed(2) : "—"}
+      </button>
+    );
+  }
+
+  return (
+    <input
+      ref={inputRef}
+      type="number"
+      step="any"
+      value={draft}
+      autoFocus
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          commit();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          setEditing(false); // descartar
+        }
+        // No dejar que los atajos globales del replay se disparen al tipear.
+        e.stopPropagation();
+      }}
+      className="w-20 rounded border border-tv-blue bg-tv-bg px-1 py-0.5 font-mono text-[11px] text-tv-text"
+    />
   );
 }
 
