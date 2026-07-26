@@ -105,6 +105,9 @@ export function DrawingsLayer({
   containerHeight,
 }: Props) {
   const openDrawingProps = useChartStore((s) => s.openDrawingProps);
+  const beginDrawingsTransaction = useChartStore(
+    (s) => s.beginDrawingsTransaction,
+  );
   // Wave 14 — alertas: leídas para renderizar un bell badge sobre el dibujo
   const drawingAlerts = useChartStore((s) => s.drawingAlerts);
 
@@ -269,6 +272,7 @@ export function DrawingsLayer({
   ) {
     e.stopPropagation();
     e.preventDefault();
+    beginDrawingsTransaction(); // §1 — el gesto entero = 1 undo
     setDrag({ id, handle });
   }
 
@@ -282,6 +286,7 @@ export function DrawingsLayer({
   ) {
     e.stopPropagation();
     e.preventDefault();
+    beginDrawingsTransaction(); // §1
     setDrag({ id, handle: "points", index, basePoints });
   }
 
@@ -295,6 +300,7 @@ export function DrawingsLayer({
     const svg = svgRef.current;
     if (!svg) return;
     e.stopPropagation();
+    beginDrawingsTransaction(); // §1
     const rect = svg.getBoundingClientRect();
     const cursorStart: Coord = {
       x: e.clientX - rect.left,

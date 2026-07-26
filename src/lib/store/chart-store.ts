@@ -5,6 +5,26 @@ import { persist } from "zustand/middleware";
 import type { Timeframe } from "@/lib/binance/types";
 import { setYahooSymbolsCache, type Instrument } from "@/lib/instruments";
 import { DEFAULT_SHORTCUTS } from "@/lib/shortcuts";
+import { HistoryStack } from "@/lib/history";
+
+/** §1 — historial de dibujos del chart en vivo. El snapshot incluye los
+ *  estilos porque viven en un mapa paralelo: deshacer un cambio de color
+ *  tiene que restaurar ambos. Efímero: no se persiste. */
+type DrawingsSnapshot = {
+  drawings: Drawing[];
+  styles: Record<string, DrawingStyle>;
+};
+const drawingsHistory = new HistoryStack<DrawingsSnapshot>();
+
+function pushDrawingsSnapshot(state: {
+  drawings: Drawing[];
+  drawingStyles: Record<string, DrawingStyle>;
+}) {
+  drawingsHistory.push({
+    drawings: state.drawings,
+    styles: state.drawingStyles,
+  });
+}
 
 export type IndicatorKey =
   | "ema20"
@@ -788,6 +808,11 @@ interface ChartState {
   clearDrawings: (symbol?: string) => void;
   setDrawingStyle: (id: string, patch: Partial<DrawingStyle>) => void;
   setDrawingStyleFull: (id: string, style: DrawingStyle) => void;
+  /** §1 — undo/redo de dibujos. `beginDrawingsTransaction` marca el inicio de
+   *  un gesto continuo (drag) para que valga como UNA sola entrada de undo. */
+  beginDrawingsTransaction: () => void;
+  undoDrawings: () => void;
+  redoDrawings: () => void;
   openDrawingProps: (id: string) => void;
   closeDrawingProps: () => void;
   saveDrawingTemplate: (name: string, style: DrawingStyle) => DrawingTemplate;
@@ -1393,11 +1418,15 @@ export const useChartStore = create<ChartState>()(
             : [],
         })),
       addDrawing: (d) =>
-        set((state) => ({
-          drawings: [...state.drawings, { ...d, id: newId() } satisfies Drawing],
-        })),
+        set((state) => {
+          pushDrawingsSnapshot(state);
+          return {
+            drawings: [...state.drawings, { ...d, id: newId() } satisfies Drawing],
+          };
+        }),
       removeDrawing: (id) =>
         set((state) => {
+          pushDrawingsSnapshot(state);
           // Cleanup del style asociado (si existía)
           if (id in state.drawingStyles) {
             const nextStyles = { ...state.drawingStyles };
@@ -1428,6 +1457,7 @@ export const useChartStore = create<ChartState>()(
         })),
       clearDrawings: (symbol) =>
         set((state) => {
+          pushDrawingsSnapshot(state);
           // Identificar los ids que se van a borrar para limpiar también su style
           const idsToRemove = new Set(
             (symbol
@@ -1455,16 +1485,48 @@ export const useChartStore = create<ChartState>()(
           };
         }),
       setDrawingStyle: (id, patch) =>
-        set((state) => ({
-          drawingStyles: {
-            ...state.drawingStyles,
-            [id]: { ...(state.drawingStyles[id] ?? {}), ...patch },
-          },
-        })),
+        set((state) => {
+          pushDrawingsSnapshot(state);
+          return {
+            drawingStyles: {
+              ...state.drawingStyles,
+              [id]: { ...(state.drawingStyles[id] ?? {}), ...patch },
+            },
+          };
+        }),
       setDrawingStyleFull: (id, style) =>
-        set((state) => ({
-          drawingStyles: { ...state.drawingStyles, [id]: style },
-        })),
+        set((state) => {
+          pushDrawingsSnapshot(state);
+          return {
+            drawingStyles: { ...state.drawingStyles, [id]: style },
+          };
+        }),
+
+      // §1 — undo/redo. `updateDrawing` NO pushea: un drag dispara cientos de
+      // updates, así que el snapshot se toma una vez al empezar el gesto.
+      beginDrawingsTransaction: () =>
+        set((state) => {
+          pushDrawingsSnapshot(state);
+          return {}; // sólo lee el estado; no muta nada
+        }),
+      undoDrawings: () =>
+        set((state) => {
+          const prev = drawingsHistory.undo({
+            drawings: state.drawings,
+            styles: state.drawingStyles,
+          });
+          if (!prev) return {};
+          return { drawings: prev.drawings, drawingStyles: prev.styles };
+        }),
+      redoDrawings: () =>
+        set((state) => {
+          const next = drawingsHistory.redo({
+            drawings: state.drawings,
+            styles: state.drawingStyles,
+          });
+          if (!next) return {};
+          return { drawings: next.drawings, drawingStyles: next.styles };
+        }),
       openDrawingProps: (id) => set({ drawingPropsTargetId: id }),
       closeDrawingProps: () => set({ drawingPropsTargetId: null }),
       saveDrawingTemplate: (name, style) => {
