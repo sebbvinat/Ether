@@ -62,6 +62,7 @@ import {
   crossed,
 } from "@/lib/alerts/drawing-levels";
 import { Countdown } from "./Countdown";
+import { usePriceFlash } from "@/lib/use-price-flash";
 import type { Drawing, DrawingPoint, DrawingTool } from "@/lib/store/chart-store";
 
 interface MeasurePoint {
@@ -327,6 +328,8 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [hoverValues, setHoverValues] = useState<LastValues>({});
   const [lastPrice, setLastPrice] = useState<{ value: number; pct: number } | null>(null);
+  /** §10 — destello verde/rojo cada vez que el precio se mueve. */
+  const priceFlash = usePriceFlash(lastPrice?.value);
   const [lastValues, setLastValues] = useState<LastValues>({});
   const [paneOffsets, setPaneOffsets] = useState<PaneOffset[]>([]);
   const [measure, setMeasure] = useState<MeasureState>(INITIAL_MEASURE);
@@ -3345,7 +3348,9 @@ export function PriceChart({ symbol, timeframe, slotId }: Props) {
         <div className="flex h-5 items-center gap-1.5 md:h-7 md:gap-2">
           {lastPrice ? (
             <>
-              <span className={`font-mono text-sm font-semibold tabular-nums md:text-lg ${greenOrRed(lastPrice.pct)}`}>
+              <span
+                className={`rounded px-0.5 font-mono text-sm font-semibold tabular-nums md:text-lg ${greenOrRed(lastPrice.pct)} ${priceFlash}`}
+              >
                 {formatPrice(lastPrice.value)}
               </span>
               <span className={`font-mono text-[10px] tabular-nums md:text-xs ${greenOrRed(lastPrice.pct)}`}>

@@ -8,6 +8,7 @@
  */
 
 import type { EquityPoint } from "@/lib/testing/metrics";
+import { TV } from "@/lib/theme";
 
 interface Props {
   points: EquityPoint[];
@@ -44,7 +45,7 @@ export function EquityCurve({ points, initialBalance, width = 600, height = 200 
   const baselineY = yForEq(initialBalance);
   const finalEq = points[points.length - 1].equity;
   const isPositive = finalEq >= initialBalance;
-  const lineColor = isPositive ? "#26a69a" : "#ef5350";
+  const lineColor = isPositive ? TV.green : TV.red;
   const fillColor = isPositive ? "rgba(38,166,154,0.18)" : "rgba(239,83,80,0.18)";
 
   const polylinePts = points.map((p, i) => `${xForIdx(i)},${yForEq(p.equity)}`).join(" ");
@@ -62,14 +63,14 @@ export function EquityCurve({ points, initialBalance, width = 600, height = 200 
         y1={baselineY}
         x2={width - padding.right}
         y2={baselineY}
-        stroke="#787b86"
+        stroke={TV.textMuted}
         strokeWidth={0.75}
         strokeDasharray="2 3"
       />
       <text
         x={padding.left}
         y={baselineY - 3}
-        fill="#787b86"
+        fill={TV.textMuted}
         fontSize={9}
         fontFamily="var(--font-mono), monospace"
       >

@@ -43,20 +43,11 @@ import { PositionOverlay } from "./PositionOverlay";
 import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
+import { TV, TV_ALPHA } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
-const TV = {
-  bg: "#131722",
-  text: "#d1d4dc",
-  textMuted: "#787b86",
-  green: "#26a69a",
-  red: "#ef5350",
-  blue: "#2962ff",
-  yellow: "#ffb74d",
-  purple: "#ab47bc",
-  border: "#2a2e39",
-  grid: "#1e222d",
-};
+// §10 — la paleta vive en lib/theme.ts (fuente única).
 
 interface Props {
   session: SessionMeta;
@@ -138,8 +129,19 @@ export function TestingChart({
       },
       crosshair: {
         mode: CrosshairMode.Normal,
-        vertLine: { color: TV.textMuted, width: 1, style: 3 },
-        horzLine: { color: TV.textMuted, width: 1, style: 3 },
+        // §10 — las etiquetas de los ejes en azul, como TradingView.
+        vertLine: {
+          color: TV.textMuted,
+          width: 1,
+          style: 3,
+          labelBackgroundColor: TV.blue,
+        },
+        horzLine: {
+          color: TV.textMuted,
+          width: 1,
+          style: 3,
+          labelBackgroundColor: TV.blue,
+        },
       },
       rightPriceScale: { borderColor: TV.border, textColor: TV.textMuted },
       timeScale: {
@@ -386,7 +388,7 @@ export function TestingChart({
       displayed.map((c) => ({
         time: c.time as UTCTimestamp,
         value: c.volume,
-        color: c.close >= c.open ? "rgba(38,166,154,0.4)" : "rgba(239,83,80,0.4)",
+        color: c.close >= c.open ? TV_ALPHA.green40 : TV_ALPHA.red40,
       })),
     );
     // (los indicadores se rendean en su propio effect — ver más abajo)
@@ -586,8 +588,8 @@ export function TestingChart({
       {loading && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-tv-bg/70 backdrop-blur-sm">
           <div className="text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-tv-text-muted border-t-tv-blue" />
-            <p className="mt-3 text-[12px] text-tv-text-muted">
+            <CandleSkeleton />
+            <p className="mt-4 text-[12px] text-tv-text-muted">
               Descargando velas desde {new Date(session.startDate).toLocaleDateString()}…
             </p>
           </div>
@@ -605,6 +607,36 @@ export function TestingChart({
 }
 
 export { TESTING_TFS };
+
+// ─── CandleSkeleton ───────────────────────────────────────────────────────
+// §10 — placeholder de carga con forma de chart en vez de un spinner
+// genérico: comunica qué está llegando. Las alturas salen de una progresión
+// determinística (un primo módulo un rango) para que el patrón se vea
+// irregular sin usar Math.random, que cambiaría en cada render.
+
+function CandleSkeleton() {
+  const bars = Array.from({ length: 40 }, (_, i) => ({
+    height: 14 + ((i * 7919) % 60),
+    up: (i * 7919) % 2 === 0,
+  }));
+  return (
+    <div
+      className="flex h-24 items-center justify-center gap-1"
+      aria-hidden="true"
+    >
+      {bars.map((b, i) => (
+        <div
+          key={i}
+          className={cn(
+            "w-1.5 animate-pulse rounded-sm",
+            b.up ? "bg-tv-green/25" : "bg-tv-red/25",
+          )}
+          style={{ height: `${b.height}%`, animationDelay: `${(i % 8) * 60}ms` }}
+        />
+      ))}
+    </div>
+  );
+}
 
 // ─── DrawingsToolbar ──────────────────────────────────────────────────────
 // Toolbar vertical sobre el chart con los 5 tools básicos + clear.
@@ -789,7 +821,7 @@ function renderIndicators(
 
   // Bollinger (3 líneas)
   if (wanted.has("bb-mid")) {
-    const cols = INDICATOR_COLORS.bb ?? ["#787b86", "#787b86", "#787b86"];
+    const cols = INDICATOR_COLORS.bb ?? [TV.textMuted, TV.textMuted, TV.textMuted];
     const up = getOrCreate("bb-up", cols[0]);
     const mid = getOrCreate("bb-mid", cols[1]);
     const low = getOrCreate("bb-low", cols[2]);
@@ -801,7 +833,7 @@ function renderIndicators(
 
   // VWAP (1 línea — anclada al inicio del rango cargado, suficiente para MVP)
   if (wanted.has("vwap")) {
-    const color = INDICATOR_COLORS.vwap?.[0] ?? "#ffb74d";
+    const color = INDICATOR_COLORS.vwap?.[0] ?? TV.yellow;
     const ser = getOrCreate("vwap", color, 2);
     const pts = vwap(candles);
     ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
@@ -811,7 +843,7 @@ function renderIndicators(
 
   // RSI 14 en pane 1, con líneas de oversold/overbought
   if (wanted.has("rsi")) {
-    const color = INDICATOR_COLORS.rsi?.[0] ?? "#ab47bc";
+    const color = INDICATOR_COLORS.rsi?.[0] ?? TV.purple;
     const ser = getOrCreate("rsi", color, 1, 1);
     const pts = rsi(candles, cfg.rsi);
     ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
@@ -819,13 +851,13 @@ function renderIndicators(
     if (pts.length > 0) {
       const t0 = pts[0].time as UTCTimestamp;
       const tN = pts[pts.length - 1].time as UTCTimestamp;
-      const guide30 = getOrCreate("rsi-30", "#787b86", 1, 1);
+      const guide30 = getOrCreate("rsi-30", TV.textMuted, 1, 1);
       guide30.applyOptions({ lineStyle: 3 });
       guide30.setData([
         { time: t0, value: 30 },
         { time: tN, value: 30 },
       ]);
-      const guide70 = getOrCreate("rsi-70", "#787b86", 1, 1);
+      const guide70 = getOrCreate("rsi-70", TV.textMuted, 1, 1);
       guide70.applyOptions({ lineStyle: 3 });
       guide70.setData([
         { time: t0, value: 70 },
@@ -836,7 +868,7 @@ function renderIndicators(
 
   // MACD en pane 2 (2 líneas: MACD y signal)
   if (wanted.has("macd-line")) {
-    const cols = INDICATOR_COLORS.macd ?? ["#2962ff", "#ef5350", "#787b86"];
+    const cols = INDICATOR_COLORS.macd ?? [TV.blue, TV.red, TV.textMuted];
     const line = getOrCreate("macd-line", cols[0], 1, 2);
     const signal = getOrCreate("macd-signal", cols[1], 1, 2);
     const pts = macd(candles, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
@@ -850,22 +882,22 @@ function renderIndicators(
 
   // Stochastic en pane 3 (%K + %D + guías 20/80)
   if (wanted.has("stoch-k")) {
-    const cols = INDICATOR_COLORS.stoch ?? ["#2962ff", "#ef5350"];
+    const cols = INDICATOR_COLORS.stoch ?? [TV.blue, TV.red];
     const k = getOrCreate("stoch-k", cols[0], 1, 3);
-    const d = getOrCreate("stoch-d", cols[1] ?? "#ef5350", 1, 3);
+    const d = getOrCreate("stoch-d", cols[1] ?? TV.red, 1, 3);
     const pts = stochastic(candles, cfg.stochK, cfg.stochD);
     k.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })));
     d.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })));
     if (pts.length > 0) {
       const t0 = pts[0].time as UTCTimestamp;
       const tN = pts[pts.length - 1].time as UTCTimestamp;
-      const g20 = getOrCreate("stoch-20", "#787b86", 1, 3);
+      const g20 = getOrCreate("stoch-20", TV.textMuted, 1, 3);
       g20.applyOptions({ lineStyle: 3 });
       g20.setData([
         { time: t0, value: 20 },
         { time: tN, value: 20 },
       ]);
-      const g80 = getOrCreate("stoch-80", "#787b86", 1, 3);
+      const g80 = getOrCreate("stoch-80", TV.textMuted, 1, 3);
       g80.applyOptions({ lineStyle: 3 });
       g80.setData([
         { time: t0, value: 80 },

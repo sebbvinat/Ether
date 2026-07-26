@@ -10,24 +10,16 @@
  */
 
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
-
-const TV = {
-  blue: "#2962ff",
-  red: "#ef5350",
-  green: "#26a69a",
-  yellow: "#ffb74d",
-  purple: "#ab47bc",
-  text: "#d1d4dc",
-};
+import { TV } from "@/lib/theme";
 
 const FIB_LEVELS = [
-  { level: 0, color: "#787b86" },
+  { level: 0, color: TV.textMuted },
   { level: 0.236, color: TV.yellow },
   { level: 0.382, color: TV.green },
   { level: 0.5, color: TV.blue },
   { level: 0.618, color: TV.purple },
   { level: 0.786, color: TV.red },
-  { level: 1, color: "#787b86" },
+  { level: 1, color: TV.textMuted },
 ];
 
 interface Coord {

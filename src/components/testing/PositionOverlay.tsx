@@ -11,6 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTestingStore, type Position } from "@/lib/store/testing-store";
+import { TV } from "@/lib/theme";
 
 interface Props {
   positions: Position[];
@@ -127,7 +128,7 @@ export function PositionOverlay({
               y1={yEntry}
               x2={width}
               y2={yEntry}
-              stroke={dir === 1 ? "#26a69a" : "#ef5350"}
+              stroke={dir === 1 ? TV.green : TV.red}
               strokeWidth={1.5}
             />
             <rect
@@ -135,7 +136,7 @@ export function PositionOverlay({
               y={yEntry - 10}
               width={94}
               height={20}
-              fill={dir === 1 ? "#26a69a" : "#ef5350"}
+              fill={dir === 1 ? TV.green : TV.red}
               opacity={0.95}
               rx={2}
             />
@@ -173,7 +174,7 @@ export function PositionOverlay({
                   y1={ySl}
                   x2={width}
                   y2={ySl}
-                  stroke="#ef5350"
+                  stroke={TV.red}
                   strokeWidth={drag?.positionId === pos.id && drag.kind === "sl" ? 2 : 1}
                   strokeDasharray="4 3"
                 />
@@ -182,7 +183,7 @@ export function PositionOverlay({
                   y={ySl - 10}
                   width={94}
                   height={20}
-                  fill="#ef5350"
+                  fill={TV.red}
                   opacity={0.95}
                   rx={2}
                 />
@@ -202,7 +203,7 @@ export function PositionOverlay({
                   <text
                     x={8}
                     y={ySl - 4}
-                    fill="#ef5350"
+                    fill={TV.red}
                     fontSize={10}
                     fontWeight={500}
                     fontFamily="var(--font-mono), monospace"
@@ -234,7 +235,7 @@ export function PositionOverlay({
                   y1={yTp}
                   x2={width}
                   y2={yTp}
-                  stroke="#26a69a"
+                  stroke={TV.green}
                   strokeWidth={drag?.positionId === pos.id && drag.kind === "tp" ? 2 : 1}
                   strokeDasharray="4 3"
                 />
@@ -243,7 +244,7 @@ export function PositionOverlay({
                   y={yTp - 10}
                   width={94}
                   height={20}
-                  fill="#26a69a"
+                  fill={TV.green}
                   opacity={0.95}
                   rx={2}
                 />
@@ -263,7 +264,7 @@ export function PositionOverlay({
                   <text
                     x={8}
                     y={yTp - 4}
-                    fill="#26a69a"
+                    fill={TV.green}
                     fontSize={10}
                     fontWeight={500}
                     fontFamily="var(--font-mono), monospace"

@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTestingStore, type Order } from "@/lib/store/testing-store";
+import { TV } from "@/lib/theme";
 
 interface Props {
   orders: Order[]; // ya filtradas a pending
@@ -24,9 +25,9 @@ interface Props {
 type DragKind = "entry" | "sl" | "tp";
 type DragState = { orderId: string; kind: DragKind; currentY: number };
 
-const ORANGE = "#ffb74d";
-const RED = "#ef5350";
-const GREEN = "#26a69a";
+const ORANGE = TV.yellow;
+const RED = TV.red;
+const GREEN = TV.green;
 
 export function PendingOrdersOverlay({
   orders,

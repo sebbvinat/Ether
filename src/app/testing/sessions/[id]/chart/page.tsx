@@ -33,6 +33,7 @@ import { GoToMenu } from "@/components/testing/GoToMenu";
 import { IndicatorsMenu } from "@/components/testing/IndicatorsMenu";
 import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
 import type { Timeframe } from "@/lib/binance/types";
+import { usePriceFlash } from "@/lib/use-price-flash";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -77,6 +78,24 @@ const TOOL_KEYS: Record<string, string> = {
 };
 
 /** ms → valor de un <input type="datetime-local"> en hora LOCAL. */
+/** §10 — un número monetario que destella cuando cambia. Vive como componente
+ *  propio porque la página tiene early-returns antes del ticker y el hook no
+ *  puede colgar de ahí. */
+function FlashMoney({ value }: { value: number }) {
+  const flash = usePriceFlash(value);
+  return (
+    <span
+      className={cn(
+        "rounded px-0.5 tabular-nums",
+        value >= 0 ? "text-tv-green" : "text-tv-red",
+        flash,
+      )}
+    >
+      {value >= 0 ? "+" : ""}${value.toFixed(2)}
+    </span>
+  );
+}
+
 function msToLocalInput(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -579,23 +598,11 @@ export default function SessionChartPage({ params }: Props) {
           </span>
           <span>
             <span className="text-tv-text-muted">Realized</span>{" "}
-            <span
-              className={cn(
-                session.realizedPnL >= 0 ? "text-tv-green" : "text-tv-red",
-              )}
-            >
-              {session.realizedPnL >= 0 ? "+" : ""}${session.realizedPnL.toFixed(2)}
-            </span>
+            <FlashMoney value={session.realizedPnL} />
           </span>
           <span>
             <span className="text-tv-text-muted">Unrealized</span>{" "}
-            <span
-              className={cn(
-                unrealizedTotal >= 0 ? "text-tv-green" : "text-tv-red",
-              )}
-            >
-              {unrealizedTotal >= 0 ? "+" : ""}${unrealizedTotal.toFixed(2)}
-            </span>
+            <FlashMoney value={unrealizedTotal} />
           </span>
         </div>
       </div>

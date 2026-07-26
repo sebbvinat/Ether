@@ -190,3 +190,41 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* §10 — destello al cambiar el precio. Da la sensación de dato vivo sin
+   necesidad de leer el número: verde si subió, rojo si bajó. */
+@keyframes ether-flash-up {
+  0% {
+    background-color: rgb(38 166 154 / 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+@keyframes ether-flash-down {
+  0% {
+    background-color: rgb(239 83 80 / 0.35);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+@layer utilities {
+  .price-flash-up {
+    animation: ether-flash-up 0.4s ease-out;
+    border-radius: 3px;
+  }
+  .price-flash-down {
+    animation: ether-flash-down 0.4s ease-out;
+    border-radius: 3px;
+  }
+
+  /* Respetar a quien pidió menos movimiento en el sistema. */
+  @media (prefers-reduced-motion: reduce) {
+    .price-flash-up,
+    .price-flash-down {
+      animation: none;
+    }
+  }
+}

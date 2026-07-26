@@ -12,6 +12,7 @@
  */
 
 import type { Trade } from "@/lib/store/testing-store";
+import { TV } from "@/lib/theme";
 
 export type ClosedTradesMode = "drawings" | "arrows" | "hidden";
 
@@ -45,7 +46,7 @@ export function ClosedTradesLayer({ trades, timeToX, priceToY, width, height, mo
           return null;
         }
         const isWin = t.outcome === "win";
-        const color = isWin ? "#26a69a" : t.outcome === "loss" ? "#ef5350" : "#787b86";
+        const color = isWin ? TV.green : t.outcome === "loss" ? TV.red : TV.textMuted;
 
         if (mode === "arrows") {
           // Solo flecha en el entry
@@ -118,7 +119,7 @@ export function ClosedTradesLayer({ trades, timeToX, priceToY, width, height, mo
                 y1={ySl}
                 x2={x + w}
                 y2={ySl}
-                stroke="#ef5350"
+                stroke={TV.red}
                 strokeWidth={0.75}
                 strokeDasharray="3 3"
               />
@@ -130,7 +131,7 @@ export function ClosedTradesLayer({ trades, timeToX, priceToY, width, height, mo
                 y1={yTp}
                 x2={x + w}
                 y2={yTp}
-                stroke="#26a69a"
+                stroke={TV.green}
                 strokeWidth={0.75}
                 strokeDasharray="3 3"
               />
