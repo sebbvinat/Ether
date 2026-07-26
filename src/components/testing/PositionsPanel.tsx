@@ -31,6 +31,7 @@ export function PositionsPanel({ lastPrice }: Props) {
   const detail = useTestingStore((s) => s.activeDetail);
   const closePosition = useTestingStore((s) => s.closePositionManual);
   const cancelOrder = useTestingStore((s) => s.cancelOrderById);
+  const updateLevels = useTestingStore((s) => s.updatePositionLevels);
   const [tab, setTab] = useState<Tab>("open");
   const [journalTrade, setJournalTrade] = useState<Trade | null>(null);
 
@@ -50,7 +51,14 @@ export function PositionsPanel({ lastPrice }: Props) {
 
       {/* Body */}
       <div className="flex-1 overflow-auto">
-        {tab === "open" && <OpenTable positions={positions} lastPrice={lastPrice} onClose={closePosition} />}
+        {tab === "open" && (
+          <OpenTable
+            positions={positions}
+            lastPrice={lastPrice}
+            onClose={closePosition}
+            onBreakeven={(id, entry) => updateLevels(id, { sl: entry })}
+          />
+        )}
         {tab === "pending" && <PendingTable orders={orders} onCancel={cancelOrder} />}
         {tab === "closed" && (
           <ClosedTable
@@ -103,10 +111,12 @@ function OpenTable({
   positions,
   lastPrice,
   onClose,
+  onBreakeven,
 }: {
   positions: Position[];
   lastPrice: number;
   onClose: (id: string, closePrice: number, closedAt: number) => void;
+  onBreakeven: (id: string, entry: number) => void;
 }) {
   if (positions.length === 0) {
     return <Empty msg="No hay posiciones abiertas." />;
@@ -156,12 +166,28 @@ function OpenTable({
               </Td>
               <Td muted>{new Date(p.openedAt).toLocaleString()}</Td>
               <Td>
-                <button
-                  onClick={() => onClose(p.id, lastPrice, Date.now())}
-                  className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
-                >
-                  Close
-                </button>
+                <div className="flex items-center gap-1">
+                  {/* §4 — BE manual. Sólo tiene sentido en ganancia: mover el
+                      stop al entry estando en pérdida lo dispararía enseguida. */}
+                  <button
+                    onClick={() => onBreakeven(p.id, p.entry)}
+                    disabled={upnl <= 0}
+                    title={
+                      upnl > 0
+                        ? "Mover el stop al precio de entrada"
+                        : "Disponible cuando el trade esté en ganancia"
+                    }
+                    className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted enabled:hover:bg-tv-panel-hover enabled:hover:text-tv-text disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    BE
+                  </button>
+                  <button
+                    onClick={() => onClose(p.id, lastPrice, Date.now())}
+                    className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+                  >
+                    Close
+                  </button>
+                </div>
               </Td>
             </tr>
           );

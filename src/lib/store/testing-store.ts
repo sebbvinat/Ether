@@ -92,6 +92,10 @@ export interface Position {
   maxAdverse?: number;
   /** Máximo favorable (para Ideal RR). */
   maxFavorable?: number;
+  /** §4 — mover el SL al entry automáticamente al alcanzar 1R. */
+  autoBreakeven?: boolean;
+  /** §4 — true una vez que el auto-BE ya movió el stop (no se repite). */
+  beApplied?: boolean;
 }
 
 export type TradeOutcome = "win" | "loss" | "breakeven";
@@ -270,6 +274,8 @@ interface TestingState {
     tags?: string[];
     notes?: string;
     openedAtMs: number;
+    /** §4 — mover el SL al entry al alcanzar 1R. */
+    autoBreakeven?: boolean;
   }) => Promise<void>;
   cancelOrderById: (orderId: string) => Promise<void>;
   /** Wave 18.7 — ajustar niveles de una orden pendiente (drag desde el chart). */
@@ -619,6 +625,7 @@ export const useTestingStore = create<TestingState>()(
           tp: input.tp,
           tags: input.tags ?? [],
           notes: input.notes,
+          autoBreakeven: input.autoBreakeven,
           status: "filled",
           createdAt: input.openedAtMs,
           filledAt: input.openedAtMs,
@@ -636,6 +643,8 @@ export const useTestingStore = create<TestingState>()(
           tags: input.tags ?? [],
           maxAdverse: 0,
           maxFavorable: 0,
+          autoBreakeven: input.autoBreakeven,
+          beApplied: false,
         };
         const newDetail = {
           ...detail,

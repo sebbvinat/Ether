@@ -65,6 +65,8 @@ export function PlaceOrderDialog({
   // % de la cuenta que estás dispuesto a perder contra el stop).
   const [sizeMode, setSizeMode] = useState<"manual" | "risk">("risk");
   const [riskPct, setRiskPct] = useState(String(defaultRiskPct ?? 0.5));
+  // §4 — mover el stop al entry cuando el trade recorre 1R a favor.
+  const [autoBE, setAutoBE] = useState(false);
 
   // Refresh entry cuando cambia refPrice o al abrir
   useEffect(() => {
@@ -86,6 +88,7 @@ export function PlaceOrderDialog({
     setNotes("");
     setSizeMode("risk");
     setRiskPct(String(defaultRiskPct ?? 0.5));
+    setAutoBE(false);
   }
 
   async function handleSave() {
@@ -121,6 +124,7 @@ export function PlaceOrderDialog({
         tags,
         notes: notes || undefined,
         openedAtMs: currentTimeMs,
+        autoBreakeven: autoBE && slEnabled,
       });
     } else if (orderType === "limit") {
       await addOrder(
@@ -132,6 +136,7 @@ export function PlaceOrderDialog({
           tp: tpN,
           tags,
           notes: notes || undefined,
+          autoBreakeven: autoBE && slEnabled,
         }),
       );
     } else {
@@ -144,6 +149,7 @@ export function PlaceOrderDialog({
           tp: tpN,
           tags,
           notes: notes || undefined,
+          autoBreakeven: autoBE && slEnabled,
         }),
       );
     }
@@ -346,6 +352,34 @@ export function PlaceOrderDialog({
                 className="mt-2 w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-green"
               />
             )}
+          </div>
+
+          {/* §4 — Auto break-even. Requiere SL: sin stop no hay 1R que medir. */}
+          <div
+            className={cn(
+              "rounded border border-tv-border bg-tv-bg/30 px-3 py-2",
+              !slEnabled && "opacity-50",
+            )}
+          >
+            <label
+              className={cn(
+                "flex items-center justify-between text-[12px]",
+                slEnabled ? "cursor-pointer" : "cursor-not-allowed",
+              )}
+            >
+              <span className="font-medium text-tv-text">Auto break-even</span>
+              <input
+                type="checkbox"
+                checked={autoBE && slEnabled}
+                disabled={!slEnabled}
+                onChange={(e) => setAutoBE(e.target.checked)}
+              />
+            </label>
+            <p className="mt-1 text-[10px] leading-snug text-tv-text-muted">
+              {slEnabled
+                ? "Al recorrer 1R a favor, el stop se muda al precio de entrada."
+                : "Activá el Stop Loss para poder usarlo."}
+            </p>
           </div>
 
           {/* §3 — resultado del sizing por riesgo */}

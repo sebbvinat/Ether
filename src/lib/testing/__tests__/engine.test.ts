@@ -60,6 +60,9 @@ function mkPosition(over: Partial<Position> & { side: Side; entry: number }): Po
     tags: [],
     maxAdverse: 0,
     maxFavorable: 0,
+    // Como lo dejan los dos caminos reales de creación (fill del engine y
+    // openPositionNow): el BE todavía no se aplicó.
+    beApplied: false,
     ...over,
   };
 }
@@ -279,9 +282,71 @@ describe("métricas y config", () => {
     expect(intraBar.trades[0].closeReason).toBe("sl");
   });
 
-  // Depende de §4 (breakeven): Position todavía no tiene `autoBreakeven`.
-  // Habilitar al implementar esa sección.
-  it.todo("16. autoBreakeven mueve el SL al entry tras alcanzar 1R");
+  it("16. autoBreakeven mueve el SL al entry tras alcanzar 1R", () => {
+    // Long 100 con stop en 95 → riesgo 5 por unidad. 1R a favor = 105.
+    const pos = mkPosition({
+      side: "buy",
+      entry: 100,
+      sl: 95,
+      autoBreakeven: true,
+    });
+
+    // Vela que llega a 104: todavía no alcanza 1R, el stop no se mueve.
+    const casi = stepWithPosition(pos, mkCandle(T0, 101, 104, 100, 103));
+    expect(casi.positions[0].sl).toBe(95);
+    expect(casi.positions[0].beApplied).toBe(false);
+
+    // Vela que toca 105: alcanza 1R → el stop se muda al entry.
+    const alcanza = stepWithPosition(pos, mkCandle(T0, 101, 105, 100, 104));
+    expect(alcanza.positions[0].sl).toBe(100);
+    expect(alcanza.positions[0].beApplied).toBe(true);
+  });
+
+  it("16b. el BE recién protege desde la vela siguiente, no en la misma", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, sl: 95, autoBreakeven: true });
+
+    // Una vela que toca 1R (105) y vuelve a 99 NO cierra: el BE se evalúa
+    // después de los hits, así que en esta vela el stop seguía en 95.
+    const mismaVela = stepWithPosition(pos, mkCandle(T0, 101, 105, 99, 99.5));
+    expect(mismaVela.trades).toHaveLength(0);
+    expect(mismaVela.positions[0].sl).toBe(100); // ya movido para la próxima
+
+    // En la vela siguiente, con el stop ya en el entry, un retroceso cierra
+    // en breakeven en vez de perder 1R.
+    const siguiente = stepWithPosition(
+      mismaVela.positions[0],
+      mkCandle(T0 + 60, 100.5, 101, 99, 99.5),
+    );
+    expect(siguiente.trades).toHaveLength(1);
+    expect(siguiente.trades[0].closeReason).toBe("sl");
+    expect(siguiente.trades[0].closePrice).toBe(100);
+    expect(siguiente.trades[0].realizedPnL).toBe(0); // salvado
+  });
+
+  it("16c. sin el flag el stop no se mueve solo", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, sl: 95 });
+    const next = stepWithPosition(pos, mkCandle(T0, 101, 110, 100, 108));
+    expect(next.positions[0].sl).toBe(95);
+  });
+
+  it("16d. funciona igual en short y no se reaplica una vez puesto", () => {
+    // Short 100 con stop en 105 → 1R a favor = 95.
+    const pos = mkPosition({
+      side: "sell",
+      entry: 100,
+      sl: 105,
+      autoBreakeven: true,
+    });
+    const first = stepWithPosition(pos, mkCandle(T0, 99, 100, 95, 96));
+    expect(first.positions[0].sl).toBe(100);
+    expect(first.positions[0].beApplied).toBe(true);
+
+    // Con beApplied ya en true, el stop queda donde el usuario lo deje —
+    // el auto-BE no vuelve a pisarlo.
+    const moved = { ...first.positions[0], sl: 98 };
+    const second = stepWithPosition(moved, mkCandle(T0 + 60, 96, 97, 90, 91));
+    expect(second.positions[0].sl).toBe(98);
+  });
 });
 
 // ─── 17-18: cierre manual y unrealized ─────────────────────────────────────

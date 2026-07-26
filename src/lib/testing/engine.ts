@@ -107,6 +107,8 @@ export function stepEngine(
       tags: order.tags,
       maxAdverse: 0,
       maxFavorable: 0,
+      autoBreakeven: order.autoBreakeven,
+      beApplied: false,
     });
   }
 
@@ -147,9 +149,24 @@ export function stepEngine(
       newTrades.push(trade);
       realizedPnL += trade.realizedPnL;
     } else {
+      // §4 — auto-breakeven: al alcanzar 1R a favor, el stop se muda al entry.
+      // Se evalúa DESPUÉS de los hits de SL/TP, así que recién toma efecto en
+      // la vela siguiente. Eso evita la ambigüedad de una vela que toca 1R y
+      // vuelve al entry: sin este orden no se sabría si el BE ya estaba puesto.
+      let sl = pos.sl;
+      let beApplied = pos.beApplied;
+      if (pos.autoBreakeven && !beApplied && pos.sl !== undefined) {
+        const risk = Math.abs(pos.entry - pos.sl) * pos.size;
+        if (risk > 0 && maxFavorable >= risk) {
+          sl = pos.entry;
+          beApplied = true;
+        }
+      }
       // Sigue abierta
       newPositions.push({
         ...pos,
+        sl,
+        beApplied,
         unrealizedPnL: unrealized,
         maxAdverse,
         maxFavorable,
@@ -359,6 +376,8 @@ export function makeMarketOrder(input: {
   tp?: number;
   tags?: string[];
   notes?: string;
+  /** §4 — mover el SL al entry al alcanzar 1R. */
+  autoBreakeven?: boolean;
 }): Order {
   return {
     id: uid(),
@@ -370,6 +389,7 @@ export function makeMarketOrder(input: {
     tp: input.tp,
     tags: input.tags ?? [],
     notes: input.notes,
+    autoBreakeven: input.autoBreakeven,
     status: "pending",
     createdAt: Date.now(),
   };
@@ -383,6 +403,8 @@ export function makeLimitOrder(input: {
   tp?: number;
   tags?: string[];
   notes?: string;
+  /** §4 — mover el SL al entry al alcanzar 1R. */
+  autoBreakeven?: boolean;
 }): Order {
   return {
     id: uid(),
@@ -394,6 +416,7 @@ export function makeLimitOrder(input: {
     tp: input.tp,
     tags: input.tags ?? [],
     notes: input.notes,
+    autoBreakeven: input.autoBreakeven,
     status: "pending",
     createdAt: Date.now(),
   };
@@ -407,6 +430,8 @@ export function makeStopOrder(input: {
   tp?: number;
   tags?: string[];
   notes?: string;
+  /** §4 — mover el SL al entry al alcanzar 1R. */
+  autoBreakeven?: boolean;
 }): Order {
   return {
     id: uid(),
@@ -418,6 +443,7 @@ export function makeStopOrder(input: {
     tp: input.tp,
     tags: input.tags ?? [],
     notes: input.notes,
+    autoBreakeven: input.autoBreakeven,
     status: "pending",
     createdAt: Date.now(),
   };
