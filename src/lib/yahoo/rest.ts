@@ -28,6 +28,21 @@ const TF_MAP: Record<Timeframe, { interval: string; range: string }> = {
 };
 
 
+/**
+ * Wave 18.16 — cuánta historia sirve Yahoo por interval, en días. Ausente =
+ * sin límite práctico. Pedir más atrás de esto devuelve 422, no una respuesta
+ * recortada, así que hay que clampear antes de salir.
+ */
+const YAHOO_MAX_HISTORY_DAYS: Record<string, number | undefined> = {
+  "1m": 7,
+  "2m": 60,
+  "5m": 60,
+  "15m": 60,
+  "30m": 60,
+  "90m": 60,
+  "60m": 730,
+};
+
 interface YahooChartResponse {
   chart: {
     result: Array<{
@@ -51,15 +66,48 @@ interface YahooChartResponse {
   };
 }
 
+/**
+ * Wave 18.16 — un solo lugar donde se decide CÓMO se llega al chart de Yahoo.
+ *
+ * Desde el browser hay que pasar por nuestro proxy: Yahoo no manda CORS.
+ * Desde el server (route handlers, cron de ingest) el proxy no sirve —
+ * `fetch("/api/…")` sin origen es "Invalid URL" en Node— así que vamos
+ * directo al upstream. En los dos casos hace falta el User-Agent de
+ * navegador: Yahoo responde 4xx a los clientes que no lo mandan.
+ */
+async function fetchYahooChart(
+  yahooSymbol: string,
+  interval: string,
+  rangeQuery: string,
+): Promise<YahooChartResponse> {
+  const onServer = typeof window === "undefined";
+  const url = onServer
+    ? `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(
+        yahooSymbol,
+      )}?interval=${interval}&${rangeQuery}`
+    : `/api/yahoo/chart?symbol=${encodeURIComponent(
+        yahooSymbol,
+      )}&interval=${interval}&${rangeQuery}`;
+  const res = await fetch(url, {
+    cache: "no-store",
+    headers: onServer
+      ? {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+          Accept: "application/json",
+        }
+      : undefined,
+  });
+  if (!res.ok) throw new Error(`yahoo chart ${res.status}`);
+  return (await res.json()) as YahooChartResponse;
+}
+
 export async function fetchYahooKlines(
   yahooSymbol: string,
   tf: Timeframe,
 ): Promise<Candle[]> {
   const { interval, range } = TF_MAP[tf];
-  const url = `/api/yahoo/chart?symbol=${encodeURIComponent(yahooSymbol)}&interval=${interval}&range=${range}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`yahoo chart ${res.status}`);
-  const json = (await res.json()) as YahooChartResponse;
+  const json = await fetchYahooChart(yahooSymbol, interval, `range=${range}`);
   const r = json.chart.result?.[0];
   if (!r) throw new Error(json.chart.error?.description ?? "yahoo: no data");
   const ts = r.timestamp ?? [];
@@ -95,8 +143,10 @@ export async function fetchYahooKlines(
  *   - 60m: últimos 730 días
  *   - 1d+: sin límite práctico
  *
- * Si `startMs` cae más atrás del límite, Yahoo igual devuelve lo que tiene
- * (usualmente los datos más recientes que caben). No es un error.
+ * Wave 18.16 — pedir más atrás del límite NO devuelve "lo que hay": Yahoo
+ * contesta 422 y se pierde el rango entero. Por eso clampeamos `period1` al
+ * límite del interval y devolvemos la ventana que sí existe. El caller ve
+ * menos velas de las que pidió, que es la verdad de lo que Yahoo tiene.
  */
 export async function fetchYahooRange(
   yahooSymbol: string,
@@ -105,12 +155,19 @@ export async function fetchYahooRange(
   endMs: number,
 ): Promise<Candle[]> {
   const { interval } = TF_MAP[tf];
-  const p1 = Math.floor(startMs / 1000);
+  const maxDays = YAHOO_MAX_HISTORY_DAYS[interval];
+  const floorMs =
+    maxDays === undefined ? -Infinity : Date.now() - maxDays * 86_400_000;
+  const p1 = Math.floor(Math.max(startMs, floorMs) / 1000);
   const p2 = Math.floor(endMs / 1000);
-  const url = `/api/yahoo/chart?symbol=${encodeURIComponent(yahooSymbol)}&interval=${interval}&period1=${p1}&period2=${p2}`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`yahoo chart ${res.status}`);
-  const json = (await res.json()) as YahooChartResponse;
+  // Si la ventana pedida queda entera fuera del alcance del interval, no hay
+  // nada que traer: pedirlo igual es un 422 seguro.
+  if (p2 <= p1) return [];
+  const json = await fetchYahooChart(
+    yahooSymbol,
+    interval,
+    `period1=${p1}&period2=${p2}`,
+  );
   const r = json.chart.result?.[0];
   if (!r) throw new Error(json.chart.error?.description ?? "yahoo: no data");
   const ts = r.timestamp ?? [];
@@ -144,10 +201,7 @@ export interface YahooQuote {
 export async function fetchYahooQuote(
   yahooSymbol: string,
 ): Promise<YahooQuote> {
-  const url = `/api/yahoo/chart?symbol=${encodeURIComponent(yahooSymbol)}&interval=1m&range=1d`;
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) throw new Error(`yahoo quote ${res.status}`);
-  const json = (await res.json()) as YahooChartResponse;
+  const json = await fetchYahooChart(yahooSymbol, "1m", "range=1d");
   const r = json.chart.result?.[0];
   if (!r) throw new Error("yahoo: no data");
   return {
