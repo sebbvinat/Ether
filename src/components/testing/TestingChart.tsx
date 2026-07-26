@@ -29,6 +29,7 @@ import { ema, sma, bollinger, vwap, rsi, macd, stochastic } from "@/lib/indicato
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
 import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
 import {
+  engineConfigFor,
   useTestingStore,
   type SessionMeta,
   type Position,
@@ -434,7 +435,7 @@ export function TestingChart({
       realizedPnL: sess.realizedPnL,
     };
     for (const c of newCandles) {
-      state = stepEngine(state, c, { sessionId: sess.id });
+      state = stepEngine(state, c, engineConfigFor(sess));
     }
     const lastClose = store.all.filter((c) => c.time <= curSec).at(-1)?.close;
     if (lastClose !== undefined) {
@@ -470,7 +471,7 @@ export function TestingChart({
       balance: sess.currentBalance,
       realizedPnL: sess.realizedPnL,
     };
-    const next = stepEngine(state, curCandle, { sessionId: sess.id });
+    const next = stepEngine(state, curCandle, engineConfigFor(sess));
     const changed =
       next.positions.length !== state.positions.length ||
       next.trades.length !== state.trades.length;

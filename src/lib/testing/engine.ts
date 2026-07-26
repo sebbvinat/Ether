@@ -39,6 +39,11 @@ export interface EngineConfig {
   /** Si true, los fills usan high/low intra-bar (más realista).
    *  Si false, sólo close (más conservador). Default true. */
   intraBarFills?: boolean;
+  /** §5 — spread en unidades de PRECIO (el caller hace spreadTicks × tickSize).
+   *  Modelo: las velas son "bid", así que toda COMPRA se llena `spreadAmount`
+   *  peor (entrada de un long, salida de un short). Las ventas van al precio
+   *  de la vela. Default 0. */
+  spreadAmount?: number;
 }
 
 const uid = (): string => {
@@ -65,6 +70,7 @@ export function stepEngine(
 ): EngineState {
   const intraBar = config.intraBarFills !== false; // default true
   const commission = config.commissionPerUnit ?? 0;
+  const spread = config.spreadAmount ?? 0;
   const newOrders: Order[] = [];
   const newPositions: Position[] = [];
   const newTrades: Trade[] = [...state.trades];
@@ -76,7 +82,7 @@ export function stepEngine(
       newOrders.push(order);
       continue;
     }
-    const filled = tryFillOrder(order, candle, intraBar);
+    const filled = tryFillOrder(order, candle, intraBar, spread);
     if (!filled.fill) {
       newOrders.push(order);
       continue;
@@ -129,15 +135,15 @@ export function stepEngine(
     if (slHit && tpHit) {
       // Ambos en la misma vela: ambigüedad. Resolución conservadora →
       // cuenta como SL (peor caso para el trader).
-      const trade = closeTradeAtPrice(pos, pos.sl!, "sl", candle, commission, config.sessionId, maxAdverse, maxFavorable);
+      const trade = closeTradeAtPrice(pos, pos.sl!, "sl", candle, commission, config.sessionId, maxAdverse, maxFavorable, spread);
       newTrades.push(trade);
       realizedPnL += trade.realizedPnL;
     } else if (slHit) {
-      const trade = closeTradeAtPrice(pos, pos.sl!, "sl", candle, commission, config.sessionId, maxAdverse, maxFavorable);
+      const trade = closeTradeAtPrice(pos, pos.sl!, "sl", candle, commission, config.sessionId, maxAdverse, maxFavorable, spread);
       newTrades.push(trade);
       realizedPnL += trade.realizedPnL;
     } else if (tpHit) {
-      const trade = closeTradeAtPrice(pos, pos.tp!, "tp", candle, commission, config.sessionId, maxAdverse, maxFavorable);
+      const trade = closeTradeAtPrice(pos, pos.tp!, "tp", candle, commission, config.sessionId, maxAdverse, maxFavorable, spread);
       newTrades.push(trade);
       realizedPnL += trade.realizedPnL;
     } else {
@@ -180,6 +186,7 @@ export function manualClose(
     config.sessionId,
     pos.maxAdverse ?? 0,
     pos.maxFavorable ?? 0,
+    config.spreadAmount ?? 0,
   );
   return {
     ...state,
@@ -221,9 +228,14 @@ function tryFillOrder(
   order: Order,
   candle: Candle,
   intraBar: boolean,
+  spreadAmount = 0,
 ): { fill: false } | { fill: true; price: number } {
+  // §5 — las velas son "bid": comprar cuesta el spread, vender no.
+  const withSpread = (p: number) =>
+    order.side === "buy" ? p + spreadAmount : p;
+
   if (order.type === "market") {
-    return { fill: true, price: candle.open };
+    return { fill: true, price: withSpread(candle.open) };
   }
   const lo = intraBar ? candle.low : Math.min(candle.open, candle.close);
   const hi = intraBar ? candle.high : Math.max(candle.open, candle.close);
@@ -232,10 +244,10 @@ function tryFillOrder(
     // Buy limit: se llena si price ≤ entry (o sea low ≤ entry)
     // Sell limit: se llena si price ≥ entry (high ≥ entry)
     if (order.side === "buy" && lo <= order.entryPrice) {
-      return { fill: true, price: Math.min(order.entryPrice, candle.open) };
+      return { fill: true, price: withSpread(Math.min(order.entryPrice, candle.open)) };
     }
     if (order.side === "sell" && hi >= order.entryPrice) {
-      return { fill: true, price: Math.max(order.entryPrice, candle.open) };
+      return { fill: true, price: withSpread(Math.max(order.entryPrice, candle.open)) };
     }
     return { fill: false };
   }
@@ -243,10 +255,10 @@ function tryFillOrder(
     // Buy stop: se llena si price ≥ entry
     // Sell stop: se llena si price ≤ entry
     if (order.side === "buy" && hi >= order.entryPrice) {
-      return { fill: true, price: Math.max(order.entryPrice, candle.open) };
+      return { fill: true, price: withSpread(Math.max(order.entryPrice, candle.open)) };
     }
     if (order.side === "sell" && lo <= order.entryPrice) {
-      return { fill: true, price: Math.min(order.entryPrice, candle.open) };
+      return { fill: true, price: withSpread(Math.min(order.entryPrice, candle.open)) };
     }
     return { fill: false };
   }
@@ -275,15 +287,20 @@ function hitsTP(pos: Position, candle: Candle, intraBar: boolean): boolean {
 
 function closeTradeAtPrice(
   pos: Position,
-  closePrice: number,
+  rawClosePrice: number,
   reason: Trade["closeReason"],
   candle: Candle,
   commission: number,
   sessionId: string,
   maxAdverse: number,
   maxFavorable: number,
+  spreadAmount = 0,
 ): Trade {
   const dir = pos.side === "buy" ? 1 : -1;
+  // §5 — cerrar un SHORT es comprar, así que paga el spread. Cerrar un long
+  // es vender: va al precio de la vela.
+  const closePrice =
+    pos.side === "sell" ? rawClosePrice + spreadAmount : rawClosePrice;
   const grossPnL = (closePrice - pos.entry) * pos.size * dir;
   const commissionTotal = commission * pos.size * 2; // ida + vuelta
   const realizedPnL = grossPnL - commissionTotal;

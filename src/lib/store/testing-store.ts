@@ -26,11 +26,22 @@ import {
   deleteSessionData,
 } from "@/lib/testing/storage";
 import { HistoryStack } from "@/lib/history";
+import { manualClose, type EngineConfig } from "@/lib/testing/engine";
 
 /** §1 — historial de dibujos de la sesión activa. Vive fuera del store porque
  *  es estado efímero de UI: no se persiste ni dispara re-renders. Se limpia al
  *  cambiar de sesión para no mezclar contextos. */
 const drawingsHistory = new HistoryStack<Drawing[]>();
+
+/** §5 — arma la config del engine desde los costos de la sesión. Única fuente
+ *  de esa conversión: la usa tanto el store como TestingChart. */
+export function engineConfigFor(meta: SessionMeta): EngineConfig {
+  return {
+    sessionId: meta.id,
+    commissionPerUnit: meta.commissionPerUnit ?? 0,
+    spreadAmount: (meta.spreadTicks ?? 0) * (meta.tickSize ?? 0.01),
+  };
+}
 
 // ─── tipos ───────────────────────────────────────────────────────────────────
 
@@ -169,6 +180,15 @@ export interface SessionMeta {
   replayStepSize: number;
   /** Speed del autoplay: ms entre cada step. Default 1000. */
   replayIntervalMs: number;
+  /** §5 — costos de trading. Comisión en USD por unidad POR LADO (el
+   *  round-trip cobra el doble). Default 0. */
+  commissionPerUnit?: number;
+  /** §5 — spread en ticks. Las velas se tratan como "bid": toda compra se
+   *  llena `spreadTicks × tickSize` peor. Default 0. */
+  spreadTicks?: number;
+  /** §5 — tamaño del tick del instrumento, para convertir spreadTicks a
+   *  unidades de precio. Default 0.01. */
+  tickSize?: number;
   /** Descripción opcional del trader. */
   description?: string;
   /** Tags opcionales para agrupar sesiones (ej. "strategy: ICT", "phase: 1"). */
@@ -355,6 +375,9 @@ export const useTestingStore = create<TestingState>()(
           chartTimeframe: input.timeframe,
           replayStepSize: 1,
           replayIntervalMs: 1000,
+          commissionPerUnit: input.commissionPerUnit ?? 0,
+          spreadTicks: input.spreadTicks ?? 0,
+          tickSize: input.tickSize ?? 0.01,
           description: input.description,
           tags: input.tags ?? [],
           createdAt: now,
@@ -574,15 +597,20 @@ export const useTestingStore = create<TestingState>()(
       openPositionNow: async (input) => {
         const active = get().activeSessionId;
         const detail = get().activeDetail;
-        if (!active || !detail) return;
+        const meta = get().sessions.find((s) => s.id === active);
+        if (!active || !detail || !meta) return;
         const orderId = uid();
+        // §5 — este path no pasa por el engine (fill inmediato), así que
+        // aplicamos el spread acá: comprar cuesta, vender no.
+        const spread = (meta.spreadTicks ?? 0) * (meta.tickSize ?? 0.01);
+        const entry = input.side === "buy" ? input.entry + spread : input.entry;
         // Order sintética "filled" para historial
         const order: Order = {
           id: orderId,
           side: input.side,
           type: "market",
           size: input.size,
-          entryPrice: input.entry,
+          entryPrice: entry,
           sl: input.sl,
           tp: input.tp,
           tags: input.tags ?? [],
@@ -596,7 +624,7 @@ export const useTestingStore = create<TestingState>()(
           orderId,
           side: input.side,
           size: input.size,
-          entry: input.entry,
+          entry,
           sl: input.sl,
           tp: input.tp,
           openedAt: input.openedAtMs,
@@ -647,65 +675,49 @@ export const useTestingStore = create<TestingState>()(
       closePositionManual: async (positionId, closePrice, closedAtMs) => {
         const active = get().activeSessionId;
         const detail = get().activeDetail;
-        if (!active || !detail) return;
-        const pos = detail.positions.find((p) => p.id === positionId);
-        if (!pos) return;
-        const dir = pos.side === "buy" ? 1 : -1;
-        const realized = (closePrice - pos.entry) * pos.size * dir;
-        const outcome: TradeOutcome =
-          realized > 0 ? "win" : realized < 0 ? "loss" : "breakeven";
-        let rMultiple: number | undefined;
-        let idealRR: number | undefined;
-        if (pos.sl !== undefined) {
-          const risk = Math.abs(pos.entry - pos.sl) * pos.size;
-          if (risk > 0) {
-            rMultiple = realized / risk;
-            idealRR = (pos.maxFavorable ?? 0) / risk;
-          }
-        }
-        const trade: Trade = {
-          id: uid(),
-          sessionId: active,
-          side: pos.side,
-          size: pos.size,
-          entry: pos.entry,
-          sl: pos.sl,
-          tp: pos.tp,
-          closePrice,
-          closeReason: "manual",
-          openedAt: pos.openedAt,
-          closedAt: closedAtMs,
-          realizedPnL: realized,
-          commission: 0,
-          outcome,
-          rMultiple,
-          idealRR,
-          maxAdverse: pos.maxAdverse ?? 0,
-          maxFavorable: pos.maxFavorable ?? 0,
-          tags: pos.tags,
+        const meta = get().sessions.find((s) => s.id === active);
+        if (!active || !detail || !meta) return;
+        // §5 — delegamos al engine en vez de recalcular el PnL a mano: así la
+        // comisión, el spread y el R-multiple salen de una sola fuente de
+        // verdad (y quedan cubiertos por los tests del engine).
+        const before = {
+          orders: detail.orders,
+          positions: detail.positions,
+          trades: detail.trades,
+          balance: meta.currentBalance,
+          realizedPnL: meta.realizedPnL,
         };
+        const after = manualClose(
+          before,
+          positionId,
+          closePrice,
+          // El engine sólo usa candle.time para timestampear el cierre.
+          { time: Math.floor(closedAtMs / 1000), open: closePrice, high: closePrice, low: closePrice, close: closePrice, volume: 0 },
+          engineConfigFor(meta),
+        );
+        if (after === before) return; // posición inexistente
+        const trade = after.trades[after.trades.length - 1];
         const newDetail = {
           ...detail,
-          positions: detail.positions.filter((p) => p.id !== positionId),
-          trades: [...detail.trades, trade],
+          positions: after.positions,
+          trades: after.trades,
         };
-        // Update meta: realizedPnL, balance, totals
-        const meta = get().sessions.find((s) => s.id === active);
-        const updatedMeta = meta
-          ? {
-              realizedPnL: meta.realizedPnL + realized,
-              currentBalance: meta.currentBalance + realized,
-              totalTrades: meta.totalTrades + 1,
-              wins: meta.wins + (outcome === "win" ? 1 : 0),
-              losses: meta.losses + (outcome === "loss" ? 1 : 0),
-              updatedAt: Date.now(),
-            }
-          : null;
+        const realized = trade.realizedPnL;
         set((s) => ({
           activeDetail: newDetail,
-          sessions: updatedMeta
-            ? s.sessions.map((x) => (x.id === active ? { ...x, ...updatedMeta } : x))
-            : s.sessions,
+          sessions: s.sessions.map((x) =>
+            x.id === active
+              ? {
+                  ...x,
+                  realizedPnL: x.realizedPnL + realized,
+                  currentBalance: x.currentBalance + realized,
+                  totalTrades: x.totalTrades + 1,
+                  wins: x.wins + (trade.outcome === "win" ? 1 : 0),
+                  losses: x.losses + (trade.outcome === "loss" ? 1 : 0),
+                  updatedAt: Date.now(),
+                }
+              : x,
+          ),
         }));
         await idbSet(sessionDetailKey(active), newDetail);
       },
@@ -829,6 +841,10 @@ export const useTestingStore = create<TestingState>()(
           replayStepSize: sess.replayStepSize ?? 1,
           replayIntervalMs: sess.replayIntervalMs ?? 1000,
           replayCursorMs: sess.replayCursorMs ?? sess.startDate,
+          // §5 — sesiones viejas no tenían costos: default sin fricción.
+          commissionPerUnit: sess.commissionPerUnit ?? 0,
+          spreadTicks: sess.spreadTicks ?? 0,
+          tickSize: sess.tickSize ?? 0.01,
         }));
         return { ...currentState, ...(p ?? {}), sessions };
       },
