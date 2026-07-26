@@ -91,6 +91,20 @@ export function TestingChart({
   const draftRef = useRef(draft);
   draftRef.current = draft;
 
+  // §2 — la página emite este evento con los atajos de teclado (T/H/R/F/L/S/E/Esc).
+  // Se hace por evento porque el estado `tool` vive acá adentro.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const t = (e as CustomEvent<{ tool: DrawingTool }>).detail?.tool;
+      if (t) {
+        setTool(t);
+        setDraft(null);
+      }
+    };
+    window.addEventListener("ether-testing:set-tool", h);
+    return () => window.removeEventListener("ether-testing:set-tool", h);
+  }, []);
+
   const detail = useTestingStore((s) => s.activeDetail);
   const applyEngineState = useTestingStore((s) => s.applyEngineState);
 

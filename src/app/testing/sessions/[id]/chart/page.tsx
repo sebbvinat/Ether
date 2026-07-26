@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
+import { isTypingTarget } from "@/lib/shortcuts";
 import { TF_MINUTES } from "@/lib/testing/candles";
 import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
@@ -62,6 +63,26 @@ const SPEEDS: { ms: number; label: string }[] = [
   { ms: 50, label: "20x" },
 ];
 
+/** Atajos de tecla → herramienta de dibujo (§2). Se emiten como CustomEvent
+ *  porque el estado `tool` vive dentro de TestingChart. */
+const TOOL_KEYS: Record<string, string> = {
+  t: "trendline",
+  h: "hline",
+  r: "rect",
+  f: "fib",
+  l: "long",
+  s: "short",
+  e: "eraser",
+  Escape: "cursor",
+};
+
+/** ms → valor de un <input type="datetime-local"> en hora LOCAL. */
+function msToLocalInput(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export default function SessionChartPage({ params }: Props) {
   const { id } = use(params);
   const session = useTestingStore((s) => s.sessions.find((x) => x.id === id));
@@ -80,6 +101,10 @@ export default function SessionChartPage({ params }: Props) {
   const [closedMode, setClosedMode] = useState<ClosedTradesMode>("drawings");
   const [candles1m, setCandles1m] = useState<{ time: number }[]>([]);
   const [showPanel, setShowPanel] = useState(true);
+  /** §2 — con autoplay activo, pausar tras cada vela para decidir sin apuro. */
+  const [pauseEachBar, setPauseEachBar] = useState(false);
+  /** §2 — popover del jump-to-date. */
+  const [jumpOpen, setJumpOpen] = useState(false);
 
   // Asegurarse de que la sesión activa esté seteada (carga IDB)
   useEffect(() => {
@@ -101,6 +126,8 @@ export default function SessionChartPage({ params }: Props) {
   endRef.current = session?.endDate ?? 0;
   const stepMsRef = useRef(stepMs);
   stepMsRef.current = stepMs;
+  const pauseEachBarRef = useRef(pauseEachBar);
+  pauseEachBarRef.current = pauseEachBar;
 
   useEffect(() => {
     if (!autoplay || !session) return;
@@ -113,6 +140,8 @@ export default function SessionChartPage({ params }: Props) {
         return;
       }
       setReplayCursor(next);
+      // §2 — "Pausar c/vela": avanza una y frena, para decidir bar-by-bar.
+      if (pauseEachBarRef.current) setAutoplay(false);
     }, intervalMs);
     return () => clearInterval(interval);
   }, [autoplay, session, setReplayCursor]);
@@ -130,6 +159,53 @@ export default function SessionChartPage({ params }: Props) {
 
   // Timestamp (ms) del cursor de replay — fuente de verdad.
   const currentTimeMs = session?.replayCursorMs ?? session?.startDate ?? Date.now();
+
+  // §2 — atajos de teclado del replay + selección de herramienta.
+  // Nota: L y S quedan tomadas por las tools long/short, así que los atajos
+  // de Go To (Y/Z/I/L/N estilo FXReplay) no se implementan — Go To va por menú.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (isTypingTarget(document.activeElement)) return;
+      if (!session) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      const k = e.key;
+      if (k === " ") {
+        e.preventDefault();
+        setAutoplay((v) => !v);
+        return;
+      }
+      if (k === "ArrowRight") {
+        e.preventDefault();
+        setReplayCursor(currentTimeMs + (e.shiftKey ? 10 : 1) * stepMs);
+        return;
+      }
+      if (k === "ArrowLeft") {
+        e.preventDefault();
+        setReplayCursor(currentTimeMs - (e.shiftKey ? 10 : 1) * stepMs);
+        return;
+      }
+      if (k === "Home") {
+        e.preventDefault();
+        setReplayCursor(session.startDate);
+        return;
+      }
+      if (k === "End") {
+        e.preventDefault();
+        setReplayCursor(session.endDate);
+        return;
+      }
+      const tool = TOOL_KEYS[k.length === 1 ? k.toLowerCase() : k];
+      if (tool) {
+        // Esc además cierra el popover de jump-to-date.
+        if (k === "Escape") setJumpOpen(false);
+        window.dispatchEvent(
+          new CustomEvent("ether-testing:set-tool", { detail: { tool } }),
+        );
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [session, currentTimeMs, stepMs, setReplayCursor]);
 
   const handleFastBuy = useCallback(
     async (side: "buy" | "sell") => {
@@ -374,9 +450,30 @@ export default function SessionChartPage({ params }: Props) {
           </select>
         </div>
 
-        {/* Progress */}
-        <div className="ml-3 flex flex-1 items-center gap-2">
-          <span className="whitespace-nowrap text-[10px] font-mono text-tv-text-muted">
+        {/* Pausar tras cada vela (§2) */}
+        <label
+          className="flex cursor-pointer items-center gap-1 text-[10px] text-tv-text-muted hover:text-tv-text"
+          title="Con play activo, avanza una vela y pausa"
+        >
+          <input
+            type="checkbox"
+            checked={pauseEachBar}
+            onChange={(e) => setPauseEachBar(e.target.checked)}
+            className="h-3 w-3 accent-tv-blue"
+          />
+          Pausar c/vela
+        </label>
+
+        {/* Progress + jump-to-date (§2) */}
+        <div className="relative ml-3 flex flex-1 items-center gap-2">
+          <button
+            onClick={() => setJumpOpen((v) => !v)}
+            className={cn(
+              "whitespace-nowrap rounded px-1.5 py-0.5 font-mono text-[10px] hover:bg-tv-panel-hover hover:text-tv-text",
+              jumpOpen ? "bg-tv-panel-hover text-tv-text" : "text-tv-text-muted",
+            )}
+            title="Saltar a una fecha"
+          >
             {cursorDate.toLocaleString("es-AR", {
               day: "2-digit",
               month: "short",
@@ -384,7 +481,36 @@ export default function SessionChartPage({ params }: Props) {
               hour: "2-digit",
               minute: "2-digit",
             })}
-          </span>
+          </button>
+          {jumpOpen && (
+            <>
+              <button
+                type="button"
+                aria-label="Cerrar"
+                onClick={() => setJumpOpen(false)}
+                className="fixed inset-0 z-10 cursor-default"
+              />
+              <div className="absolute bottom-full left-0 z-20 mb-1 rounded border border-tv-border bg-tv-panel p-2 shadow-lg">
+                <div className="mb-1 text-[9px] uppercase tracking-wider text-tv-text-muted">
+                  Saltar a
+                </div>
+                <input
+                  type="datetime-local"
+                  value={msToLocalInput(currentTimeMs)}
+                  min={msToLocalInput(session.startDate)}
+                  max={msToLocalInput(session.endDate)}
+                  onChange={(e) => {
+                    const ms = new Date(e.target.value).getTime();
+                    if (Number.isFinite(ms)) {
+                      setReplayCursor(ms); // el store clampea al rango
+                      setJumpOpen(false);
+                    }
+                  }}
+                  className="rounded border border-tv-border bg-tv-bg px-2 py-1 font-mono text-[11px] text-tv-text"
+                />
+              </div>
+            </>
+          )}
           <div className="h-1 flex-1 overflow-hidden rounded bg-tv-panel">
             <div
               className="h-full bg-tv-blue"
