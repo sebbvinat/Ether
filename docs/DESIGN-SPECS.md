@@ -802,3 +802,43 @@ function tradesOfCursorDay(trades, cursorMs) {
 | 14 | §15 íconos SVG | — | M |
 | 15 | §14 symbol search | — | M |
 | 16 | §16 checklist + límites | — | M |
+
+---
+
+## Estado — todas las secciones implementadas
+
+| Sección | Commit | Notas |
+|---|---|---|
+| §8 tests del engine | `7273a6f` | base de la suite |
+| §2 atajos + jump-to-date | `41c9921` | |
+| §1 undo/redo de dibujos | `03f93b4` | snapshots, no persiste al recargar |
+| §5 comisiones/spread | `cc9f26c` | |
+| §3 sizing por riesgo | `1cae10c` | |
+| §4 breakeven | — | incluido en §5/§7 |
+| §7 edición inline | — | incluido con §4 |
+| §9 settings de indicadores | `ef7083d` | |
+| §10 polish visual | `02a9f3a` | paleta única en `lib/theme.ts` |
+| §6 cierre parcial | `2f2c0a9` | |
+| §13 backfill Supabase | `89ac06a` | requiere los pasos de infra de abajo |
+| §11 intra-bar playback | `1c38a8d` | |
+| §12 multi-TF sync | `fabb59d` | |
+| §15 íconos SVG | `65fda30` | "Patrones" sigue con glifo |
+| §14 symbol search | `9ee2b82` | |
+| §16 checklist + límites | `7ac87e1` | |
+
+Fuera del spec, en el camino: `3eb8b84` arregla que NQ/SPX/DJI dieran 500
+desde el server (URL relativa al proxy de Yahoo + 422 por pedir más historia
+de la que Yahoo sirve por interval).
+
+### Lo que queda del lado de la infra (no es código)
+
+1. Vercel → Settings → Deployment Protection → apagar "Require Log In"
+   (con esto prendido el cron recibe un 302 y no ingesta nada).
+2. Correr en Supabase la migración de `public.candles(symbol, tf, time_sec,
+   o, h, l, c, v)` con su PK, índice y RLS.
+3. Cargar en Vercel las env vars `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` y
+   `CRON_SECRET`. La service key que se pegó en el chat quedó comprometida:
+   rotarla antes de usarla.
+4. GitHub Actions → "Ingest candles hourly" → Run workflow, para verificar.
+5. Para traer historia vieja: GitHub Actions → "Backfill histórico" →
+   Run workflow, eligiendo símbolo, TF y fecha de arranque.
