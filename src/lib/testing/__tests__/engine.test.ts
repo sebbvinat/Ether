@@ -220,9 +220,46 @@ describe("métricas y config", () => {
     expect(trade.realizedPnL).toBe(30 - 12); // bruto (110−100)×3 menos comisión
   });
 
-  // Depende de §5 (comisiones y spread por sesión): EngineConfig todavía no
-  // tiene `spreadAmount`. Habilitar al implementar esa sección.
-  it.todo("14. spreadAmount=0.5 hace que un buy market se llene a 100.5");
+  it("14. spreadAmount=0.5 hace que un buy market se llene a 100.5", () => {
+    const cfgSpread: EngineConfig = { sessionId: SESSION_ID, spreadAmount: 0.5 };
+    const buy = makeMarketOrder({ side: "buy", size: 1, refPrice: 100 });
+    const nextBuy = stepWithOrder(buy, mkCandle(T0, 100, 102, 98, 101), cfgSpread);
+    expect(nextBuy.positions[0].entry).toBe(100.5); // comprar paga el spread
+
+    // Vender va al precio de la vela: las velas son "bid".
+    const sell = makeMarketOrder({ side: "sell", size: 1, refPrice: 100 });
+    const nextSell = stepWithOrder(sell, mkCandle(T0, 100, 102, 98, 101), cfgSpread);
+    expect(nextSell.positions[0].entry).toBe(100);
+  });
+
+  it("14b. cerrar un SHORT paga el spread (es una compra); cerrar un long no", () => {
+    const cfgSpread: EngineConfig = { sessionId: SESSION_ID, spreadAmount: 0.5 };
+
+    // Short con TP en 90: cierra comprando → 90.5, así que gana menos.
+    const short = mkPosition({ side: "sell", entry: 100, tp: 90 });
+    const nShort = stepWithPosition(short, mkCandle(T0, 95, 96, 89, 91), cfgSpread);
+    expect(nShort.trades[0].closePrice).toBe(90.5);
+    expect(nShort.trades[0].realizedPnL).toBe(9.5); // (90.5−100)×(−1)
+
+    // Long con TP en 110: cierra vendiendo → sin spread.
+    const long = mkPosition({ side: "buy", entry: 100, tp: 110 });
+    const nLong = stepWithPosition(long, mkCandle(T0, 105, 111, 104, 109), cfgSpread);
+    expect(nLong.trades[0].closePrice).toBe(110);
+    expect(nLong.trades[0].realizedPnL).toBe(10);
+  });
+
+  it("14c. sin costos configurados el PnL es idéntico (regresión cero)", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, tp: 110 });
+    const candle = mkCandle(T0, 105, 111, 104, 109);
+    const sinCostos = stepWithPosition(pos, candle);
+    const conCeros = stepWithPosition(pos, candle, {
+      sessionId: SESSION_ID,
+      commissionPerUnit: 0,
+      spreadAmount: 0,
+    });
+    expect(conCeros.trades[0].realizedPnL).toBe(sinCostos.trades[0].realizedPnL);
+    expect(conCeros.trades[0].closePrice).toBe(sinCostos.trades[0].closePrice);
+  });
 
   it("15. con intraBarFills=false el SL no se dispara por la mecha", () => {
     const pos = mkPosition({ side: "buy", entry: 100, sl: 95 });

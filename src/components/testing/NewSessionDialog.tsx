@@ -59,6 +59,12 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
   const [initialBalance, setInitialBalance] = useState("100000");
   const [description, setDescription] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // §5 — costos de trading (opcionales, default sin fricción).
+  const [commissionPerUnit, setCommissionPerUnit] = useState("0");
+  const [spreadTicks, setSpreadTicks] = useState("0");
+  const [tickSize, setTickSize] = useState("0.01");
+  const spreadCost =
+    (Number(spreadTicks) || 0) * (Number(tickSize) || 0);
   // Wave 18.10 — dónde arranca el cursor: al inicio (backtest desde el pasado)
   // o al final del rango (chequear precio actual y avanzar poco a poco).
   const [startAt, setStartAt] = useState<"start" | "end">("start");
@@ -93,6 +99,9 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
       startDate: startMs,
       endDate: endMs,
       initialBalance: balance,
+      commissionPerUnit: Math.max(0, Number(commissionPerUnit) || 0),
+      spreadTicks: Math.max(0, Number(spreadTicks) || 0),
+      tickSize: Math.max(0, Number(tickSize) || 0.01),
       description: description.trim() || undefined,
       tags: [],
     });
@@ -219,6 +228,59 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
               </button>
             </div>
           </Field>
+
+          {/* §5 — costos de trading. Colapsado por defecto: la mayoría
+              arranca sin fricción y los ajusta después. */}
+          <details className="rounded border border-tv-border bg-tv-bg/30">
+            <summary className="cursor-pointer select-none px-2 py-1.5 text-[11px] text-tv-text-muted hover:text-tv-text">
+              Configuración avanzada — costos de trading
+            </summary>
+            <div className="flex flex-col gap-3 border-t border-tv-border px-2 py-2">
+              <p className="text-[10px] leading-relaxed text-tv-text-muted">
+                Las velas se tratan como precio <b>bid</b>: toda compra se llena{" "}
+                <b>spread × tick</b> peor (entrar en largo, salir de un corto).
+                Las ventas van al precio de la vela. La comisión se cobra por
+                unidad y por lado, así que un round-trip paga el doble.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Comisión / unidad">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={commissionPerUnit}
+                    onChange={(e) => setCommissionPerUnit(e.target.value)}
+                    className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                  />
+                </Field>
+                <Field label="Spread (ticks)">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={spreadTicks}
+                    onChange={(e) => setSpreadTicks(e.target.value)}
+                    className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                  />
+                </Field>
+                <Field label="Tick size">
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    value={tickSize}
+                    onChange={(e) => setTickSize(e.target.value)}
+                    className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                  />
+                </Field>
+              </div>
+              {spreadCost > 0 && (
+                <div className="font-mono text-[10px] text-tv-text-muted">
+                  Spread efectivo: {spreadCost} por unidad de precio
+                </div>
+              )}
+            </div>
+          </details>
 
           <Field label="Descripción (opcional)">
             <textarea
