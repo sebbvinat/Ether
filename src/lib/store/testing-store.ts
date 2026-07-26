@@ -200,6 +200,9 @@ export interface SessionMeta {
   /** §3 — riesgo por trade en % del balance, para el sizing automático del
    *  diálogo de órdenes. Default 0.5. */
   defaultRiskPct?: number;
+  /** §12 — TF del segundo chart cuando el layout está en 2 paneles.
+   *  Default "1m". El primario sigue usando `chartTimeframe`. */
+  chartTimeframe2?: Timeframe;
   /** §11 — cómo avanza el replay. "bar": de vela completa en vela completa
    *  (lo de siempre). "intrabar": la vela en curso se forma minuto a minuto
    *  y el engine evalúa fills en resolución 1m. Default "bar". */
@@ -259,6 +262,8 @@ interface TestingState {
   /** §11 — alterna entre avance por vela y avance minuto a minuto. */
   setPlaybackMode: (mode: PlaybackMode) => void;
   setChartTimeframe: (tf: Timeframe) => void;
+  /** §12 — TF del segundo panel. */
+  setChartTimeframe2: (tf: Timeframe) => void;
   /** Wave 18.6 — toggle un indicador en la sesión activa. */
   toggleIndicator: (key: IndicatorKey) => Promise<void>;
   /** §9 — ajustar los períodos de los indicadores de la sesión activa. */
@@ -613,6 +618,16 @@ export const useTestingStore = create<TestingState>()(
         const newDetail = { ...detail, drawings: next };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      setChartTimeframe2: (tf) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, chartTimeframe2: tf, updatedAt: Date.now() } : x,
+          ),
+        }));
       },
 
       setChartTimeframe: (tf) => {

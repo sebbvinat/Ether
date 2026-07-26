@@ -50,6 +50,7 @@ import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
 import { TV, TV_ALPHA } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+import type { Timeframe } from "@/lib/binance/types";
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
 
 // §10 — la paleta vive en lib/theme.ts (fuente única).
@@ -59,12 +60,25 @@ interface Props {
   closedTradesMode?: ClosedTradesMode;
   /** Callback con velas 1m disponibles (Go To las usa). */
   onCandlesLoaded?: (candles1m: { time: number }[]) => void;
+  /** §12 — TF propio de este panel. Sin esto usa el de la sesión. */
+  tfOverride?: Timeframe;
+  /** §12 — si está, el panel muestra su propio selector de TF. */
+  onTfChange?: (tf: Timeframe) => void;
+  /** §12 — sólo UN panel corre el engine. Con dos paneles procesando las
+   *  mismas velas los fills se aplicarían dos veces. */
+  engineEnabled?: boolean;
+  /** §12 — el panel secundario no repite la barra de dibujo. */
+  showToolbar?: boolean;
 }
 
 export function TestingChart({
   session,
   closedTradesMode = "drawings",
   onCandlesLoaded,
+  tfOverride,
+  onTfChange,
+  engineEnabled = true,
+  showToolbar = true,
 }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -116,7 +130,7 @@ export function TestingChart({
   const applyEngineState = useTestingStore((s) => s.applyEngineState);
 
   const cursorMs = session.replayCursorMs ?? session.startDate;
-  const chartTf = session.chartTimeframe ?? "15m";
+  const chartTf = tfOverride ?? session.chartTimeframe ?? "15m";
   const tfSec = TF_MINUTES[chartTf] * 60;
   // §11 — en 1m no hay sub-resolución que mostrar: el modo se ignora.
   const intrabar = session.playbackMode === "intrabar" && chartTf !== "1m";
@@ -493,12 +507,14 @@ export function TestingChart({
       didFitRef.current = true;
     }
 
-    if (last.close) {
+    // §12 — con dos paneles sólo el primario publica el precio: si no, el
+    // secundario (otro TF) pisaría la referencia de las órdenes.
+    if (last.close && engineEnabled) {
       window.dispatchEvent(
         new CustomEvent("ether-testing:last-price", { detail: { price: last.close } }),
       );
     }
-  }, [displayed]);
+  }, [displayed, engineEnabled]);
 
   // ── 5b. Reconciliar indicadores cuando cambien las velas, los toggles o
   //        los períodos configurados (§9) ─────────────────────────────────
@@ -516,7 +532,7 @@ export function TestingChart({
   // ── 6. Engine: procesar velas 1m entre cursor previo y nuevo ──────────
   const lastCursorRef = useRef<number>(session.replayCursorMs ?? session.startDate);
   useEffect(() => {
-    if (loading) return;
+    if (loading || !engineEnabled) return;
     const store = storeRef.current;
     const det = detailRef.current;
     const sess = sessionRef.current;
@@ -574,11 +590,11 @@ export function TestingChart({
       realizedPnL: state.realizedPnL,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cursorMs, loading, intrabar, subLoaded]);
+  }, [cursorMs, loading, intrabar, subLoaded, engineEnabled]);
 
   // ── 7. Reprocesar la vela actual cuando se agrega una orden pending ───
   useEffect(() => {
-    if (loading || !detail) return;
+    if (loading || !detail || !engineEnabled) return;
     const hasPending = detail.orders.some((o) => o.status === "pending");
     if (!hasPending) return;
     const store = storeRef.current;
@@ -684,7 +700,27 @@ export function TestingChart({
         width={size.width}
         height={size.height}
       />
+      {/* §12 — el selector propio sólo aparece en el panel secundario. */}
+      {onTfChange && (
+        <div className="pointer-events-auto absolute left-2 top-2 z-20 flex items-center gap-0.5 rounded border border-tv-border bg-tv-panel/90 p-0.5">
+          {TESTING_TFS.map((tf) => (
+            <button
+              key={tf}
+              onClick={() => onTfChange(tf)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[10px]",
+                tf === chartTf
+                  ? "bg-tv-blue/15 text-tv-blue"
+                  : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+              )}
+            >
+              {tf}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Toolbar vertical de drawings — izquierda del chart */}
+      {showToolbar && (
       <DrawingsToolbar
         tool={tool}
         onSelect={(t) => {
@@ -696,6 +732,7 @@ export function TestingChart({
           setTool("cursor");
         }}
       />
+      )}
       {loading && (
         <div className="absolute inset-0 z-10 grid place-items-center bg-tv-bg/70 backdrop-blur-sm">
           <div className="text-center">

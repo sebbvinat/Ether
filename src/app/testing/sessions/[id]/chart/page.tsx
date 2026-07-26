@@ -138,6 +138,7 @@ export default function SessionChartPage({ params }: Props) {
   const setStepSize = useTestingStore((s) => s.setReplayStepSize);
   const setIntervalMs = useTestingStore((s) => s.setReplayIntervalMs);
   const setPlaybackMode = useTestingStore((s) => s.setPlaybackMode);
+  const setChartTf2 = useTestingStore((s) => s.setChartTimeframe2);
   const openPositionNow = useTestingStore((s) => s.openPositionNow);
   const undoDrawings = useTestingStore((s) => s.undoDrawings);
   const redoDrawings = useTestingStore((s) => s.redoDrawings);
@@ -152,6 +153,8 @@ export default function SessionChartPage({ params }: Props) {
   const [pauseEachBar, setPauseEachBar] = useState(false);
   /** §2 — popover del jump-to-date. */
   const [jumpOpen, setJumpOpen] = useState(false);
+  /** §12 — cuántos paneles de chart mostrar. */
+  const [panes, setPanes] = useState<1 | 2>(1);
 
   // Asegurarse de que la sesión activa esté seteada (carga IDB)
   useEffect(() => {
@@ -435,6 +438,26 @@ export default function SessionChartPage({ params }: Props) {
           ))}
         </div>
 
+        {/* §12 — layout de paneles. Con 2, el segundo muestra otro TF del
+            mismo símbolo y avanza con el mismo cursor. */}
+        <div className="flex items-center overflow-hidden rounded border border-tv-border">
+          {([1, 2] as const).map((n) => (
+            <button
+              key={n}
+              onClick={() => setPanes(n)}
+              title={n === 1 ? "Un chart" : "Dos charts (multi-timeframe)"}
+              className={cn(
+                "px-2 py-0.5 text-[10px]",
+                panes === n
+                  ? "bg-tv-blue/15 text-tv-blue"
+                  : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+              )}
+            >
+              {n === 1 ? "▭" : "▯▯"}
+            </button>
+          ))}
+        </div>
+
         {/* Indicadores */}
         <IndicatorsMenu />
 
@@ -452,12 +475,29 @@ export default function SessionChartPage({ params }: Props) {
 
       {/* Chart + Positions Panel (split vertical) */}
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="relative min-h-0 flex-1">
-          <TestingChart
-            session={session}
-            closedTradesMode={closedMode}
-            onCandlesLoaded={setCandles1m}
-          />
+        <div className="flex min-h-0 flex-1">
+          <div className="relative min-h-0 flex-1">
+            <TestingChart
+              session={session}
+              closedTradesMode={closedMode}
+              onCandlesLoaded={setCandles1m}
+            />
+          </div>
+          {panes === 2 && (
+            <div className="relative min-h-0 flex-1 border-l border-tv-border">
+              {/* engineEnabled={false}: el engine corre sólo en el primario.
+                  Con los dos procesando las mismas velas, cada fill se
+                  aplicaría dos veces. */}
+              <TestingChart
+                session={session}
+                closedTradesMode={closedMode}
+                tfOverride={session.chartTimeframe2 ?? "1m"}
+                onTfChange={(tf) => setChartTf2(tf)}
+                engineEnabled={false}
+                showToolbar={false}
+              />
+            </div>
+          )}
         </div>
         {/* Minimize/expand tab para el panel de posiciones */}
         <div className="flex shrink-0 items-center justify-between border-t border-tv-border bg-tv-panel/40 px-3 py-0.5">
