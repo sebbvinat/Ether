@@ -251,6 +251,8 @@ interface TestingState {
   setChartTimeframe: (tf: Timeframe) => void;
   /** Wave 18.6 — toggle un indicador en la sesión activa. */
   toggleIndicator: (key: IndicatorKey) => Promise<void>;
+  /** §9 — ajustar los períodos de los indicadores de la sesión activa. */
+  updateIndicatorConfig: (patch: Partial<IndicatorConfig>) => Promise<void>;
   /** Wave 18.6 — drawings sobre el chart de la sesión activa. */
   addDrawingToActive: (drawing: Drawing) => Promise<void>;
   removeDrawingFromActive: (drawingId: string) => Promise<void>;
@@ -493,6 +495,15 @@ export const useTestingStore = create<TestingState>()(
             return { ...x, replayCursorMs: clamped };
           }),
         }));
+      },
+
+      updateIndicatorConfig: async (patch) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const newDetail = { ...detail, config: { ...detail.config, ...patch } };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
       },
 
       toggleIndicator: async (key) => {
