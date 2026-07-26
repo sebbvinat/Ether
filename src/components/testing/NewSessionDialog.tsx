@@ -63,6 +63,8 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
   const [commissionPerUnit, setCommissionPerUnit] = useState("0");
   const [spreadTicks, setSpreadTicks] = useState("0");
   const [tickSize, setTickSize] = useState("0.01");
+  // §3 — riesgo por trade que el diálogo de órdenes usa por defecto.
+  const [defaultRiskPct, setDefaultRiskPct] = useState("0.5");
   const spreadCost =
     (Number(spreadTicks) || 0) * (Number(tickSize) || 0);
   // Wave 18.10 — dónde arranca el cursor: al inicio (backtest desde el pasado)
@@ -102,6 +104,7 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
       commissionPerUnit: Math.max(0, Number(commissionPerUnit) || 0),
       spreadTicks: Math.max(0, Number(spreadTicks) || 0),
       tickSize: Math.max(0, Number(tickSize) || 0.01),
+      defaultRiskPct: Math.max(0, Number(defaultRiskPct) || 0.5),
       description: description.trim() || undefined,
       tags: [],
     });
@@ -242,6 +245,16 @@ export function NewSessionDialog({ open, onOpenChange, onCreated, defaults }: Pr
                 Las ventas van al precio de la vela. La comisión se cobra por
                 unidad y por lado, así que un round-trip paga el doble.
               </p>
+              <Field label="Riesgo por trade (% del balance)">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={defaultRiskPct}
+                  onChange={(e) => setDefaultRiskPct(e.target.value)}
+                  className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                />
+              </Field>
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Comisión / unidad">
                   <input

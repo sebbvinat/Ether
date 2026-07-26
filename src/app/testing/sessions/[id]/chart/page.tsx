@@ -605,6 +605,8 @@ export default function SessionChartPage({ params }: Props) {
         onOpenChange={setOrderDialogOpen}
         refPrice={lastPrice || 0}
         currentTimeMs={currentTimeMs}
+        sessionBalance={session.currentBalance}
+        defaultRiskPct={session.defaultRiskPct}
       />
     </div>
   );

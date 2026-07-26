@@ -189,6 +189,9 @@ export interface SessionMeta {
   /** §5 — tamaño del tick del instrumento, para convertir spreadTicks a
    *  unidades de precio. Default 0.01. */
   tickSize?: number;
+  /** §3 — riesgo por trade en % del balance, para el sizing automático del
+   *  diálogo de órdenes. Default 0.5. */
+  defaultRiskPct?: number;
   /** Descripción opcional del trader. */
   description?: string;
   /** Tags opcionales para agrupar sesiones (ej. "strategy: ICT", "phase: 1"). */
@@ -378,6 +381,7 @@ export const useTestingStore = create<TestingState>()(
           commissionPerUnit: input.commissionPerUnit ?? 0,
           spreadTicks: input.spreadTicks ?? 0,
           tickSize: input.tickSize ?? 0.01,
+          defaultRiskPct: input.defaultRiskPct ?? 0.5,
           description: input.description,
           tags: input.tags ?? [],
           createdAt: now,
@@ -845,6 +849,7 @@ export const useTestingStore = create<TestingState>()(
           commissionPerUnit: sess.commissionPerUnit ?? 0,
           spreadTicks: sess.spreadTicks ?? 0,
           tickSize: sess.tickSize ?? 0.01,
+          defaultRiskPct: sess.defaultRiskPct ?? 0.5,
         }));
         return { ...currentState, ...(p ?? {}), sessions };
       },

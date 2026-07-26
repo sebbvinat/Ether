@@ -25,6 +25,7 @@ import {
   type OrderType,
 } from "@/lib/store/testing-store";
 import { makeLimitOrder, makeStopOrder } from "@/lib/testing/engine";
+import { sizeFromRisk } from "@/lib/testing/sizing";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -34,9 +35,20 @@ interface Props {
   refPrice: number;
   /** Timestamp (ms) de la vela actual del replay — para openedAt de market fills. */
   currentTimeMs: number;
+  /** §3 — balance actual de la sesión, base del sizing por riesgo. */
+  sessionBalance: number;
+  /** §3 — riesgo por defecto en % (de la sesión). */
+  defaultRiskPct?: number;
 }
 
-export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }: Props) {
+export function PlaceOrderDialog({
+  open,
+  onOpenChange,
+  refPrice,
+  currentTimeMs,
+  sessionBalance,
+  defaultRiskPct,
+}: Props) {
   const addOrder = useTestingStore((s) => s.addOrder);
   const openPositionNow = useTestingStore((s) => s.openPositionNow);
   const [side, setSide] = useState<Side>("buy");
@@ -49,6 +61,10 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }
   const [tp, setTp] = useState("");
   const [tagsInput, setTagsInput] = useState("");
   const [notes, setNotes] = useState("");
+  // §3 — sizing: manual (tipeás las unidades) o por riesgo (las calcula el
+  // % de la cuenta que estás dispuesto a perder contra el stop).
+  const [sizeMode, setSizeMode] = useState<"manual" | "risk">("risk");
+  const [riskPct, setRiskPct] = useState(String(defaultRiskPct ?? 0.5));
 
   // Refresh entry cuando cambia refPrice o al abrir
   useEffect(() => {
@@ -68,14 +84,21 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }
     setTp("");
     setTagsInput("");
     setNotes("");
+    setSizeMode("risk");
+    setRiskPct(String(defaultRiskPct ?? 0.5));
   }
 
   async function handleSave() {
-    const sizeN = parseFloat(size);
     const entryN = parseFloat(entry);
     const slN = slEnabled ? parseFloat(sl) : undefined;
     const tpN = tpEnabled ? parseFloat(tp) : undefined;
-    if (!Number.isFinite(sizeN) || sizeN <= 0) {
+    // §3 — en modo riesgo el tamaño lo calcula la distancia al stop.
+    const sizeN = sizeMode === "risk" ? sizing.size : parseFloat(size);
+    if (sizeMode === "risk" && sizing.size === null) {
+      alert(sizing.message ?? "No se puede calcular el tamaño");
+      return;
+    }
+    if (!Number.isFinite(sizeN) || sizeN === null || sizeN <= 0) {
       alert("Tamaño inválido");
       return;
     }
@@ -128,20 +151,47 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }
     onOpenChange(false);
   }
 
-  // Risk/Reward preview
-  const sizeN = parseFloat(size);
+  // ── Sizing y preview de riesgo/reward ────────────────────────────────
   const entryN = parseFloat(entry);
   const slN = slEnabled ? parseFloat(sl) : NaN;
   const tpN = tpEnabled ? parseFloat(tp) : NaN;
+  // Una market order se llena al precio actual, no al del campo Entry.
+  const effectiveEntry = orderType === "market" ? refPrice : entryN;
+
+  // §3 — tamaño calculado desde el riesgo. `message` explica por qué no se
+  // pudo cuando corresponde, para mostrarlo en la UI en vez de fallar mudo.
+  const sizing: { size: number | null; message: string | null } = (() => {
+    if (sizeMode !== "risk") return { size: null, message: null };
+    const r = sizeFromRisk({
+      equity: sessionBalance,
+      riskPct: parseFloat(riskPct),
+      entry: effectiveEntry,
+      sl: Number.isFinite(slN) ? slN : undefined,
+    });
+    if (r.ok) return { size: r.size, message: null };
+    return {
+      size: null,
+      message:
+        r.reason === "no-sl"
+          ? "Activá el Stop Loss para calcular el tamaño"
+          : r.reason === "too-small"
+            ? "El riesgo es muy chico para esta distancia al stop"
+            : "Revisá el riesgo % y los precios",
+    };
+  })();
+
+  // El tamaño que realmente se va a usar (y con el que se calcula el preview).
+  const sizeN = sizeMode === "risk" ? (sizing.size ?? NaN) : parseFloat(size);
+
   let riskAmount: number | null = null;
   let rewardAmount: number | null = null;
   let rr: number | null = null;
-  if (Number.isFinite(sizeN) && Number.isFinite(entryN)) {
+  if (Number.isFinite(sizeN) && Number.isFinite(effectiveEntry)) {
     if (Number.isFinite(slN)) {
-      riskAmount = Math.abs(entryN - slN) * sizeN;
+      riskAmount = Math.abs(effectiveEntry - slN) * sizeN;
     }
     if (Number.isFinite(tpN)) {
-      rewardAmount = Math.abs(tpN - entryN) * sizeN;
+      rewardAmount = Math.abs(tpN - effectiveEntry) * sizeN;
     }
     if (riskAmount && rewardAmount && riskAmount > 0) {
       rr = rewardAmount / riskAmount;
@@ -195,16 +245,53 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }
             </select>
           </Field>
 
+          {/* §3 — cómo se define el tamaño */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-tv-text-muted">
+              Tamaño
+            </span>
+            <div className="flex overflow-hidden rounded border border-tv-border">
+              {(["risk", "manual"] as const).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() => setSizeMode(m)}
+                  className={cn(
+                    "px-2 py-0.5 text-[10px]",
+                    sizeMode === m
+                      ? "bg-tv-blue text-white"
+                      : "text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text",
+                  )}
+                >
+                  {m === "risk" ? "Por riesgo" : "Manual"}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Tamaño (contracts/units)">
-              <input
-                type="number"
-                step="any"
-                value={size}
-                onChange={(e) => setSize(e.target.value)}
-                className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
-              />
-            </Field>
+            {sizeMode === "risk" ? (
+              <Field label="Riesgo (% del balance)">
+                <input
+                  type="number"
+                  step="any"
+                  min="0"
+                  value={riskPct}
+                  onChange={(e) => setRiskPct(e.target.value)}
+                  className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                />
+              </Field>
+            ) : (
+              <Field label="Tamaño (contracts/units)">
+                <input
+                  type="number"
+                  step="any"
+                  value={size}
+                  onChange={(e) => setSize(e.target.value)}
+                  className="w-full rounded border border-tv-border bg-tv-bg px-2 py-1.5 font-mono text-[12px] text-tv-text"
+                />
+              </Field>
+            )}
             <Field label={orderType === "market" ? "Precio referencial" : "Precio de entrada"}>
               <input
                 type="number"
@@ -260,6 +347,30 @@ export function PlaceOrderDialog({ open, onOpenChange, refPrice, currentTimeMs }
               />
             )}
           </div>
+
+          {/* §3 — resultado del sizing por riesgo */}
+          {sizeMode === "risk" && (
+            <div
+              className={cn(
+                "rounded border px-3 py-2 font-mono text-[11px]",
+                sizing.size !== null
+                  ? "border-tv-border bg-tv-bg/30 text-tv-text"
+                  : "border-tv-yellow/40 bg-tv-yellow/10 text-tv-yellow",
+              )}
+            >
+              {sizing.size !== null ? (
+                <>
+                  Tamaño calculado:{" "}
+                  <span className="font-semibold text-tv-blue">{sizing.size}</span>{" "}
+                  <span className="text-tv-text-muted">
+                    · balance ${sessionBalance.toFixed(2)}
+                  </span>
+                </>
+              ) : (
+                sizing.message
+              )}
+            </div>
+          )}
 
           {/* Risk preview */}
           {(riskAmount !== null || rewardAmount !== null) && (
