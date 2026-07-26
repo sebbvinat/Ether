@@ -25,6 +25,12 @@ import {
   sessionDetailKey,
   deleteSessionData,
 } from "@/lib/testing/storage";
+import { HistoryStack } from "@/lib/history";
+
+/** §1 — historial de dibujos de la sesión activa. Vive fuera del store porque
+ *  es estado efímero de UI: no se persiste ni dispara re-renders. Se limpia al
+ *  cambiar de sesión para no mezclar contextos. */
+const drawingsHistory = new HistoryStack<Drawing[]>();
 
 // ─── tipos ───────────────────────────────────────────────────────────────────
 
@@ -222,6 +228,9 @@ interface TestingState {
   addDrawingToActive: (drawing: Drawing) => Promise<void>;
   removeDrawingFromActive: (drawingId: string) => Promise<void>;
   clearDrawingsInActive: () => Promise<void>;
+  /** §1 — undo/redo de dibujos (snapshot stack, no persiste al recargar). */
+  undoDrawings: () => Promise<void>;
+  redoDrawings: () => Promise<void>;
   setReplayStepSize: (size: number) => void;
   setReplayIntervalMs: (ms: number) => void;
   // Wave 18 — acciones de engine (operan sobre activeDetail + meta)
@@ -298,6 +307,8 @@ export const useTestingStore = create<TestingState>()(
       streakDays: 0,
 
       setActiveSession: async (id) => {
+        // §1 — el undo no cruza sesiones.
+        drawingsHistory.clear();
         if (id === null) {
           set({ activeSessionId: null, activeDetail: null, loadingDetail: false });
           return;
@@ -470,6 +481,7 @@ export const useTestingStore = create<TestingState>()(
         const active = get().activeSessionId;
         const detail = get().activeDetail;
         if (!active || !detail) return;
+        drawingsHistory.push(detail.drawings);
         const newDetail = { ...detail, drawings: [...detail.drawings, drawing] };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);
@@ -479,6 +491,7 @@ export const useTestingStore = create<TestingState>()(
         const active = get().activeSessionId;
         const detail = get().activeDetail;
         if (!active || !detail) return;
+        drawingsHistory.push(detail.drawings);
         const newDetail = {
           ...detail,
           drawings: detail.drawings.filter((d) => d.id !== drawingId),
@@ -491,7 +504,30 @@ export const useTestingStore = create<TestingState>()(
         const active = get().activeSessionId;
         const detail = get().activeDetail;
         if (!active || !detail) return;
+        drawingsHistory.push(detail.drawings);
         const newDetail = { ...detail, drawings: [] };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      undoDrawings: async () => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const prev = drawingsHistory.undo(detail.drawings);
+        if (!prev) return;
+        const newDetail = { ...detail, drawings: prev };
+        set({ activeDetail: newDetail });
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      redoDrawings: async () => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        if (!active || !detail) return;
+        const next = drawingsHistory.redo(detail.drawings);
+        if (!next) return;
+        const newDetail = { ...detail, drawings: next };
         set({ activeDetail: newDetail });
         await idbSet(sessionDetailKey(active), newDetail);
       },

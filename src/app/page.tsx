@@ -78,6 +78,22 @@ export default function HomePage() {
         else if (tool !== "cursor") setTool("cursor");
         return;
       }
+      // §1 — undo/redo de dibujos. Fijo (no configurable), igual que TV.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const lk = e.key.toLowerCase();
+        if (lk === "z") {
+          e.preventDefault();
+          const s = useChartStore.getState();
+          if (e.shiftKey) s.redoDrawings();
+          else s.undoDrawings();
+          return;
+        }
+        if (lk === "y") {
+          e.preventDefault();
+          useChartStore.getState().redoDrawings();
+          return;
+        }
+      }
       const st = useChartStore.getState();
       const shortcuts = st.shortcuts as Record<ShortcutAction, string>;
       // Recorre cada acción y dispara la primera que matchee

@@ -94,6 +94,8 @@ export default function SessionChartPage({ params }: Props) {
   const setStepSize = useTestingStore((s) => s.setReplayStepSize);
   const setIntervalMs = useTestingStore((s) => s.setReplayIntervalMs);
   const openPositionNow = useTestingStore((s) => s.openPositionNow);
+  const undoDrawings = useTestingStore((s) => s.undoDrawings);
+  const redoDrawings = useTestingStore((s) => s.redoDrawings);
 
   const [orderDialogOpen, setOrderDialogOpen] = useState(false);
   const [autoplay, setAutoplay] = useState(false);
@@ -167,6 +169,21 @@ export default function SessionChartPage({ params }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(document.activeElement)) return;
       if (!session) return;
+      // §1 — undo/redo de dibujos (Ctrl+Z · Ctrl+Shift+Z · Ctrl+Y).
+      if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+        const lk = e.key.toLowerCase();
+        if (lk === "z") {
+          e.preventDefault();
+          if (e.shiftKey) void redoDrawings();
+          else void undoDrawings();
+          return;
+        }
+        if (lk === "y") {
+          e.preventDefault();
+          void redoDrawings();
+          return;
+        }
+      }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const k = e.key;
       if (k === " ") {
@@ -205,7 +222,14 @@ export default function SessionChartPage({ params }: Props) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [session, currentTimeMs, stepMs, setReplayCursor]);
+  }, [
+    session,
+    currentTimeMs,
+    stepMs,
+    setReplayCursor,
+    undoDrawings,
+    redoDrawings,
+  ]);
 
   const handleFastBuy = useCallback(
     async (side: "buy" | "sell") => {
