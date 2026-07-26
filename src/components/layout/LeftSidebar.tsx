@@ -2,6 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Trash2 } from "lucide-react";
+import {
+  CursorIcon,
+  FibIcon,
+  LongIcon,
+  MagnetIcon,
+  MeasureIcon,
+  RectIcon,
+  TextIcon,
+  TrendlineIcon,
+} from "@/components/icons/ToolIcons";
 import { useChartStore, type DrawingTool } from "@/lib/store/chart-store";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +20,9 @@ interface ToolDef {
   id: string;
   /** Display glyph (text or unicode) */
   glyph: string;
+  /** §15 — ícono SVG. Cuando falta se sigue usando `glyph`: la migración
+   *  es incremental y no todas las tools tienen ícono todavía. */
+  icon?: ToolIcon;
   /** Spanish label */
   label: string;
   /** Number of clicks required to place; "poly" for freehand. 0 = stateless action. */
@@ -24,9 +37,14 @@ interface ToolDef {
 interface Group {
   id: string;
   glyph: string;
+  /** §15 — ícono del botón del grupo. Ver ToolDef.icon. */
+  icon?: ToolIcon;
   label: string;
   tools: ToolDef[];
 }
+
+/** Firma común de los íconos de ToolIcons. */
+type ToolIcon = (props: { size?: number; className?: string }) => React.ReactElement;
 
 // Group catalog — mirrors the prototype's TOOL_GROUPS (data.jsx:137-227).
 // Tools without `storeKey` are visible but disabled ("próximamente").
@@ -34,6 +52,7 @@ const GROUPS: Group[] = [
   {
     id: "cursor",
     glyph: "✛",
+    icon: CursorIcon,
     label: "Cursores",
     tools: [
       { id: "cursor", glyph: "✛", label: "Cruz", clicks: 0, storeKey: "cursor" },
@@ -45,6 +64,7 @@ const GROUPS: Group[] = [
   {
     id: "lines",
     glyph: "╱",
+    icon: TrendlineIcon,
     label: "Líneas",
     tools: [
       { id: "trend", glyph: "╱", label: "Línea de tendencia", clicks: 2, storeKey: "trendline" },
@@ -60,6 +80,7 @@ const GROUPS: Group[] = [
   {
     id: "fib",
     glyph: "φ",
+    icon: FibIcon,
     label: "Fibonacci & Gann",
     tools: [
       { id: "fibret", glyph: "φ", label: "Retroceso Fibonacci", clicks: 2, storeKey: "fib" },
@@ -87,6 +108,7 @@ const GROUPS: Group[] = [
   {
     id: "shapes",
     glyph: "▢",
+    icon: RectIcon,
     label: "Formas",
     tools: [
       { id: "rect", glyph: "▢", label: "Rectángulo", clicks: 2, storeKey: "rect" },
@@ -98,6 +120,7 @@ const GROUPS: Group[] = [
   {
     id: "positions",
     glyph: "⚖",
+    icon: LongIcon,
     label: "Posiciones",
     tools: [
       { id: "long", glyph: "L", label: "Posición larga (LONG)", clicks: 3, storeKey: "long" },
@@ -107,6 +130,7 @@ const GROUPS: Group[] = [
   {
     id: "measure",
     glyph: "⤢",
+    icon: MeasureIcon,
     label: "Medir",
     tools: [
       { id: "measure", glyph: "⤢", label: "Regla (precio + tiempo)", clicks: 2, storeKey: "measure" },
@@ -122,6 +146,7 @@ const GROUPS: Group[] = [
   {
     id: "text",
     glyph: "T",
+    icon: TextIcon,
     label: "Texto",
     tools: [
       { id: "text", glyph: "T", label: "Nota de texto", clicks: 1, storeKey: "text" },
@@ -133,6 +158,7 @@ const GROUPS: Group[] = [
   {
     id: "magnet",
     glyph: "⌖",
+    icon: MagnetIcon,
     label: "Imán / bloqueo",
     tools: [
       { id: "magnet", glyph: "⌖", label: "Modo imán", clicks: 0, toggleKey: "magnetMode" },
@@ -143,7 +169,10 @@ const GROUPS: Group[] = [
 ];
 
 // Reverse lookup: store key → group id (so the active group shows the active glyph)
-const GROUP_FOR_STOREKEY: Record<string, { groupId: string; toolId: string; glyph: string }> = {};
+const GROUP_FOR_STOREKEY: Record<
+  string,
+  { groupId: string; toolId: string; glyph: string; icon?: ToolIcon }
+> = {};
 for (const g of GROUPS) {
   for (const t of g.tools) {
     if (t.storeKey) {
@@ -151,6 +180,7 @@ for (const g of GROUPS) {
         groupId: g.id,
         toolId: t.id,
         glyph: t.glyph,
+        icon: t.icon,
       };
     }
   }
@@ -231,6 +261,10 @@ export function LeftSidebar() {
         // Show the active tool's glyph on the group button if it lives in this group
         const displayGlyph =
           isActiveGroup && activeMapping ? activeMapping.glyph : g.glyph;
+        // §15 — si la tool activa no trae ícono, cae al del grupo, y si el
+        // grupo tampoco tiene, al glifo de siempre.
+        const DisplayIcon =
+          (isActiveGroup ? activeMapping?.icon : undefined) ?? g.icon;
         const isOpen = openGroup === g.id;
         const onlyOne = g.tools.length === 1;
         return (
@@ -255,9 +289,13 @@ export function LeftSidebar() {
                 isOpen && "bg-tv-panel-hover text-tv-text",
               )}
             >
-              <span aria-hidden className="leading-none">
-                {displayGlyph}
-              </span>
+              {DisplayIcon ? (
+                <DisplayIcon size={17} />
+              ) : (
+                <span aria-hidden className="leading-none">
+                  {displayGlyph}
+                </span>
+              )}
               {!onlyOne && (
                 <span
                   aria-hidden

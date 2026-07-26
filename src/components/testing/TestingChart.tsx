@@ -48,6 +48,17 @@ import { PositionOverlay } from "./PositionOverlay";
 import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
+import {
+  CursorIcon,
+  EraserIcon,
+  FibIcon,
+  HLineIcon,
+  LongIcon,
+  RectIcon,
+  ShortIcon,
+  TrashIcon,
+  TrendlineIcon,
+} from "@/components/icons/ToolIcons";
 import { TV, TV_ALPHA } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { Timeframe } from "@/lib/binance/types";
@@ -810,25 +821,25 @@ function DrawingsToolbar({
   onSelect: (t: DrawingTool) => void;
   onClear: () => void;
 }) {
-  const tools: { key: DrawingTool; glyph: string; title: string; color?: string }[] = [
-    { key: "cursor", glyph: "✛", title: "Cursor" },
-    { key: "trendline", glyph: "╱", title: "Línea de tendencia (2 clics)" },
-    { key: "hline", glyph: "─", title: "Línea horizontal (1 clic)" },
-    { key: "rect", glyph: "▢", title: "Rectángulo (2 clics)" },
-    { key: "fib", glyph: "φ", title: "Fibonacci retroceso (2 clics)" },
+  // §15 — íconos SVG propios en vez de glifos unicode: se alinean entre sí,
+  // no dependen de la fuente del sistema y heredan currentColor.
+  const tools: { key: DrawingTool; Icon: typeof CursorIcon; title: string }[] = [
+    { key: "cursor", Icon: CursorIcon, title: "Cursor" },
+    { key: "trendline", Icon: TrendlineIcon, title: "Línea de tendencia (2 clics)" },
+    { key: "hline", Icon: HLineIcon, title: "Línea horizontal (1 clic)" },
+    { key: "rect", Icon: RectIcon, title: "Rectángulo (2 clics)" },
+    { key: "fib", Icon: FibIcon, title: "Fibonacci retroceso (2 clics)" },
     {
       key: "long",
-      glyph: "L",
+      Icon: LongIcon,
       title: "Posición LONG (3 clics: entry → SL → TP, crea buy limit)",
-      color: "tv-green",
     },
     {
       key: "short",
-      glyph: "S",
+      Icon: ShortIcon,
       title: "Posición SHORT (3 clics: entry → SL → TP, crea sell limit)",
-      color: "tv-red",
     },
-    { key: "eraser", glyph: "⌫", title: "Borrador" },
+    { key: "eraser", Icon: EraserIcon, title: "Borrador" },
   ];
   return (
     <div className="absolute left-1 top-1 z-20 flex flex-col gap-0.5 rounded border border-tv-border bg-tv-panel/95 p-1 shadow-md">
@@ -851,12 +862,14 @@ function DrawingsToolbar({
             key={t.key}
             onClick={() => onSelect(t.key)}
             title={t.title}
+            aria-label={t.title}
+            aria-pressed={tool === t.key}
             className={
-              "h-6 w-6 rounded text-[14px] " +
+              "grid h-6 w-6 place-items-center rounded " +
               (tool === t.key ? activeBg : inactiveColor)
             }
           >
-            {t.glyph}
+            <t.Icon size={15} />
           </button>
         );
       })}
@@ -864,9 +877,10 @@ function DrawingsToolbar({
       <button
         onClick={onClear}
         title="Borrar todos los dibujos"
-        className="h-6 w-6 rounded text-[14px] text-tv-text-muted hover:bg-tv-red/20 hover:text-tv-red"
+        aria-label="Borrar todos los dibujos"
+        className="grid h-6 w-6 place-items-center rounded text-tv-text-muted hover:bg-tv-red/20 hover:text-tv-red"
       >
-        🗑
+        <TrashIcon size={15} />
       </button>
     </div>
   );
