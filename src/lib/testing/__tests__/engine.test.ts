@@ -18,6 +18,7 @@ import {
   makeMarketOrder,
   makeStopOrder,
   manualClose,
+  partialClose,
   stepEngine,
   type EngineConfig,
   type EngineState,
@@ -382,5 +383,86 @@ describe("cierre manual y PnL no realizado", () => {
     // A 130 se separan: long +60, short (130−120)×(−1) = −10.
     expect(computeUnrealized([long, short], 130)).toBe(50);
     expect(computeUnrealized([], 100)).toBe(0);
+  });
+
+  // ── §6 — cierre parcial ──────────────────────────────────────────────────
+
+  it("19. partialClose parte la posición y emite un trade por la fracción", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, size: 1 });
+    const state = mkState({ positions: [pos] });
+    const next = partialClose(state, pos.id, 0.5, 110, mkCandle(T0, 109, 111, 108, 110), cfg);
+
+    // El trade cubre media unidad: (110−100) × 0.5 = +5.
+    expect(next.trades).toHaveLength(1);
+    expect(next.trades[0].size).toBe(0.5);
+    expect(next.trades[0].realizedPnL).toBe(5);
+    expect(next.trades[0].closeReason).toBe("partial");
+    expect(next.realizedPnL).toBe(5);
+
+    // La otra mitad sigue abierta, con el mismo entry y los mismos niveles.
+    expect(next.positions).toHaveLength(1);
+    expect(next.positions[0].size).toBe(0.5);
+    expect(next.positions[0].entry).toBe(100);
+  });
+
+  it("19b. dos parciales del 50% dejan un cuarto de la posición", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, size: 1 });
+    const one = partialClose(
+      mkState({ positions: [pos] }), pos.id, 0.5, 110,
+      mkCandle(T0, 109, 111, 108, 110), cfg,
+    );
+    const two = partialClose(one, pos.id, 0.5, 110, mkCandle(T0, 109, 111, 108, 110), cfg);
+
+    expect(two.positions[0].size).toBe(0.25);
+    expect(two.trades).toHaveLength(2);
+    expect(two.realizedPnL).toBe(7.5); // 5 + 2.5
+  });
+
+  it("19c. el parcial respeta SL/TP y el R-multiple usa el riesgo de la fracción", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, size: 2, sl: 90, tp: 130 });
+    const next = partialClose(
+      mkState({ positions: [pos] }), pos.id, 0.5, 110,
+      mkCandle(T0, 109, 111, 108, 110), cfg,
+    );
+
+    // Riesgo de la fracción: |100−90| × 1 = 10. Realized: (110−100) × 1 = 10.
+    expect(next.trades[0].rMultiple).toBe(1);
+    expect(next.positions[0].sl).toBe(90);
+    expect(next.positions[0].tp).toBe(130);
+  });
+
+  it("19d. si el resto no llega al mínimo operable, cierra todo", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, size: 0.001 });
+    const next = partialClose(
+      mkState({ positions: [pos] }), pos.id, 0.5, 110,
+      mkCandle(T0, 109, 111, 108, 110), cfg,
+    );
+
+    expect(next.positions).toHaveLength(0);
+    expect(next.trades[0].closeReason).toBe("manual");
+  });
+
+  it("19e. fracciones fuera de (0,1) y posiciones inexistentes no hacen nada", () => {
+    const pos = mkPosition({ side: "buy", entry: 100 });
+    const state = mkState({ positions: [pos] });
+    const candle = mkCandle(T0, 109, 111, 108, 110);
+
+    expect(partialClose(state, pos.id, 0, 110, candle, cfg)).toBe(state);
+    expect(partialClose(state, pos.id, 1, 110, candle, cfg)).toBe(state);
+    expect(partialClose(state, pos.id, -0.5, 110, candle, cfg)).toBe(state);
+    expect(partialClose(state, "no-existe", 0.5, 110, candle, cfg)).toBe(state);
+  });
+
+  it("19f. la comisión del parcial es proporcional a la fracción cerrada", () => {
+    const pos = mkPosition({ side: "buy", entry: 100, size: 2 });
+    const withFee: EngineConfig = { ...cfg, commissionPerUnit: 1 };
+    const next = partialClose(
+      mkState({ positions: [pos] }), pos.id, 0.5, 110,
+      mkCandle(T0, 109, 111, 108, 110), withFee,
+    );
+
+    // 1 unidad cerrada × $1 × ida y vuelta = $2.
+    expect(next.trades[0].commission).toBe(2);
+    expect(next.trades[0].realizedPnL).toBe(8); // 10 bruto − 2 de comisión
   });
 });

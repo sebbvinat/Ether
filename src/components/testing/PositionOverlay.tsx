@@ -15,6 +15,8 @@ import { TV } from "@/lib/theme";
 
 interface Props {
   positions: Position[];
+  /** §6 — precio al que se ejecuta el parcial del botón ½. */
+  lastPrice: number;
   priceToY: (price: number) => number | null;
   yToPrice: (y: number) => number | null;
   width: number;
@@ -25,12 +27,14 @@ type DragState = { positionId: string; kind: "sl" | "tp"; currentY: number };
 
 export function PositionOverlay({
   positions,
+  lastPrice,
   priceToY,
   yToPrice,
   width,
   height,
 }: Props) {
   const updateLevels = useTestingStore((s) => s.updatePositionLevels);
+  const closePartial = useTestingStore((s) => s.closePositionPartial);
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [drag, setDrag] = useState<DragState | null>(null);
 
@@ -152,6 +156,34 @@ export function PositionOverlay({
               {pos.side === "buy" ? "▲ " : "▼ "}
               {pos.entry.toFixed(2)}
             </text>
+            {/* §6 — parcial del 50% al último precio, sin salir del chart. */}
+            {lastPrice > 0 && (
+              <g
+                style={{ pointerEvents: "auto", cursor: "pointer" }}
+                onClick={() => void closePartial(pos.id, 0.5, lastPrice, Date.now())}
+              >
+                <title>Cerrar el 50% de la posición al precio actual</title>
+                <rect
+                  x={width - 122}
+                  y={yEntry - 10}
+                  width={20}
+                  height={20}
+                  fill={dir === 1 ? TV.green : TV.red}
+                  opacity={0.95}
+                  rx={2}
+                />
+                <text
+                  x={width - 112}
+                  y={yEntry + 4}
+                  fill="#fff"
+                  fontSize={11}
+                  fontWeight={600}
+                  textAnchor="middle"
+                >
+                  ½
+                </text>
+              </g>
+            )}
 
             {/* SL line — DRAGGEABLE */}
             {ySl !== null && (

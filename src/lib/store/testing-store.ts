@@ -26,7 +26,7 @@ import {
   deleteSessionData,
 } from "@/lib/testing/storage";
 import { HistoryStack } from "@/lib/history";
-import { manualClose, type EngineConfig } from "@/lib/testing/engine";
+import { manualClose, partialClose, type EngineConfig } from "@/lib/testing/engine";
 
 /** §1 — historial de dibujos de la sesión activa. Vive fuera del store porque
  *  es estado efímero de UI: no se persiste ni dispara re-renders. Se limpia al
@@ -110,8 +110,9 @@ export interface Trade {
   sl?: number;
   tp?: number;
   closePrice: number;
-  /** Cómo se cerró: sl/tp/manual. */
-  closeReason: "sl" | "tp" | "manual" | "session-end";
+  /** Cómo se cerró. `partial` = §6, una fracción tomada con la posición
+   *  todavía abierta. */
+  closeReason: "sl" | "tp" | "manual" | "session-end" | "partial";
   openedAt: number;
   closedAt: number;
   realizedPnL: number;
@@ -283,6 +284,9 @@ interface TestingState {
   /** Wave 18.7 — ajustar niveles de una orden pendiente (drag desde el chart). */
   updateOrderLevels: (orderId: string, patch: { entryPrice?: number; sl?: number; tp?: number }) => Promise<void>;
   closePositionManual: (positionId: string, closePrice: number, closedAtMs: number) => Promise<void>;
+  /** §6 — cierra `fraction` (0..1) de la posición y deja el resto abierto.
+   *  Si lo que queda no llega al mínimo operable, cierra todo. */
+  closePositionPartial: (positionId: string, fraction: number, closePrice: number, closedAtMs: number) => Promise<void>;
   updatePositionLevels: (positionId: string, patch: { sl?: number; tp?: number }) => Promise<void>;
   /** Aplica un snapshot del engine al detail activo + persiste a IDB.
    *  Usado por TestingChart al avanzar el replay (después de stepEngine). */
@@ -316,6 +320,21 @@ function freshDetail(id: string, config: IndicatorConfig): SessionDetail {
     indicators: freshIndicators(),
     hidden: freshIndicators(),
     config,
+  };
+}
+
+/** §6 — cómo queda la meta de sesión después de que el engine cerró un trade.
+ *  Lo comparten el cierre total y el parcial: para las estadísticas un parcial
+ *  es un trade más. */
+function metaAfterTrade(meta: SessionMeta, trade: Trade): SessionMeta {
+  return {
+    ...meta,
+    realizedPnL: meta.realizedPnL + trade.realizedPnL,
+    currentBalance: meta.currentBalance + trade.realizedPnL,
+    totalTrades: meta.totalTrades + 1,
+    wins: meta.wins + (trade.outcome === "win" ? 1 : 0),
+    losses: meta.losses + (trade.outcome === "loss" ? 1 : 0),
+    updatedAt: Date.now(),
   };
 }
 
@@ -726,21 +745,48 @@ export const useTestingStore = create<TestingState>()(
           positions: after.positions,
           trades: after.trades,
         };
-        const realized = trade.realizedPnL;
         set((s) => ({
           activeDetail: newDetail,
           sessions: s.sessions.map((x) =>
-            x.id === active
-              ? {
-                  ...x,
-                  realizedPnL: x.realizedPnL + realized,
-                  currentBalance: x.currentBalance + realized,
-                  totalTrades: x.totalTrades + 1,
-                  wins: x.wins + (trade.outcome === "win" ? 1 : 0),
-                  losses: x.losses + (trade.outcome === "loss" ? 1 : 0),
-                  updatedAt: Date.now(),
-                }
-              : x,
+            x.id === active ? metaAfterTrade(x, trade) : x,
+          ),
+        }));
+        await idbSet(sessionDetailKey(active), newDetail);
+      },
+
+      closePositionPartial: async (positionId, fraction, closePrice, closedAtMs) => {
+        const active = get().activeSessionId;
+        const detail = get().activeDetail;
+        const meta = get().sessions.find((s) => s.id === active);
+        if (!active || !detail || !meta) return;
+        const before = {
+          orders: detail.orders,
+          positions: detail.positions,
+          trades: detail.trades,
+          balance: meta.currentBalance,
+          realizedPnL: meta.realizedPnL,
+        };
+        const after = partialClose(
+          before,
+          positionId,
+          fraction,
+          closePrice,
+          { time: Math.floor(closedAtMs / 1000), open: closePrice, high: closePrice, low: closePrice, close: closePrice, volume: 0 },
+          engineConfigFor(meta),
+        );
+        // Fracción inválida o posición inexistente: el engine devuelve el mismo
+        // objeto y no hay nada que persistir.
+        if (after === before) return;
+        const trade = after.trades[after.trades.length - 1];
+        const newDetail = {
+          ...detail,
+          positions: after.positions,
+          trades: after.trades,
+        };
+        set((s) => ({
+          activeDetail: newDetail,
+          sessions: s.sessions.map((x) =>
+            x.id === active ? metaAfterTrade(x, trade) : x,
           ),
         }));
         await idbSet(sessionDetailKey(active), newDetail);

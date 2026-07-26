@@ -561,6 +561,7 @@ export function TestingChart({
       />
       <PositionOverlay
         positions={openPositions}
+        lastPrice={displayed[displayed.length - 1]?.close ?? 0}
         priceToY={priceToY}
         yToPrice={yToPrice}
         width={size.width}

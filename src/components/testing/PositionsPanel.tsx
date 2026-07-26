@@ -30,6 +30,7 @@ interface Props {
 export function PositionsPanel({ lastPrice }: Props) {
   const detail = useTestingStore((s) => s.activeDetail);
   const closePosition = useTestingStore((s) => s.closePositionManual);
+  const closePartial = useTestingStore((s) => s.closePositionPartial);
   const cancelOrder = useTestingStore((s) => s.cancelOrderById);
   const updateLevels = useTestingStore((s) => s.updatePositionLevels);
   const updateOrderLevels = useTestingStore((s) => s.updateOrderLevels);
@@ -57,6 +58,7 @@ export function PositionsPanel({ lastPrice }: Props) {
             positions={positions}
             lastPrice={lastPrice}
             onClose={closePosition}
+            onPartial={(id, fraction) => closePartial(id, fraction, lastPrice, Date.now())}
             onBreakeven={(id, entry) => updateLevels(id, { sl: entry })}
             onEditLevels={(id, patch) => updateLevels(id, patch)}
           />
@@ -119,12 +121,14 @@ function OpenTable({
   positions,
   lastPrice,
   onClose,
+  onPartial,
   onBreakeven,
   onEditLevels,
 }: {
   positions: Position[];
   lastPrice: number;
   onClose: (id: string, closePrice: number, closedAt: number) => void;
+  onPartial: (id: string, fraction: number) => void;
   onBreakeven: (id: string, entry: number) => void;
   onEditLevels: (id: string, patch: { sl?: number; tp?: number }) => void;
 }) {
@@ -203,6 +207,18 @@ function OpenTable({
                   >
                     BE
                   </button>
+                  {/* §6 — parciales. Cierran una fracción al último precio y
+                      dejan el resto corriendo con el mismo SL/TP. */}
+                  {([0.25, 0.5] as const).map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => onPartial(p.id, f)}
+                      title={`Cerrar el ${f * 100}% de la posición al precio actual`}
+                      className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+                    >
+                      {f * 100}%
+                    </button>
+                  ))}
                   <button
                     onClick={() => onClose(p.id, lastPrice, Date.now())}
                     className="rounded border border-tv-border px-2 py-0.5 text-[10px] text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
@@ -375,7 +391,11 @@ function ClosedTable({
                       ? "bg-tv-green/15 text-tv-green"
                       : t.closeReason === "sl"
                         ? "bg-tv-red/15 text-tv-red"
-                        : "bg-tv-panel text-tv-text-muted",
+                        : // §6 — el parcial se distingue del cierre total:
+                          // la posición puede seguir abierta.
+                          t.closeReason === "partial"
+                          ? "bg-tv-blue/15 text-tv-blue"
+                          : "bg-tv-panel text-tv-text-muted",
                   )}
                 >
                   {t.closeReason.toUpperCase()}

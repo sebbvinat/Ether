@@ -21,6 +21,7 @@ import type {
   Trade,
   Side,
 } from "@/lib/store/testing-store";
+import { MIN_SIZE } from "./sizing";
 
 /** Estado mutable que el engine consume y devuelve modificado. */
 export interface EngineState {
@@ -208,6 +209,78 @@ export function manualClose(
   return {
     ...state,
     positions: state.positions.filter((p) => p.id !== positionId),
+    trades: [...state.trades, trade],
+    realizedPnL: state.realizedPnL + trade.realizedPnL,
+  };
+}
+
+/** Redondea a la granularidad mínima operable, para que restar fracciones no
+ *  deje polvo tipo 0.30000000000000004. */
+function roundSize(x: number): number {
+  return Math.round(x * 1000) / 1000;
+}
+
+/**
+ * §6 — cierre parcial: toma `fraction` de la posición y deja el resto abierto.
+ *
+ * No modelamos lots. Un parcial es: emitir un Trade por la fracción cerrada y
+ * reducir `position.size` al resto. Cubre el uso real (tomar ganancias por
+ * tramos) sin reescribir el modelo de posiciones.
+ *
+ * `maxAdverse`/`maxFavorable` son montos en dinero, así que se reparten
+ * proporcionalmente entre el Trade parcial y lo que queda abierto. Es una
+ * aproximación: la excursión real de la fracción cerrada es la misma que la de
+ * toda la posición, pero medida sobre menos unidades.
+ *
+ * Si la fracción o el resto quedan por debajo del mínimo operable, no tiene
+ * sentido partir — se cierra todo.
+ */
+export function partialClose(
+  state: EngineState,
+  positionId: string,
+  fraction: number,
+  closePrice: number,
+  candle: Candle,
+  config: EngineConfig,
+): EngineState {
+  const pos = state.positions.find((p) => p.id === positionId);
+  if (!pos) return state;
+  if (!Number.isFinite(fraction) || fraction <= 0 || fraction >= 1) return state;
+
+  const closedSize = roundSize(pos.size * fraction);
+  const remaining = roundSize(pos.size - closedSize);
+  if (closedSize < MIN_SIZE || remaining < MIN_SIZE) {
+    return manualClose(state, positionId, closePrice, candle, config);
+  }
+
+  // La fracción efectiva es la que quedó después de redondear, no la pedida.
+  const f = closedSize / pos.size;
+  const trade = closeTradeAtPrice(
+    { ...pos, size: closedSize },
+    closePrice,
+    "partial",
+    candle,
+    config.commissionPerUnit ?? 0,
+    config.sessionId,
+    (pos.maxAdverse ?? 0) * f,
+    (pos.maxFavorable ?? 0) * f,
+    config.spreadAmount ?? 0,
+  );
+
+  return {
+    ...state,
+    positions: state.positions.map((p) =>
+      p.id === positionId
+        ? {
+            ...p,
+            size: remaining,
+            // SL y TP quedan donde estaban: el parcial no mueve la tesis.
+            maxAdverse: (p.maxAdverse ?? 0) * (1 - f),
+            maxFavorable: (p.maxFavorable ?? 0) * (1 - f),
+            unrealizedPnL: (p.unrealizedPnL ?? 0) * (1 - f),
+          }
+        : p,
+    ),
     trades: [...state.trades, trade],
     realizedPnL: state.realizedPnL + trade.realizedPnL,
   };
