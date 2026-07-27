@@ -76,6 +76,7 @@ const SETTINGS_FIELDS: Partial<Record<IndicatorKey, ConfigFieldDef[]>> = {
     { key: "ichimokuKijun", label: "Kijun", fallback: 26 },
     { key: "ichimokuSenkouB", label: "Senkou B", fallback: 52 },
   ],
+  vp: [{ key: "vpBins", label: "Niveles", fallback: 24, min: 4 }],
 };
 
 const TESTING_INDICATORS: { key: IndicatorKey; label: string; group: "overlay" | "subpane" }[] = [
@@ -93,6 +94,7 @@ const TESTING_INDICATORS: { key: IndicatorKey; label: string; group: "overlay" |
   { key: "psar", label: "Parabolic SAR", group: "overlay" },
   { key: "pivots", label: "Pivot Points", group: "overlay" },
   { key: "ichimoku", label: "Ichimoku", group: "overlay" },
+  { key: "vp", label: "Volume Profile (visible)", group: "overlay" },
   // Sub-panels abajo del precio. El orden de activación decide en qué panel
   // cae cada uno, así que prender uno solo no deja franjas vacías.
   { key: "rsi", label: "RSI", group: "subpane" },

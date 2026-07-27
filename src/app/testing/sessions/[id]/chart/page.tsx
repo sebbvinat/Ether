@@ -91,6 +91,7 @@ const TOOL_KEYS: Record<string, string> = {
   h: "hline",
   r: "rect",
   f: "fib",
+  v: "avwap",
   l: "long",
   s: "short",
   e: "eraser",

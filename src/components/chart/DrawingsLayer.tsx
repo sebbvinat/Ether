@@ -8,6 +8,7 @@ import {
   type DrawingStyle,
 } from "@/lib/store/chart-store";
 import type { Candle } from "@/lib/binance/types";
+import { anchoredVwap } from "@/lib/indicators";
 import { formatPrice } from "@/lib/format";
 
 const TV_GREEN = "#26a69a";
@@ -2723,31 +2724,15 @@ export function DrawingsLayer({
           const a = toCoord(d.at.time, d.at.price);
           if (!a) return null;
           const color = ds?.color ?? d.color ?? "#ab47bc"; // morado tipo TV
-          // Buscar la vela más cercana al ancla (en tiempo)
+          // D5 — la matemática vive en lib/indicators, compartida con el
+          // chart de testing. Estaba duplicada acá y las dos versiones podían
+          // divergir sin que nadie lo notara.
           const all = candles ?? [];
           if (all.length === 0) return null;
-          let anchorIdx = -1;
-          let bestDiff = Infinity;
-          for (let i = 0; i < all.length; i++) {
-            const diff = Math.abs(all[i].time - d.at.time);
-            if (diff < bestDiff) {
-              bestDiff = diff;
-              anchorIdx = i;
-            }
-          }
-          if (anchorIdx < 0) return null;
-          // Computar VWAP acumulado: Σ(TP·V) / Σ(V), TP=(H+L+C)/3
+          const avwapSeries = anchoredVwap(all, d.at.time);
           const pts: Coord[] = [];
-          let cumPV = 0;
-          let cumV = 0;
-          for (let i = anchorIdx; i < all.length; i++) {
-            const c = all[i];
-            const tp = (c.high + c.low + c.close) / 3;
-            const v = c.volume > 0 ? c.volume : 1;
-            cumPV += tp * v;
-            cumV += v;
-            const vwap = cumPV / cumV;
-            const cd = toCoord(c.time, vwap);
+          for (const { time, value } of avwapSeries) {
+            const cd = toCoord(time, value);
             if (cd) pts.push(cd);
           }
           if (pts.length < 2) {
@@ -2775,8 +2760,7 @@ export function DrawingsLayer({
           const path = pts.map((p) => `${p.x},${p.y}`).join(" ");
           const lastPt = pts[pts.length - 1];
           // El último valor del VWAP (sólo cómputo, no coord): la mostramos como label
-          const lastVwap =
-            cumV > 0 ? cumPV / cumV : null;
+          const lastVwap = avwapSeries[avwapSeries.length - 1]?.value ?? null;
           return (
             <g
               key={d.id}

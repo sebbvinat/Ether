@@ -177,6 +177,17 @@ export function MagnetIcon(p: IconProps) {
   );
 }
 
+/** D5 — VWAP anclado: un ancla en el origen y la curva que sale de ahí. */
+export function AnchoredVwapIcon(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <circle cx="6" cy="19" r="2.5" />
+      <path d="M8.5 18C13 16 16 12 24 7" />
+      <path d="M8.5 21C13 21 17 20 24 17" opacity=".5" />
+    </Svg>
+  );
+}
+
 export function TrashIcon(p: IconProps) {
   return (
     <Svg {...p}>

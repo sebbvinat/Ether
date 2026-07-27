@@ -10,6 +10,8 @@
  */
 
 import type { Drawing, DrawingPoint } from "@/lib/store/chart-store";
+import { anchoredVwap } from "@/lib/indicators";
+import type { Candle } from "@/lib/binance/types";
 import { TV } from "@/lib/theme";
 
 const FIB_LEVELS = [
@@ -29,6 +31,9 @@ interface Coord {
 
 interface Props {
   drawings: Drawing[];
+  /** D5 — velas visibles. El VWAP anclado las necesita para computar la curva
+   *  desde el ancla hacia adelante; el resto de los dibujos no. */
+  candles?: Candle[];
   toCoord: (timeSec: number, price: number) => Coord | null;
   /** Si está seteado, click sobre un dibujo lo borra (eraser mode). */
   onErase?: (drawingId: string) => void;
@@ -38,6 +43,7 @@ interface Props {
 
 export function TestingDrawingsLayer({
   drawings,
+  candles,
   toCoord,
   onErase,
   width,
@@ -59,6 +65,8 @@ export function TestingDrawingsLayer({
         if (d.type === "hline") return renderHline(d, toCoord, width, onErase);
         if (d.type === "rect") return renderRect(d, toCoord, onErase);
         if (d.type === "fib") return renderFib(d, toCoord, width, onErase);
+        if (d.type === "anchoredVwap")
+          return renderAnchoredVwap(d, candles ?? [], toCoord, onErase);
         return null;
       })}
     </svg>
@@ -221,9 +229,64 @@ export type DrawingTool =
   | "hline"
   | "rect"
   | "fib"
+  | "avwap"
   | "long"
   | "short"
   | "eraser";
 
 interface DrawingPointDraft extends DrawingPoint {}
 export type { DrawingPointDraft };
+
+/**
+ * D5 — VWAP anclado a una vela.
+ *
+ * El VWAP de sesión arranca donde el proveedor diga que arranca el día. El
+ * anclado arranca donde vos digas: un swing high, la apertura de Londres, la
+ * vela de una noticia. Es la lectura que usa ICT para saber quién está en
+ * ganancia desde ese punto.
+ *
+ * La matemática vive en lib/indicators (compartida con el chart en vivo, que
+ * la tenía duplicada inline); acá sólo se dibuja.
+ */
+function renderAnchoredVwap(
+  d: Extract<Drawing, { type: "anchoredVwap" }>,
+  candles: Candle[],
+  toCoord: Props["toCoord"],
+  onErase?: (id: string) => void,
+) {
+  const color = d.color ?? TV.yellow;
+  const pts: Coord[] = [];
+  for (const { time, value } of anchoredVwap(candles, d.at.time)) {
+    const p = toCoord(time, value);
+    if (p) pts.push(p);
+  }
+  if (pts.length < 2) return null;
+
+  const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p.x},${p.y}`).join(" ");
+  return (
+    <g key={d.id}>
+      {onErase && (
+        <path
+          d={path}
+          stroke="transparent"
+          strokeWidth={10}
+          fill="none"
+          style={{ cursor: "pointer" }}
+          onClick={() => onErase(d.id)}
+        />
+      )}
+      <path d={path} stroke={color} strokeWidth={2} fill="none" />
+      {/* Marca del ancla, para saber de dónde sale la curva. */}
+      <circle cx={pts[0].x} cy={pts[0].y} r={3.5} fill={color} />
+      <text
+        x={pts[0].x + 6}
+        y={pts[0].y - 6}
+        fill={color}
+        fontSize={9}
+        fontFamily="var(--font-mono), monospace"
+      >
+        AVWAP
+      </text>
+    </g>
+  );
+}

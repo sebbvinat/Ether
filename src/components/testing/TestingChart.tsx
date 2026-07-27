@@ -29,6 +29,7 @@ import {
   ema, sma, bollinger, vwap, rsi, macd, stochastic,
   atr, obv, cci, williamsR, mfi, adx, stochRsi, awesomeOscillator,
   donchian, keltner, supertrend, parabolicSar, pivotPoints, ichimoku,
+  volumeProfile,
   type ChannelPoint,
 } from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
@@ -53,10 +54,12 @@ import { PositionOverlay } from "./PositionOverlay";
 import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
+import { VolumeProfileLayer } from "@/components/chart/VolumeProfileLayer";
 import {
   CursorIcon,
   EraserIcon,
   FibIcon,
+  AnchoredVwapIcon,
   HLineIcon,
   LongIcon,
   RectIcon,
@@ -286,6 +289,18 @@ export function TestingChart({
         setTool("cursor");
         return;
       }
+      // D5 — el VWAP anclado se ancla con un clic: la curva sale sola desde
+      // esa vela hacia adelante.
+      if (t === "avwap") {
+        void store.addDrawingToActive({
+          id: uid(),
+          symbol,
+          type: "anchoredVwap",
+          at: pt,
+        } as Drawing);
+        setTool("cursor");
+        return;
+      }
       const d = draftRef.current;
       // Long/Short: 3 clicks → entry, SL, TP → crea limit order
       if (t === "long" || t === "short") {
@@ -470,6 +485,25 @@ export function TestingChart({
     return composeDisplayed(store.all, oneMin, cursorSec, tfSec);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursorMs, chartTf, loading, renderTick, intrabar, subLoaded, tfSec]);
+
+  // D6 — Volume Profile del rango VISIBLE. Se recalcula en cada pan/zoom
+  //   (renderTick) porque "visible" cambia con la cámara, no con el cursor.
+  const vpResult = useMemo(() => {
+    if (!detail?.indicators.vp || detail?.hidden.vp) return null;
+    if (displayed.length === 0) return null;
+    let visible = displayed;
+    try {
+      const vr = chartRef.current?.timeScale().getVisibleRange();
+      if (vr) {
+        const from = Number(vr.from);
+        const to = Number(vr.to);
+        const inView = displayed.filter((c) => c.time >= from && c.time <= to);
+        if (inView.length > 0) visible = inView;
+      }
+    } catch {}
+    return volumeProfile(visible, detail?.config?.vpBins ?? 24);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayed, detail?.indicators.vp, detail?.hidden.vp, detail?.config?.vpBins, renderTick]);
 
   // ── 5. Pintar series ──────────────────────────────────────────────────
   //   §11 — en modo intrabar esto corre una vez por minuto de mercado. Un
@@ -680,6 +714,7 @@ export function TestingChart({
       />
       {/* Drawings (debajo de posiciones, encima de candles) */}
       <TestingDrawingsLayer
+        candles={displayed}
         drawings={drawings}
         toCoord={toCoord}
         onErase={
@@ -692,6 +727,14 @@ export function TestingChart({
         width={size.width}
         height={size.height}
       />
+      {vpResult && (
+        <VolumeProfileLayer
+          result={vpResult}
+          priceToY={priceToY}
+          width={size.width}
+          color={INDICATOR_COLORS.vp}
+        />
+      )}
       {/* Sin key=renderTick — los overlays re-renderizan via props frescos
           (priceToY/timeToX cambian de ref en cada render del padre). */}
       <ClosedTradesLayer
@@ -836,6 +879,7 @@ function DrawingsToolbar({
     { key: "hline", Icon: HLineIcon, title: "Línea horizontal (1 clic)" },
     { key: "rect", Icon: RectIcon, title: "Rectángulo (2 clics)" },
     { key: "fib", Icon: FibIcon, title: "Fibonacci retroceso (2 clics)" },
+    { key: "avwap", Icon: AnchoredVwapIcon, title: "VWAP anclado (1 clic sobre la vela ancla)" },
     {
       key: "long",
       Icon: LongIcon,

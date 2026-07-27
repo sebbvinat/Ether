@@ -275,6 +275,49 @@ export function vwap(candles: Candle[]): IndicatorPoint[] {
  *  haHigh  = max(H, haOpen, haClose)
  *  haLow   = min(L, haOpen, haClose)
  */
+/**
+ * D5 — VWAP anclado a una vela cualquiera.
+ *
+ * El VWAP de sesión se resetea cada día. Éste arranca donde vos lo pongas: un
+ * swing, la apertura de Londres, la vela de una noticia. Responde "a qué
+ * precio promedio compró el que entró desde acá".
+ *
+ * `anchorTimeSec` no tiene que caer justo en una vela: se ancla a la MÁS
+ * CERCANA. Clickear un pixel antes o después no debería cambiar el resultado.
+ *
+ * Las velas sin volumen (varios índices de Yahoo lo reportan en 0) pesan 1 en
+ * vez de 0: si no, el promedio ignoraría barras enteras y la curva mentiría.
+ */
+export function anchoredVwap(
+  candles: Candle[],
+  anchorTimeSec: number,
+): IndicatorPoint[] {
+  if (candles.length === 0) return [];
+
+  let anchorIdx = 0;
+  let best = Infinity;
+  for (let i = 0; i < candles.length; i++) {
+    const diff = Math.abs(candles[i].time - anchorTimeSec);
+    if (diff < best) {
+      best = diff;
+      anchorIdx = i;
+    }
+  }
+
+  const out: IndicatorPoint[] = [];
+  let cumPV = 0;
+  let cumV = 0;
+  for (let i = anchorIdx; i < candles.length; i++) {
+    const c = candles[i];
+    const tp = (c.high + c.low + c.close) / 3;
+    const v = c.volume > 0 ? c.volume : 1;
+    cumPV += tp * v;
+    cumV += v;
+    out.push({ time: c.time, value: cumPV / cumV });
+  }
+  return out;
+}
+
 export function heikinAshi(candles: Candle[]): Candle[] {
   const out: Candle[] = [];
   for (let i = 0; i < candles.length; i++) {
