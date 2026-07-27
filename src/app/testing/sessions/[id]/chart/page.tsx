@@ -27,6 +27,7 @@ import { getInstrument } from "@/lib/instruments";
 import { isTypingTarget } from "@/lib/shortcuts";
 import { TF_MINUTES } from "@/lib/testing/candles";
 import { evaluateRules } from "@/lib/testing/rules";
+import { useSessionLock } from "@/lib/testing/use-session-lock";
 import { TestingChart, TESTING_TFS } from "@/components/testing/TestingChart";
 import { PlaceOrderDialog } from "@/components/testing/PlaceOrderDialog";
 import { PositionsPanel } from "@/components/testing/PositionsPanel";
@@ -162,12 +163,27 @@ export default function SessionChartPage({ params }: Props) {
   /** §16 — orden esperando a que se complete el checklist. */
   const [pendingSide, setPendingSide] = useState<"buy" | "sell" | null>(null);
 
-  // Asegurarse de que la sesión activa esté seteada (carga IDB)
+  // G3 — una sesión, una pestaña. Ver lib/testing/session-lock.ts.
+  const { status: lockStatus, takeOver } = useSessionLock(session?.id);
+
+  // Asegurarse de que la sesión activa esté seteada (carga IDB).
+  // Con el lock en otra pestaña NO se activa: activarla carga el detail en
+  // memoria y a partir de ahí cualquier cambio lo persiste pisando lo que la
+  // otra pestaña vaya escribiendo.
   useEffect(() => {
-    if (session && activeId !== session.id) {
+    if (session && lockStatus === "owner" && activeId !== session.id) {
       setActive(session.id);
     }
-  }, [session, activeId, setActive]);
+  }, [session, activeId, setActive, lockStatus]);
+
+  // Perder el lock (otra pestaña tomó el control) tiene que soltar el detail
+  // y frenar el autoplay, o esta pestaña sigue escribiendo desde memoria.
+  useEffect(() => {
+    if (lockStatus === "taken") {
+      setAutoplay(false);
+      if (activeId) setActive(null);
+    }
+  }, [lockStatus, activeId, setActive]);
 
   // Step en ms = nº de barras × minutos del TF actual.
   const barsPerStep = session?.replayStepSize ?? 1;
@@ -388,6 +404,42 @@ export default function SessionChartPage({ params }: Props) {
         </Link>
         <div className="mt-6 rounded-lg border border-tv-border p-6 text-center text-sm text-tv-text-muted">
           Esa sesión no existe.
+        </div>
+      </div>
+    );
+  }
+
+  if (lockStatus !== "owner") {
+    return (
+      <div className="mx-auto max-w-3xl p-6">
+        <Link
+          href="/testing/sessions"
+          className="inline-flex items-center gap-1 text-[12px] text-tv-text-muted hover:text-tv-text"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Volver
+        </Link>
+        <div className="mt-6 rounded-lg border border-tv-border bg-tv-panel/40 p-6 text-center">
+          {lockStatus === "checking" ? (
+            <p className="text-sm text-tv-text-muted">Abriendo la sesión…</p>
+          ) : (
+            <>
+              <p className="text-sm text-tv-text">
+                Esta sesión está abierta en otra pestaña.
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-[12px] text-tv-text-muted">
+                Si las dos escriben a la vez, los trades de una pisan a los de
+                la otra sin aviso. Tomá el control acá y la otra pestaña queda
+                mirando.
+              </p>
+              <button
+                onClick={takeOver}
+                className="mt-4 rounded bg-tv-blue px-3 py-1.5 text-[12px] font-medium text-white hover:bg-tv-blue/90"
+              >
+                Tomar el control
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
