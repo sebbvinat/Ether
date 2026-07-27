@@ -25,7 +25,12 @@ import {
   type ISeriesApi,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { ema, sma, bollinger, vwap, rsi, macd, stochastic } from "@/lib/indicators";
+import {
+  ema, sma, bollinger, vwap, rsi, macd, stochastic,
+  atr, obv, cci, williamsR, mfi, adx, stochRsi, awesomeOscillator,
+  donchian, keltner, supertrend, parabolicSar, pivotPoints, ichimoku,
+  type ChannelPoint,
+} from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
 import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
 import {
@@ -59,6 +64,7 @@ import {
   TrashIcon,
   TrendlineIcon,
 } from "@/components/icons/ToolIcons";
+import { computePaneLayout } from "@/lib/testing/panes";
 import { TV, TV_ALPHA } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import type { Timeframe } from "@/lib/binance/types";
@@ -894,6 +900,19 @@ function DrawingsToolbar({
 
 import type { Candle } from "@/lib/binance/types";
 
+/**
+ * Wave 23 — reconciliación de las series de indicadores del chart de testing.
+ *
+ * Dos cosas que antes no hacía:
+ *
+ *  1. Los sub-paneles se asignan por ORDEN DE ACTIVACIÓN, no con un índice
+ *     fijo por indicador. Antes RSI era el pane 1, MACD el 2 y Stochastic el
+ *     3: prender sólo el Stochastic dejaba dos paneles vacíos ocupando media
+ *     pantalla. Ahora el primero que se prende va al pane 1, el segundo al 2,
+ *     y los que sobran se eliminan.
+ *  2. Están los 25 indicadores del chart en vivo, no 10. La matemática ya
+ *     existía en lib/indicators; lo único que faltaba era el cableado.
+ */
 function renderIndicators(
   candles: Candle[],
   active: Record<IndicatorKey, boolean> | undefined,
@@ -913,38 +932,62 @@ function renderIndicators(
     stochD: config?.stochD ?? 3,
     bbPeriod: config?.bbPeriod ?? 20,
     bbStdDev: config?.bbStdDev ?? 2,
+    atr: config?.atr ?? 14,
+    cci: config?.cci ?? 20,
+    williamsR: config?.williamsR ?? 14,
+    mfi: config?.mfi ?? 14,
+    adx: config?.adx ?? 14,
+    stochRsiRsi: config?.stochRsiRsi ?? 14,
+    stochRsiStoch: config?.stochRsiStoch ?? 14,
+    aoFast: config?.aoFast ?? 5,
+    aoSlow: config?.aoSlow ?? 34,
+    donchianPeriod: config?.donchianPeriod ?? 20,
+    keltnerEma: config?.keltnerEma ?? 20,
+    keltnerAtr: config?.keltnerAtr ?? 10,
+    keltnerMult: config?.keltnerMult ?? 2,
+    supertrendAtr: config?.supertrendAtr ?? 10,
+    supertrendMult: config?.supertrendMult ?? 3,
+    ichimokuTenkan: config?.ichimokuTenkan ?? 9,
+    ichimokuKijun: config?.ichimokuKijun ?? 26,
+    ichimokuSenkouB: config?.ichimokuSenkouB ?? 52,
+    psarStep: config?.psarStep ?? 0.02,
+    psarMax: config?.psarMax ?? 0.2,
   };
-  // Conjunto de keys que DEBERÍAN tener serie
-  const wanted = new Set<string>();
-  if (active?.ema20) wanted.add("ema20");
-  if (active?.ema50) wanted.add("ema50");
-  if (active?.ema200) wanted.add("ema200");
-  if (active?.sma20) wanted.add("sma20");
-  if (active?.sma50) wanted.add("sma50");
-  if (active?.bb) {
-    wanted.add("bb-up");
-    wanted.add("bb-mid");
-    wanted.add("bb-low");
-  }
-  if (active?.vwap) wanted.add("vwap");
-  if (active?.rsi) {
-    wanted.add("rsi");
-    wanted.add("rsi-30");
-    wanted.add("rsi-70");
-  }
-  if (active?.macd) {
-    wanted.add("macd-line");
-    wanted.add("macd-signal");
-    wanted.add("macd-hist");
-  }
-  if (active?.stoch) {
-    wanted.add("stoch-k");
-    wanted.add("stoch-d");
-    wanted.add("stoch-20");
-    wanted.add("stoch-80");
-  }
 
-  // Quitar series que ya no están activas
+  // El reparto de sub-paneles vive en lib/testing/panes.ts (testeable aparte).
+  const { paneOf, paneCount } = computePaneLayout(active);
+
+  // Conjunto de keys que DEBERÍAN tener serie.
+  const wanted = new Set<string>();
+  const want = (...keys: string[]) => keys.forEach((k) => wanted.add(k));
+
+  if (active?.ema20) want("ema20");
+  if (active?.ema50) want("ema50");
+  if (active?.ema200) want("ema200");
+  if (active?.sma20) want("sma20");
+  if (active?.sma50) want("sma50");
+  if (active?.bb) want("bb-up", "bb-mid", "bb-low");
+  if (active?.vwap) want("vwap");
+  if (active?.donchian) want("dc-up", "dc-mid", "dc-low");
+  if (active?.keltner) want("kc-up", "kc-mid", "kc-low");
+  if (active?.supertrend) want("st-up", "st-down");
+  if (active?.psar) want("psar");
+  if (active?.pivots) want("piv-p", "piv-r1", "piv-r2", "piv-r3", "piv-s1", "piv-s2", "piv-s3");
+  if (active?.ichimoku) want("ich-tenkan", "ich-kijun", "ich-a", "ich-b", "ich-chikou");
+
+  if (active?.rsi) want("rsi", "rsi-30", "rsi-70");
+  if (active?.macd) want("macd-line", "macd-signal", "macd-hist");
+  if (active?.stoch) want("stoch-k", "stoch-d", "stoch-20", "stoch-80");
+  if (active?.atr) want("atr");
+  if (active?.obv) want("obv");
+  if (active?.cci) want("cci", "cci-100", "cci-neg100");
+  if (active?.williamsR) want("wr", "wr-20", "wr-80");
+  if (active?.mfi) want("mfi", "mfi-20", "mfi-80");
+  if (active?.adx) want("adx", "adx-plus", "adx-minus");
+  if (active?.stochRsi) want("srsi-k", "srsi-d");
+  if (active?.ao) want("ao");
+
+  // Quitar series que ya no están activas.
   for (const [key, ser] of series.entries()) {
     if (!wanted.has(key)) {
       try {
@@ -954,7 +997,9 @@ function renderIndicators(
     }
   }
 
-  // Helper para crear/get una line series con color en un pane específico
+  /** Crea o recupera una línea. Si el sub-panel al que pertenece cambió de
+   *  índice (porque se prendió/apagó otro indicador), la mueve en vez de
+   *  recrearla. */
   function getOrCreate(
     key: string,
     color: string,
@@ -974,12 +1019,37 @@ function renderIndicators(
         paneIndex,
       );
       series.set(key, s);
+    } else {
+      try {
+        s.moveToPane(paneIndex);
+      } catch {}
+      s.applyOptions({ color, lineWidth: width as 1 | 2 | 3 | 4 });
     }
     return s;
   }
 
-  // EMAs y SMAs (línea simple)
-  const singleLines: [string, IndicatorKey | null, number, "ema" | "sma"][] = [
+  /** Línea horizontal de referencia (30/70 del RSI, etc). */
+  function guide(
+    key: string,
+    value: number,
+    pane: number,
+    t0: UTCTimestamp,
+    tN: UTCTimestamp,
+  ) {
+    const g = getOrCreate(key, TV.textMuted, 1, pane);
+    g.applyOptions({ lineStyle: 3 });
+    g.setData([
+      { time: t0, value },
+      { time: tN, value },
+    ]);
+  }
+
+  const asLine = (pts: { time: number; value: number }[]) =>
+    pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value }));
+
+  // ── Overlays sobre el precio (pane 0) ──────────────────────────────────
+
+  const singleLines: [string, IndicatorKey, number, "ema" | "sma"][] = [
     ["ema20", "ema20", 20, "ema"],
     ["ema50", "ema50", 50, "ema"],
     ["ema200", "ema200", 200, "ema"],
@@ -987,97 +1057,254 @@ function renderIndicators(
     ["sma50", "sma50", 50, "sma"],
   ];
   for (const [key, indKey, period, kind] of singleLines) {
-    if (!indKey || !wanted.has(key)) continue;
-    const color = INDICATOR_COLORS[indKey]?.[0] ?? "#999";
+    if (!wanted.has(key)) continue;
+    const color = INDICATOR_COLORS[indKey]?.[0] ?? TV.textMuted;
     const ser = getOrCreate(key, color, period >= 200 ? 2 : 1);
-    const pts = kind === "ema" ? ema(candles, period) : sma(candles, period);
-    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+    ser.setData(asLine(kind === "ema" ? ema(candles, period) : sma(candles, period)));
   }
 
-  // Bollinger (3 líneas)
   if (wanted.has("bb-mid")) {
     const cols = INDICATOR_COLORS.bb ?? [TV.textMuted, TV.textMuted, TV.textMuted];
-    const up = getOrCreate("bb-up", cols[0]);
-    const mid = getOrCreate("bb-mid", cols[1]);
-    const low = getOrCreate("bb-low", cols[2]);
     const pts = bollinger(candles, cfg.bbPeriod, cfg.bbStdDev);
-    up.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })));
-    mid.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.basis })));
-    low.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })));
+    getOrCreate("bb-up", cols[0]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })),
+    );
+    getOrCreate("bb-mid", cols[1]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.basis })),
+    );
+    getOrCreate("bb-low", cols[2]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })),
+    );
   }
 
-  // VWAP (1 línea — anclada al inicio del rango cargado, suficiente para MVP)
   if (wanted.has("vwap")) {
-    const color = INDICATOR_COLORS.vwap?.[0] ?? TV.yellow;
-    const ser = getOrCreate("vwap", color, 2);
-    const pts = vwap(candles);
-    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
+    getOrCreate("vwap", INDICATOR_COLORS.vwap?.[0] ?? TV.yellow, 2).setData(
+      asLine(vwap(candles)),
+    );
   }
 
-  // ── Sub-panels (paneIndex > 0) ─────────────────────────────────────────
+  // Donchian y Keltner comparten forma: tres líneas upper/mid/lower.
+  const channels: [string, IndicatorKey, ChannelPoint[]][] = [];
+  if (wanted.has("dc-mid")) {
+    channels.push(["dc", "donchian", donchian(candles, cfg.donchianPeriod)]);
+  }
+  if (wanted.has("kc-mid")) {
+    channels.push([
+      "kc",
+      "keltner",
+      keltner(candles, cfg.keltnerEma, cfg.keltnerAtr, cfg.keltnerMult),
+    ]);
+  }
+  for (const [prefix, indKey, pts] of channels) {
+    const cols = INDICATOR_COLORS[indKey] ?? [TV.textMuted, TV.textMuted, TV.textMuted];
+    getOrCreate(`${prefix}-up`, cols[0]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.upper })),
+    );
+    getOrCreate(`${prefix}-mid`, cols[1] ?? cols[0]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.mid })),
+    );
+    getOrCreate(`${prefix}-low`, cols[2] ?? cols[0]).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.lower })),
+    );
+  }
 
-  // RSI 14 en pane 1, con líneas de oversold/overbought
+  if (wanted.has("st-up")) {
+    // Dos series, una por dirección: así el cambio de tendencia se ve como un
+    // corte de color y no como una línea que salta de arriba a abajo.
+    const cols = INDICATOR_COLORS.supertrend ?? [TV.green, TV.red];
+    const pts = supertrend(candles, cfg.supertrendAtr, cfg.supertrendMult);
+    const up = getOrCreate("st-up", cols[0] ?? TV.green, 2);
+    const down = getOrCreate("st-down", cols[1] ?? TV.red, 2);
+    // Los tramos de la otra dirección van como whitespace (sólo `time`), que
+    // es como lightweight-charts corta una línea sin unir los extremos.
+    const byTrend = (want: "up" | "down") =>
+      pts.map((p) =>
+        p.trend === want
+          ? { time: p.time as UTCTimestamp, value: p.value }
+          : { time: p.time as UTCTimestamp },
+      );
+    up.setData(byTrend("up"));
+    down.setData(byTrend("down"));
+  }
+
+  if (wanted.has("psar")) {
+    const ser = getOrCreate("psar", INDICATOR_COLORS.psar?.[0] ?? TV.purple, 1);
+    // Puntos sueltos, no una línea continua: el SAR salta de un lado al otro.
+    ser.applyOptions({ lineVisible: false, pointMarkersVisible: true });
+    ser.setData(asLine(parabolicSar(candles, cfg.psarStep, cfg.psarMax)));
+  }
+
+  if (wanted.has("piv-p") && candles.length > 0) {
+    const lv = pivotPoints(candles);
+    if (lv) {
+      const cols = INDICATOR_COLORS.pivots ?? [TV.yellow];
+      const t0 = candles[0].time as UTCTimestamp;
+      const tN = candles[candles.length - 1].time as UTCTimestamp;
+      const levels: [string, number, number][] = [
+        ["piv-p", lv.p, 2],
+        ["piv-r1", lv.r1, 1],
+        ["piv-r2", lv.r2, 1],
+        ["piv-r3", lv.r3, 1],
+        ["piv-s1", lv.s1, 1],
+        ["piv-s2", lv.s2, 1],
+        ["piv-s3", lv.s3, 1],
+      ];
+      for (const [key, value, w] of levels) {
+        const ser = getOrCreate(key, cols[0] ?? TV.yellow, w);
+        ser.applyOptions({ lineStyle: key === "piv-p" ? 0 : 2 });
+        ser.setData([
+          { time: t0, value },
+          { time: tN, value },
+        ]);
+      }
+    }
+  }
+
+  if (wanted.has("ich-tenkan")) {
+    const cols = INDICATOR_COLORS.ichimoku ?? [TV.blue, TV.red, TV.green, TV.purple, TV.textMuted];
+    const pts = ichimoku(candles, cfg.ichimokuTenkan, cfg.ichimokuKijun, cfg.ichimokuSenkouB);
+    const lines: [string, keyof (typeof pts)[number], number][] = [
+      ["ich-tenkan", "tenkan", 0],
+      ["ich-kijun", "kijun", 1],
+      ["ich-a", "senkouA", 2],
+      ["ich-b", "senkouB", 3],
+      ["ich-chikou", "chikou", 4],
+    ];
+    for (const [key, field, ci] of lines) {
+      const ser = getOrCreate(key, cols[ci] ?? TV.textMuted);
+      // Las líneas desplazadas arrancan con huecos; lightweight-charts los
+      // acepta como whitespace si no mandamos `value`.
+      ser.setData(
+        pts
+          .filter((p) => p[field] !== null)
+          .map((p) => ({ time: p.time as UTCTimestamp, value: p[field] as number })),
+      );
+    }
+  }
+
+  // ── Sub-paneles ────────────────────────────────────────────────────────
+
+  const bounds = (pts: { time: number }[]): [UTCTimestamp, UTCTimestamp] | null =>
+    pts.length > 0
+      ? [pts[0].time as UTCTimestamp, pts[pts.length - 1].time as UTCTimestamp]
+      : null;
+
   if (wanted.has("rsi")) {
-    const color = INDICATOR_COLORS.rsi?.[0] ?? TV.purple;
-    const ser = getOrCreate("rsi", color, 1, 1);
+    const pane = paneOf.get("rsi")!;
     const pts = rsi(candles, cfg.rsi);
-    ser.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.value })));
-    // Guides: 30 y 70 como líneas planas
-    if (pts.length > 0) {
-      const t0 = pts[0].time as UTCTimestamp;
-      const tN = pts[pts.length - 1].time as UTCTimestamp;
-      const guide30 = getOrCreate("rsi-30", TV.textMuted, 1, 1);
-      guide30.applyOptions({ lineStyle: 3 });
-      guide30.setData([
-        { time: t0, value: 30 },
-        { time: tN, value: 30 },
-      ]);
-      const guide70 = getOrCreate("rsi-70", TV.textMuted, 1, 1);
-      guide70.applyOptions({ lineStyle: 3 });
-      guide70.setData([
-        { time: t0, value: 70 },
-        { time: tN, value: 70 },
-      ]);
+    getOrCreate("rsi", INDICATOR_COLORS.rsi?.[0] ?? TV.purple, 1, pane).setData(asLine(pts));
+    const b = bounds(pts);
+    if (b) {
+      guide("rsi-30", 30, pane, b[0], b[1]);
+      guide("rsi-70", 70, pane, b[0], b[1]);
     }
   }
 
-  // MACD en pane 2 (2 líneas: MACD y signal)
   if (wanted.has("macd-line")) {
+    const pane = paneOf.get("macd")!;
     const cols = INDICATOR_COLORS.macd ?? [TV.blue, TV.red, TV.textMuted];
-    const line = getOrCreate("macd-line", cols[0], 1, 2);
-    const signal = getOrCreate("macd-signal", cols[1], 1, 2);
     const pts = macd(candles, cfg.macdFast, cfg.macdSlow, cfg.macdSignal);
-    line.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.macd })));
-    signal.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.signal })));
-    // hist como línea (en MVP — un histogram real necesitaría HistogramSeries)
-    const hist = getOrCreate("macd-hist", cols[2], 1, 2);
-    hist.applyOptions({ lineStyle: 0 });
-    hist.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.histogram })));
+    getOrCreate("macd-line", cols[0], 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.macd })),
+    );
+    getOrCreate("macd-signal", cols[1], 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.signal })),
+    );
+    getOrCreate("macd-hist", cols[2], 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.histogram })),
+    );
   }
 
-  // Stochastic en pane 3 (%K + %D + guías 20/80)
   if (wanted.has("stoch-k")) {
+    const pane = paneOf.get("stoch")!;
     const cols = INDICATOR_COLORS.stoch ?? [TV.blue, TV.red];
-    const k = getOrCreate("stoch-k", cols[0], 1, 3);
-    const d = getOrCreate("stoch-d", cols[1] ?? TV.red, 1, 3);
     const pts = stochastic(candles, cfg.stochK, cfg.stochD);
-    k.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })));
-    d.setData(pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })));
-    if (pts.length > 0) {
-      const t0 = pts[0].time as UTCTimestamp;
-      const tN = pts[pts.length - 1].time as UTCTimestamp;
-      const g20 = getOrCreate("stoch-20", TV.textMuted, 1, 3);
-      g20.applyOptions({ lineStyle: 3 });
-      g20.setData([
-        { time: t0, value: 20 },
-        { time: tN, value: 20 },
-      ]);
-      const g80 = getOrCreate("stoch-80", TV.textMuted, 1, 3);
-      g80.applyOptions({ lineStyle: 3 });
-      g80.setData([
-        { time: t0, value: 80 },
-        { time: tN, value: 80 },
-      ]);
+    getOrCreate("stoch-k", cols[0], 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })),
+    );
+    getOrCreate("stoch-d", cols[1] ?? TV.red, 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })),
+    );
+    const b = bounds(pts);
+    if (b) {
+      guide("stoch-20", 20, pane, b[0], b[1]);
+      guide("stoch-80", 80, pane, b[0], b[1]);
     }
   }
+
+  // Los que son una sola línea sin guías.
+  const plainSubpanes: [string, IndicatorKey, () => { time: number; value: number }[]][] = [
+    ["atr", "atr", () => atr(candles, cfg.atr)],
+    ["obv", "obv", () => obv(candles)],
+    ["ao", "ao", () => awesomeOscillator(candles, cfg.aoFast, cfg.aoSlow)],
+  ];
+  for (const [key, indKey, compute] of plainSubpanes) {
+    if (!wanted.has(key)) continue;
+    const pane = paneOf.get(indKey)!;
+    getOrCreate(key, INDICATOR_COLORS[indKey]?.[0] ?? TV.textMuted, 1, pane).setData(
+      asLine(compute()),
+    );
+  }
+
+  // Una línea + dos guías de sobrecompra/sobreventa.
+  const guidedSubpanes: [
+    string,
+    IndicatorKey,
+    () => { time: number; value: number }[],
+    [number, number],
+    [string, string],
+  ][] = [
+    ["cci", "cci", () => cci(candles, cfg.cci), [100, -100], ["cci-100", "cci-neg100"]],
+    ["wr", "williamsR", () => williamsR(candles, cfg.williamsR), [-20, -80], ["wr-20", "wr-80"]],
+    ["mfi", "mfi", () => mfi(candles, cfg.mfi), [80, 20], ["mfi-80", "mfi-20"]],
+  ];
+  for (const [key, indKey, compute, [hi, lo], [hiKey, loKey]] of guidedSubpanes) {
+    if (!wanted.has(key)) continue;
+    const pane = paneOf.get(indKey)!;
+    const pts = compute();
+    getOrCreate(key, INDICATOR_COLORS[indKey]?.[0] ?? TV.textMuted, 1, pane).setData(
+      asLine(pts),
+    );
+    const b = bounds(pts);
+    if (b) {
+      guide(hiKey, hi, pane, b[0], b[1]);
+      guide(loKey, lo, pane, b[0], b[1]);
+    }
+  }
+
+  if (wanted.has("adx")) {
+    const pane = paneOf.get("adx")!;
+    const cols = INDICATOR_COLORS.adx ?? [TV.yellow, TV.green, TV.red];
+    const pts = adx(candles, cfg.adx);
+    getOrCreate("adx", cols[0] ?? TV.yellow, 2, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.adx })),
+    );
+    getOrCreate("adx-plus", cols[1] ?? TV.green, 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.plusDI })),
+    );
+    getOrCreate("adx-minus", cols[2] ?? TV.red, 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.minusDI })),
+    );
+  }
+
+  if (wanted.has("srsi-k")) {
+    const pane = paneOf.get("stochRsi")!;
+    const cols = INDICATOR_COLORS.stochRsi ?? [TV.blue, TV.red];
+    const pts = stochRsi(candles, cfg.stochRsiRsi, cfg.stochRsiStoch);
+    getOrCreate("srsi-k", cols[0] ?? TV.blue, 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.k })),
+    );
+    getOrCreate("srsi-d", cols[1] ?? TV.red, 1, pane).setData(
+      pts.map((p) => ({ time: p.time as UTCTimestamp, value: p.d })),
+    );
+  }
+
+  // Tirar los sub-paneles que quedaron sin nadie adentro. Sin esto, apagar un
+  // indicador deja su franja vacía comiéndose la altura del chart.
+  try {
+    const panes = chart.panes();
+    for (let i = panes.length - 1; i >= paneCount; i--) {
+      chart.removePane(i);
+    }
+  } catch {}
 }

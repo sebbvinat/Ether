@@ -44,6 +44,38 @@ const SETTINGS_FIELDS: Partial<Record<IndicatorKey, ConfigFieldDef[]>> = {
     { key: "stochK", label: "%K", fallback: 14 },
     { key: "stochD", label: "%D", fallback: 3 },
   ],
+  stochRsi: [
+    { key: "stochRsiRsi", label: "RSI", fallback: 14 },
+    { key: "stochRsiStoch", label: "Stoch", fallback: 14 },
+  ],
+  atr: [{ key: "atr", label: "Período", fallback: 14 }],
+  adx: [{ key: "adx", label: "Período", fallback: 14 }],
+  cci: [{ key: "cci", label: "Período", fallback: 20 }],
+  williamsR: [{ key: "williamsR", label: "Período", fallback: 14 }],
+  mfi: [{ key: "mfi", label: "Período", fallback: 14 }],
+  ao: [
+    { key: "aoFast", label: "Rápida", fallback: 5 },
+    { key: "aoSlow", label: "Lenta", fallback: 34 },
+  ],
+  donchian: [{ key: "donchianPeriod", label: "Período", fallback: 20 }],
+  keltner: [
+    { key: "keltnerEma", label: "EMA", fallback: 20 },
+    { key: "keltnerAtr", label: "ATR", fallback: 10 },
+    { key: "keltnerMult", label: "Mult", fallback: 2, min: 0.1, step: 0.1 },
+  ],
+  supertrend: [
+    { key: "supertrendAtr", label: "ATR", fallback: 10 },
+    { key: "supertrendMult", label: "Mult", fallback: 3, min: 0.1, step: 0.1 },
+  ],
+  psar: [
+    { key: "psarStep", label: "Paso", fallback: 0.02, min: 0.001, step: 0.001 },
+    { key: "psarMax", label: "Máx", fallback: 0.2, min: 0.01, step: 0.01 },
+  ],
+  ichimoku: [
+    { key: "ichimokuTenkan", label: "Tenkan", fallback: 9 },
+    { key: "ichimokuKijun", label: "Kijun", fallback: 26 },
+    { key: "ichimokuSenkouB", label: "Senkou B", fallback: 52 },
+  ],
 };
 
 const TESTING_INDICATORS: { key: IndicatorKey; label: string; group: "overlay" | "subpane" }[] = [
@@ -55,10 +87,25 @@ const TESTING_INDICATORS: { key: IndicatorKey; label: string; group: "overlay" |
   { key: "sma50", label: "SMA 50", group: "overlay" },
   { key: "bb", label: "Bollinger Bands", group: "overlay" },
   { key: "vwap", label: "VWAP (sesión actual)", group: "overlay" },
-  // Sub-panels abajo del precio
-  { key: "rsi", label: "RSI 14", group: "subpane" },
-  { key: "macd", label: "MACD 12·26·9", group: "subpane" },
-  { key: "stoch", label: "Stochastic 14·3·3", group: "subpane" },
+  { key: "donchian", label: "Donchian Channels", group: "overlay" },
+  { key: "keltner", label: "Keltner Channels", group: "overlay" },
+  { key: "supertrend", label: "Supertrend", group: "overlay" },
+  { key: "psar", label: "Parabolic SAR", group: "overlay" },
+  { key: "pivots", label: "Pivot Points", group: "overlay" },
+  { key: "ichimoku", label: "Ichimoku", group: "overlay" },
+  // Sub-panels abajo del precio. El orden de activación decide en qué panel
+  // cae cada uno, así que prender uno solo no deja franjas vacías.
+  { key: "rsi", label: "RSI", group: "subpane" },
+  { key: "macd", label: "MACD", group: "subpane" },
+  { key: "stoch", label: "Stochastic", group: "subpane" },
+  { key: "stochRsi", label: "Stochastic RSI", group: "subpane" },
+  { key: "atr", label: "ATR", group: "subpane" },
+  { key: "adx", label: "ADX / DMI", group: "subpane" },
+  { key: "cci", label: "CCI", group: "subpane" },
+  { key: "williamsR", label: "Williams %R", group: "subpane" },
+  { key: "mfi", label: "Money Flow Index", group: "subpane" },
+  { key: "obv", label: "On Balance Volume", group: "subpane" },
+  { key: "ao", label: "Awesome Oscillator", group: "subpane" },
 ];
 
 export function IndicatorsMenu() {
@@ -93,7 +140,7 @@ export function IndicatorsMenu() {
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10"
           />
-          <div className="absolute right-0 top-full z-20 mt-1 w-56 overflow-hidden rounded border border-tv-border bg-tv-panel shadow-lg">
+          <div className="absolute right-0 top-full z-20 mt-1 max-h-[70vh] w-60 overflow-y-auto rounded border border-tv-border bg-tv-panel shadow-lg">
             <div className="px-3 py-1 text-[9px] font-semibold uppercase tracking-wider text-tv-text-muted">
               Sobre el precio
             </div>
