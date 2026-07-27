@@ -2,11 +2,13 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Download, Play } from "lucide-react";
 import { useTestingStore } from "@/lib/store/testing-store";
 import { getInstrument } from "@/lib/instruments";
 import { EquityCurve } from "@/components/testing/EquityCurve";
 import type { SessionRules } from "@/lib/testing/rules";
+import { csvFilename, downloadCsv, tradesToCsv } from "@/lib/testing/csv";
+import { notifyError } from "@/lib/toast";
 import {
   computeKPIs,
   equityCurve,
@@ -100,13 +102,33 @@ export default function SessionDetail({ params }: Props) {
             <p className="mt-2 max-w-xl text-[13px] text-tv-text">{session.description}</p>
           )}
         </div>
-        <Link
-          href={`/testing/sessions/${session.id}/chart`}
-          className="flex items-center gap-1.5 rounded-full bg-tv-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-tv-blue/90"
-        >
-          <Play className="h-4 w-4" fill="currentColor" />
-          Abrir chart
-        </Link>
+        <div className="flex items-center gap-2">
+          {/* F6 — llevarse los trades a una planilla. */}
+          <button
+            onClick={() => {
+              if (trades.length === 0) {
+                notifyError("Esta sesión todavía no tiene trades cerrados");
+                return;
+              }
+              downloadCsv(
+                tradesToCsv(trades, session),
+                csvFilename(session.name, Date.now()),
+              );
+            }}
+            title="Descargar los trades cerrados en CSV"
+            className="flex items-center gap-1.5 rounded-full border border-tv-border px-3 py-1.5 text-sm text-tv-text-muted hover:bg-tv-panel-hover hover:text-tv-text"
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+          <Link
+            href={`/testing/sessions/${session.id}/chart`}
+            className="flex items-center gap-1.5 rounded-full bg-tv-blue px-3 py-1.5 text-sm font-medium text-white hover:bg-tv-blue/90"
+          >
+            <Play className="h-4 w-4" fill="currentColor" />
+            Abrir chart
+          </Link>
+        </div>
       </header>
 
       {/* KPIs row */}
