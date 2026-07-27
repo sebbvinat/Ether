@@ -33,6 +33,7 @@ import { ChartSettingsDialog } from "@/components/chart/ChartSettingsDialog";
 import { SessionsDialog } from "@/components/chart/SessionsDialog";
 import { ShortcutsDialog } from "@/components/layout/ShortcutsDialog";
 import { cn } from "@/lib/utils";
+import { notifyError } from "@/lib/toast";
 
 /**
  * Catch-all menu for mobile/compact mode — collapses things that don't fit in the top bar
@@ -130,12 +131,12 @@ export function MoreMenu() {
     reader.onload = () => {
       try {
         const parsed = JSON.parse(String(reader.result));
-        if (!parsed?.data) return window.alert("Archivo inválido");
+        if (!parsed?.data) return notifyError("Archivo inválido: no tiene datos de configuración");
         if (!window.confirm("Reemplazar config actual?")) return;
         useChartStore.setState(parsed.data, false);
         window.location.reload();
       } catch (err) {
-        window.alert(`Error: ${(err as Error).message}`);
+        notifyError(`No se pudo importar: ${(err as Error).message}`);
       }
     };
     reader.readAsText(file);

@@ -27,6 +27,7 @@ import {
 import { makeLimitOrder, makeStopOrder } from "@/lib/testing/engine";
 import { sizeFromRisk } from "@/lib/testing/sizing";
 import { cn } from "@/lib/utils";
+import { notifyError } from "@/lib/toast";
 
 interface Props {
   open: boolean;
@@ -98,15 +99,15 @@ export function PlaceOrderDialog({
     // §3 — en modo riesgo el tamaño lo calcula la distancia al stop.
     const sizeN = sizeMode === "risk" ? sizing.size : parseFloat(size);
     if (sizeMode === "risk" && sizing.size === null) {
-      alert(sizing.message ?? "No se puede calcular el tamaño");
+      notifyError(sizing.message ?? "No se puede calcular el tamaño");
       return;
     }
     if (!Number.isFinite(sizeN) || sizeN === null || sizeN <= 0) {
-      alert("Tamaño inválido");
+      notifyError("Tamaño inválido");
       return;
     }
     if (orderType !== "market" && !Number.isFinite(entryN)) {
-      alert("Precio de entrada inválido");
+      notifyError("Precio de entrada inválido");
       return;
     }
     const tags = tagsInput

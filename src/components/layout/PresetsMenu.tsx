@@ -14,6 +14,7 @@ import { WorkspacesDialog } from "@/components/layout/WorkspacesDialog";
 import { JournalDialog } from "@/components/journal/JournalDialog";
 import { ObjectTreeDialog } from "@/components/layout/ObjectTreeDialog";
 import { cn } from "@/lib/utils";
+import { notifyError } from "@/lib/toast";
 
 export function PresetsMenu() {
   const [open, setOpen] = useState(false);
@@ -77,7 +78,7 @@ export function PresetsMenu() {
       try {
         const parsed = JSON.parse(String(reader.result));
         if (!parsed || typeof parsed !== "object" || !parsed.data) {
-          window.alert("Archivo inválido");
+          notifyError("Archivo inválido: no es un preset");
           return;
         }
         if (
@@ -90,7 +91,7 @@ export function PresetsMenu() {
         useChartStore.setState(parsed.data, false);
         window.location.reload();
       } catch (err) {
-        window.alert(`Error: ${(err as Error).message}`);
+        notifyError(`No se pudo importar: ${(err as Error).message}`);
       }
     };
     reader.readAsText(file);

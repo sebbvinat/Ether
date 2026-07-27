@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { PWARegister } from "@/components/layout/PWARegister";
+import { Toaster } from "@/components/ui/Toaster";
 import "./globals.css";
 
 const geist = Geist({
@@ -56,6 +57,7 @@ export default function RootLayout({
     >
       <body className="h-full overflow-hidden bg-tv-bg text-tv-text">
         <TooltipProvider delay={150}>{children}</TooltipProvider>
+        <Toaster />
         <PWARegister />
       </body>
     </html>

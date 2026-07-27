@@ -8,6 +8,7 @@ import { useChartStore } from "@/lib/store/chart-store";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatPrice, formatPct } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { notifyError } from "@/lib/toast";
 
 interface Row {
   symbol: string;
@@ -97,7 +98,7 @@ export function Watchlist() {
 
   function deleteCurrent() {
     if (watchlists.length <= 1) {
-      window.alert("No podés borrar la única watchlist");
+      notifyError("No podés borrar la única watchlist");
       return;
     }
     const current = watchlists.find((w) => w.id === activeWatchlistId);

@@ -37,6 +37,7 @@ import type { ClosedTradesMode } from "@/components/testing/ClosedTradesLayer";
 import type { Timeframe } from "@/lib/binance/types";
 import { usePriceFlash } from "@/lib/use-price-flash";
 import { cn } from "@/lib/utils";
+import { notifyError } from "@/lib/toast";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -347,7 +348,7 @@ export default function SessionChartPage({ params }: Props) {
       if (!Number.isFinite(sizeN) || sizeN <= 0) return;
       const refPrice = lastPrice || 0;
       if (refPrice <= 0) {
-        alert("Esperá a que cargue el precio actual");
+        notifyError("Esperá a que cargue el precio actual");
         return;
       }
       // Market fill inmediato al precio actual (incluso pausado).
