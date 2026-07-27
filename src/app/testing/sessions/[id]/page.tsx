@@ -339,6 +339,7 @@ function RulesEditor({ sessionId }: { sessionId: string }) {
   const detail = useTestingStore((s) => s.activeDetail);
   const setRules = useTestingStore((s) => s.setSessionRules);
   const setChecklist = useTestingStore((s) => s.setChecklistTemplate);
+  const setAutoShot = useTestingStore((s) => s.setAutoScreenshot);
 
   const saved = (detail?.checklistTemplate ?? []).join("\n");
   const [draft, setDraft] = useState(saved);
@@ -392,6 +393,19 @@ function RulesEditor({ sessionId }: { sessionId: string }) {
       </div>
 
       <div className="mt-4 border-t border-tv-border pt-3">
+        {/* F1 — capturas del chart en cada trade. */}
+        <label className="flex cursor-pointer items-center gap-2 text-[11px] text-tv-text">
+          <input
+            type="checkbox"
+            checked={session.autoScreenshot ?? true}
+            onChange={(e) => setAutoShot(e.target.checked)}
+            className="h-3.5 w-3.5 accent-tv-blue"
+          />
+          Guardar una captura del chart al entrar y al salir de cada trade
+        </label>
+        <p className="mb-2 ml-5 text-[10px] text-tv-text-dim">
+          Se ven en el journal de cada trade. Pesan ~10-20 KB cada una.
+        </p>
         <label className="flex cursor-pointer items-center gap-2 text-[11px] text-tv-text">
           <input
             type="checkbox"

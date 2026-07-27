@@ -410,6 +410,7 @@ function closeTradeAtPrice(
   return {
     id: uid(),
     sessionId,
+    positionId: pos.id,
     side: pos.side,
     size: pos.size,
     entry: pos.entry,

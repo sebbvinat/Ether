@@ -22,6 +22,7 @@ import {
   type ChecklistItem,
   type Trade,
 } from "@/lib/store/testing-store";
+import { TradeShots } from "./TradeShots";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -121,6 +122,9 @@ export function JournalDialog({ open, onOpenChange, trade }: Props) {
         </DialogHeader>
 
         <div className="flex flex-col gap-3 px-4 py-3">
+          {/* F1 — cómo estaba el gráfico al entrar y al salir. */}
+          <TradeShots trade={trade} />
+
           {/* Notas */}
           <Field label="Notas">
             <textarea

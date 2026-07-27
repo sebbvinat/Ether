@@ -56,6 +56,7 @@ import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
 import { VolumeProfileLayer } from "@/components/chart/VolumeProfileLayer";
 import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
+import { saveShot } from "@/lib/testing/screenshots";
 import {
   CursorIcon,
   EraserIcon,
@@ -684,6 +685,52 @@ export function TestingChart({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.orders.length]);
+
+  // ── 7b. F1 — capturas automáticas de entrada y salida ─────────────────
+  //   Se dispara mirando qué apareció en el detail, no desde el engine: así
+  //   cubre TODOS los caminos por los que nace una posición (fill del engine,
+  //   Buy/Sell rápido, orden del menú contextual) con un solo hook.
+  const shotIdsRef = useRef<{ positions: Set<string>; trades: Set<string> }>({
+    positions: new Set(),
+    trades: new Set(),
+  });
+  useEffect(() => {
+    // §12 — con dos paneles sólo captura el primario; si no, la segunda
+    // captura pisaría a la primera con otro timeframe.
+    if (!engineEnabled || loading) return;
+    if (sessionRef.current.autoScreenshot === false) return;
+    const chart = chartRef.current;
+    if (!chart) return;
+
+    const seen = shotIdsRef.current;
+    const newPositions = (detail?.positions ?? []).filter((p) => !seen.positions.has(p.id));
+    const newTrades = (detail?.trades ?? []).filter((t) => !seen.trades.has(t.id));
+    if (newPositions.length === 0 && newTrades.length === 0) return;
+
+    // Una sola captura por render alcanza: todo lo que abrió o cerró en este
+    // paso del replay lo hizo con el mismo gráfico en pantalla.
+    let canvas: HTMLCanvasElement | null = null;
+    try {
+      canvas = chart.takeScreenshot();
+    } catch {
+      return;
+    }
+    if (!canvas) return;
+
+    for (const p of newPositions) {
+      seen.positions.add(p.id);
+      void saveShot(p.id, "entry", canvas);
+    }
+    for (const t of newTrades) {
+      seen.trades.add(t.id);
+      void saveShot(t.id, "exit", canvas);
+    }
+  }, [detail?.positions, detail?.trades, engineEnabled, loading]);
+
+  // Cambiar de sesión no puede arrastrar lo ya capturado de la anterior.
+  useEffect(() => {
+    shotIdsRef.current = { positions: new Set(), trades: new Set() };
+  }, [session.id]);
 
   // ── 8. Coord helpers para overlays ────────────────────────────────────
   function priceToY(price: number): number | null {

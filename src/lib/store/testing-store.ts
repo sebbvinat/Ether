@@ -108,6 +108,10 @@ export type TradeOutcome = "win" | "loss" | "breakeven";
 export interface Trade {
   id: string;
   sessionId: string;
+  /** F1 — la posición de la que salió. La captura de la ENTRADA se guarda
+   *  cuando se abre la posición, cuando el trade todavía no existe; esto es
+   *  lo que después une las dos puntas. Ausente en trades viejos. */
+  positionId?: string;
   side: Side;
   size: number;
   entry: number;
@@ -206,6 +210,9 @@ export interface SessionMeta {
   /** §12 — TF del segundo chart cuando el layout está en 2 paneles.
    *  Default "1m". El primario sigue usando `chartTimeframe`. */
   chartTimeframe2?: Timeframe;
+  /** F1 — capturar el chart en la entrada y la salida de cada trade.
+   *  Default true. Cada captura pesa ~10-20KB en IndexedDB (WebP). */
+  autoScreenshot?: boolean;
   /** §11 — cómo avanza el replay. "bar": de vela completa en vela completa
    *  (lo de siempre). "intrabar": la vela en curso se forma minuto a minuto
    *  y el engine evalúa fills en resolución 1m. Default "bar". */
@@ -266,6 +273,8 @@ interface TestingState {
   setReplayCursor: (ms: number) => void;
   /** §11 — alterna entre avance por vela y avance minuto a minuto. */
   setPlaybackMode: (mode: PlaybackMode) => void;
+  /** F1 — prender/apagar las capturas automáticas. */
+  setAutoScreenshot: (on: boolean) => void;
   setChartTimeframe: (tf: Timeframe) => void;
   /** §12 — TF del segundo panel. */
   setChartTimeframe2: (tf: Timeframe) => void;
@@ -433,6 +442,7 @@ export const useTestingStore = create<TestingState>()(
           tickSize: input.tickSize ?? 0.01,
           defaultRiskPct: input.defaultRiskPct ?? 0.5,
           playbackMode: "bar",
+          autoScreenshot: true,
           description: input.description,
           tags: input.tags ?? [],
           createdAt: now,
@@ -537,6 +547,16 @@ export const useTestingStore = create<TestingState>()(
             const clamped = Math.max(x.startDate, Math.min(x.endDate, ms));
             return { ...x, replayCursorMs: clamped };
           }),
+        }));
+      },
+
+      setAutoScreenshot: (on) => {
+        const active = get().activeSessionId;
+        if (!active) return;
+        set((s) => ({
+          sessions: s.sessions.map((x) =>
+            x.id === active ? { ...x, autoScreenshot: on, updatedAt: Date.now() } : x,
+          ),
         }));
       },
 
@@ -983,6 +1003,8 @@ export const useTestingStore = create<TestingState>()(
           defaultRiskPct: sess.defaultRiskPct ?? 0.5,
           // §11 — sesiones viejas siguen avanzando por vela completa.
           playbackMode: sess.playbackMode ?? ("bar" as PlaybackMode),
+          // F1 — las sesiones viejas arrancan con las capturas prendidas.
+          autoScreenshot: sess.autoScreenshot ?? true,
         }));
         return { ...currentState, ...(p ?? {}), sessions };
       },
