@@ -832,13 +832,5 @@ de la que Yahoo sirve por interval).
 
 ### Lo que queda del lado de la infra (no es código)
 
-1. Vercel → Settings → Deployment Protection → apagar "Require Log In"
-   (con esto prendido el cron recibe un 302 y no ingesta nada).
-2. Correr en Supabase la migración de `public.candles(symbol, tf, time_sec,
-   o, h, l, c, v)` con su PK, índice y RLS.
-3. Cargar en Vercel las env vars `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` y
-   `CRON_SECRET`. La service key que se pegó en el chat quedó comprometida:
-   rotarla antes de usarla.
-4. GitHub Actions → "Ingest candles hourly" → Run workflow, para verificar.
-5. Para traer historia vieja: GitHub Actions → "Backfill histórico" →
-   Run workflow, eligiendo símbolo, TF y fecha de arranque.
+Los pasos, con el SQL y los nombres exactos, están en
+[`docs/RUNBOOK-INFRA.md`](./RUNBOOK-INFRA.md).
