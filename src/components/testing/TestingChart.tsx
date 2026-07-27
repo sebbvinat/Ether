@@ -33,7 +33,7 @@ import {
   type ChannelPoint,
 } from "@/lib/indicators";
 import { LazyCandleStore, TESTING_TFS, TF_MINUTES } from "@/lib/testing/candles";
-import { stepEngine, makeLimitOrder } from "@/lib/testing/engine";
+import { stepEngine, makeLimitOrder, makeStopOrder } from "@/lib/testing/engine";
 import {
   composeDisplayed,
   hasIntrabarData,
@@ -55,6 +55,7 @@ import { PendingOrdersOverlay } from "./PendingOrdersOverlay";
 import { ClosedTradesLayer, type ClosedTradesMode } from "./ClosedTradesLayer";
 import { TestingDrawingsLayer, type DrawingTool } from "./TestingDrawingsLayer";
 import { VolumeProfileLayer } from "@/components/chart/VolumeProfileLayer";
+import { ChartContextMenu, type ContextMenuState } from "./ChartContextMenu";
 import {
   CursorIcon,
   EraserIcon,
@@ -118,6 +119,8 @@ export function TestingChart({
   /** §11 — aviso de que acá no hay 1m y el replay avanza por vela completa.
    *  Se muestra una sola vez por sesión de navegación para no ser molesto. */
   const [noIntrabarData, setNoIntrabarData] = useState(false);
+  /** C3 — menú contextual abierto, con el precio/tiempo del click derecho. */
+  const [ctxMenu, setCtxMenu] = useState<ContextMenuState | null>(null);
   const warnedNoIntrabarRef = useRef(false);
   const didFitRef = useRef(false);
   // Wave 18.6 — drawing tool state
@@ -343,12 +346,18 @@ export function TestingChart({
     };
     chart.subscribeClick(clickHandler);
 
-    const obs = new ResizeObserver(() => {
+    // El tamaño alimenta a TODOS los overlays (posiciones, órdenes, trades,
+    // dibujos): con width 0 no se dibuja ninguno. Se mide acá y AHORA, además
+    // de observar los cambios — el callback inicial del ResizeObserver no
+    // siempre llega, y esperarlo dejaba el chart sin overlays para siempre.
+    const measure = () => {
       const el = containerRef.current;
       if (!el) return;
       setSize({ width: el.clientWidth, height: el.clientHeight });
       bump();
-    });
+    };
+    measure();
+    const obs = new ResizeObserver(measure);
     obs.observe(containerRef.current);
 
     return () => {
@@ -705,12 +714,60 @@ export function TestingChart({
     return { x, y };
   }
 
+  /** C3 — el click derecho tiene que resolver a qué precio y a qué vela
+   *  apuntó. Va sobre el contenedor y no sobre el canvas porque
+   *  lightweight-charts no expone un evento de click derecho. */
+  function handleContextMenu(e: React.MouseEvent) {
+    const box = containerRef.current?.getBoundingClientRect();
+    const ser = candleSerRef.current;
+    const chart = chartRef.current;
+    if (!box || !ser || !chart) return;
+    const price = ser.coordinateToPrice(e.clientY - box.top);
+    if (price == null) return;
+    const t = chart.timeScale().coordinateToTime(e.clientX - box.left);
+    e.preventDefault();
+    setCtxMenu({
+      x: e.clientX,
+      y: e.clientY,
+      price: Number(price),
+      // Fuera del rango con datos no hay tiempo: cae al cursor del replay, que
+      // es donde el usuario está parado.
+      timeSec: t != null ? Number(t) : Math.floor(cursorMs / 1000),
+    });
+  }
+
   return (
     <div className="relative h-full w-full">
       <div
         ref={containerRef}
         className="h-full w-full"
         style={{ cursor: tool === "cursor" ? "default" : "crosshair" }}
+        onContextMenu={handleContextMenu}
+      />
+      <ChartContextMenu
+        state={ctxMenu}
+        lastPrice={displayed[displayed.length - 1]?.close ?? 0}
+        onClose={() => setCtxMenu(null)}
+        onHLine={(price, timeSec) => {
+          void useTestingStore.getState().addDrawingToActive({
+            id:
+              typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : Math.random().toString(36).slice(2),
+            symbol: session.symbol,
+            type: "hline",
+            at: { time: timeSec, price },
+          } as Drawing);
+        }}
+        onOrder={(side, price, kind) => {
+          const input = { side, size: 1, entryPrice: price, tags: ["ctx"] };
+          void useTestingStore
+            .getState()
+            .addOrder(kind === "limit" ? makeLimitOrder(input) : makeStopOrder(input));
+        }}
+        onClearDrawings={() => {
+          void useTestingStore.getState().clearDrawingsInActive();
+        }}
       />
       {/* Drawings (debajo de posiciones, encima de candles) */}
       <TestingDrawingsLayer
